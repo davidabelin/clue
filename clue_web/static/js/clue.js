@@ -17,6 +17,8 @@ if (app) {
   const sendChat = document.getElementById("send-chat");
   const gameTitle = document.getElementById("game-title");
   let currentSnapshot = null;
+  let notebookDirty = false;
+  let chatDirty = false;
 
   const COLORS = ["#d72638", "#e6af2e", "#f7f4ea", "#3a7d44", "#1d70a2", "#6a4c93"];
 
@@ -83,6 +85,8 @@ if (app) {
   }
 
   function renderSummary(snapshot) {
+    const previousNotebook = notebookText.value;
+    const previousChat = chatInput.value;
     currentSnapshot = snapshot;
     gameTitle.textContent = snapshot.title;
     turnBanner.textContent = snapshot.status === "complete"
@@ -96,7 +100,14 @@ if (app) {
       <p>Can win: ${snapshot.seat.can_win ? "Yes" : "No"}</p>
     `;
     handList.innerHTML = snapshot.seat.hand.map((card) => `<li>${card}</li>`).join("");
-    notebookText.value = snapshot.notebook?.text || "";
+    if (!notebookDirty) {
+      notebookText.value = snapshot.notebook?.text || "";
+    } else {
+      notebookText.value = previousNotebook;
+    }
+    if (chatDirty) {
+      chatInput.value = previousChat;
+    }
     seatList.innerHTML = snapshot.seats.map((seat) => `
       <li>
         <strong>${seat.display_name}</strong> (${seat.character})<br>
@@ -109,6 +120,8 @@ if (app) {
   }
 
   function buildSelect(id, options, labelText, valueField = "value", textField = "label") {
+    const previous = document.getElementById(id);
+    const previousValue = previous ? previous.value : "";
     const wrapper = document.createElement("label");
     wrapper.className = "action-row";
     wrapper.innerHTML = `<span>${labelText}</span>`;
@@ -120,6 +133,9 @@ if (app) {
       item.textContent = option[textField];
       select.appendChild(item);
     });
+    if (previousValue && options.some((option) => option[valueField] === previousValue)) {
+      select.value = previousValue;
+    }
     wrapper.appendChild(select);
     return wrapper;
   }
@@ -206,6 +222,7 @@ if (app) {
       method: "POST",
       body: JSON.stringify({ notebook: { text: notebookText.value } }),
     });
+    notebookDirty = false;
     renderSummary(snapshot);
   });
 
@@ -219,7 +236,16 @@ if (app) {
       body: JSON.stringify({ action: "send_chat", text }),
     });
     chatInput.value = "";
+    chatDirty = false;
     renderSummary(snapshot);
+  });
+
+  notebookText.addEventListener("input", () => {
+    notebookDirty = true;
+  });
+
+  chatInput.addEventListener("input", () => {
+    chatDirty = true;
   });
 
   refresh();
