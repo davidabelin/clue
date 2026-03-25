@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/clue.css') }}">
+  </head>
+  <body>
+    <header class="shell-header">
+      <a class="brand" href="{{ url_for('main.home') }}">Clue</a>
+      <nav class="shell-nav">
+        <a href="{{ aix_hub_url }}">AIX Labs</a>
+        <a href="{{ aix_contact_url }}">Contact</a>
+        <a href="{{ aix_privacy_url }}">Privacy</a>
+        <a href="{{ aix_toc_url }}">TOC</a>
+      </nav>
+    </header>
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

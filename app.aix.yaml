@@ -1,0 +1,14 @@
+runtime: python314
+service: clue
+entrypoint: gunicorn --worker-tmp-dir /tmp -b :$PORT run:app
+
+env_variables:
+  APP_BASE_PATH: /clue
+  AIX_HUB_URL: https://aix-labs.uw.r.appspot.com/
+  CLUE_DATABASE_URL: ""
+  CLUE_DB_PATH: /tmp/clue.db
+  CLUE_SECRET_KEY: ""
+  CLUE_INTERNAL_WORKER_TOKEN: ""
+  CLUE_LLM_MODEL: gpt-4o-mini
+
+service_account: aix-admin@aix-labs.iam.gserviceaccount.com
