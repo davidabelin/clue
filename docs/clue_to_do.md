@@ -9,9 +9,9 @@
 
 - [x] Prevent polling refresh from resetting in-progress local UI inputs such as notebook text and action selections before the user submits or saves them.
 
-- [ ] Run mixed-seat integration tests with mocked LLM responses, then one real-model smoke path, until a full four-seat game can finish without illegal actions or privacy leaks.
+- [x] Run mixed-seat integration tests with mocked LLM responses, then one real-model smoke path, until a full four-seat game can finish without illegal actions or privacy leaks.
   - Mocked four-seat mixed completion coverage is now in the test suite.
-  - Real-model smoke path is still blocked locally because `OPENAI_API_KEY` is not set in this shell.
+  - Real-model local smoke completed on 2026-03-26 with a four-seat game finishing cleanly and no public/private visibility violation detected.
 
 - [x] Polish the UI for the actual round-table experience: notebook affordances, clear private/public separation, readable reveal prompts, and better pacing for AI turns.
 
