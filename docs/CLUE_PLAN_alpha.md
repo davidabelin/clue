@@ -5,6 +5,7 @@
 - The first playable target includes full classic Clue rules, a dynamic browser UI, and mixed human/LLM seats from the start.
 - Core architecture is deterministic: a code-owned Game Master, an append-only event log with visibility scopes (`public`, `seat:<id>`), filtered seat snapshots, and LLM seats that can talk but cannot own rules or state.
 - Initial live UX uses structured turn APIs plus short-interval polling for board/chat/event updates; SSE, voice, and richer realtime transport are later phases.
+- As of 2026-03-26, the alpha foundation is playable locally, mounted in AIX, and production-ready for Secret Manager-backed LLM credentials; remaining open work is tracked in `docs\clue_to_do.md`.
 
 ## Key Interfaces / Types
 - Core domain types: `GameConfig`, `SeatConfig`, `Card`, `BoardNode`, `TurnState`, `PublicGameEvent`, `PrivateSeatEvent`, `ActionRequest`, `ActionResult`, `SeatSnapshot`.
@@ -34,19 +35,17 @@
 - [x] Add standalone deployment files for a `clue` service and environment variables for model key/config, database, and worker settings.
 - [x] After standalone local success, add the AIX adapter, lab registry entry, hub metadata, and dispatch routing so `/clue` behaves like the other sibling labs.
 - [x] Add AIX smoke tests and docs covering local mount, standalone launch, and the expected env var contract.
-- [ ] Add end-to-end browser/API tests for a full human-only four-seat game, including dice rolls, room entry, suggestion, refute, accusation, and reconnect.
-- [ ] Run mixed-seat integration tests with mocked LLM responses, then one real-model smoke path, until a full four-seat game can finish without illegal actions or privacy leaks.
-- [ ] Polish the UI for the actual round-table experience: notebook affordances, clear private/public separation, readable reveal prompts, and better pacing for AI turns.
-- [ ] Add structured logging and evaluation hooks for illegal action rate, turn latency, accusation precision, leakage blocks, and game completion rate.
-- [ ] Later, swap the simple suggestion ranker for ISMCTS/POMCP behind the same `SeatAgent` interface if the heuristic/sampling policy is too weak.
-- [ ] Later, export event logs into training datasets and add supervised/DAgger experiments only after the deterministic engine, UI, and LLM safety path are stable.
+- [x] Run mixed-seat integration tests with mocked LLM responses, then one real-model smoke path, until a full four-seat game can finish without illegal actions or privacy leaks.
+- [x] Polish the UI for the actual round-table experience: notebook affordances, clear private/public separation, readable reveal prompts, and better pacing for AI turns.
+- [x] Wire production `OPENAI_API_KEY` retrieval through Secret Manager while keeping direct local env-var overrides available.
+- Remaining open implementation work from the alpha plan now lives in `docs\clue_to_do.md`, including browser/API end-to-end coverage, structured logging and eval hooks, planner upgrades, and later training/export work.
 
-## Test Plan
-- Engine unit tests: official deck/setup invariants, 3-6 player dealing, board adjacency, secret passages, suggestion side effects, refutation order, accusation elimination, and deterministic replay.
-- Visibility tests: the suggesting seat sees the shown card; other seats see only the public refuter/pass sequence; public chat never receives private card data.
-- API/UI tests: host creates a game, humans join through seat tokens, multiple browsers poll into the same state, and reconnect restores the correct private view.
-- LLM safety tests: malformed JSON, illegal actions, timeout/no-response, and private-information chat leaks all downgrade to safe fallback behavior instead of corrupting the game.
-- End-to-end acceptance: one local four-seat mixed game completes start-to-finish; one AIX-mounted smoke game loads through `/clue`; metrics are recorded for latency, leakage count, and completion rate.
+## Test Plan Status
+- [x] Engine unit coverage exists for setup invariants, 3-6 player dealing, suggestion side effects, refutation routing, accusation elimination, and private-event visibility filtering.
+- [x] API/UI smoke coverage exists for home-page rendering, seat-token snapshot flow, notebook persistence, six-seat `NP` configuration, and mixed-seat mocked completion.
+- [x] LLM safety coverage exists for malformed JSON, illegal actions, timeout/no-response, private-information chat leaks, and Secret Manager-backed key resolution.
+- [x] Local real-model smoke path completed on 2026-03-26; AIX mount and dispatch smoke coverage also exists.
+- Remaining browser end-to-end, reconnect, and manual acceptance work is tracked in `docs\clue_to_do.md`.
 
 ## Assumptions / Defaults
 - `clue` is the only canonical slug, service name, and repo prefix; no extra naming noise beyond game IDs and timestamps where required.

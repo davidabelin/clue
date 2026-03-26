@@ -8,6 +8,7 @@ from typing import Any
 
 from clue_agents.base import SeatAgent, TurnDecision
 from clue_agents.heuristic import HeuristicSeatAgent
+from clue_agents.secrets import resolve_openai_api_key
 from clue_agents.safety import sanitize_public_chat
 
 try:
@@ -19,7 +20,7 @@ except Exception:  # pragma: no cover - import guard for local test envs
 class LLMSeatAgent(SeatAgent):
     def __init__(self, *, model: str = "", api_key: str = "") -> None:
         self._model = str(model or os.getenv("CLUE_LLM_MODEL", "gpt-4o-mini")).strip()
-        self._api_key = str(api_key or os.getenv("OPENAI_API_KEY", "")).strip()
+        self._api_key = resolve_openai_api_key(api_key=api_key)
         self._fallback = HeuristicSeatAgent()
 
     def decide_turn(self, *, snapshot: dict[str, Any], tool_snapshot: dict[str, Any]) -> TurnDecision:

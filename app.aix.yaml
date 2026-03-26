@@ -10,5 +10,6 @@ env_variables:
   CLUE_SECRET_KEY: ""
   CLUE_INTERNAL_WORKER_TOKEN: ""
   CLUE_LLM_MODEL: gpt-4o-mini
+  OPENAI_API_KEY_SECRET_VERSION: projects/aix-labs/secrets/openai-api-key/versions/latest
 
 service_account: aix-admin@aix-labs.iam.gserviceaccount.com

@@ -3,3 +3,4 @@ gunicorn>=22.0
 SQLAlchemy>=2.0
 itsdangerous>=2.2
 openai>=1.109.1
+google-cloud-secret-manager>=2.20
