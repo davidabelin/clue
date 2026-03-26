@@ -15,10 +15,10 @@
         <span>Title</span>
         <input type="text" name="title" value="Clue Table">
       </label>
-      <label>
-        <span>Seed</span>
-        <input type="number" name="seed" value="20260324">
-      </label>
+      <div class="panel">
+        <strong>Table Setup</strong>
+        <p>Choose 3 to 6 active seats. Set unused seats to NP.</p>
+      </div>
     </div>
     <div class="seat-grid">
       {% set defaults = [
@@ -26,6 +26,8 @@
         ("seat_mustard", "Colonel Mustard", "heuristic"),
         ("seat_white", "Mrs. White", "human"),
         ("seat_green", "Mr. Green", "llm"),
+        ("seat_peacock", "Mrs. Peacock", "np"),
+        ("seat_plum", "Professor Plum", "np"),
       ] %}
       {% for seat_id, character, seat_kind in defaults %}
       <div class="seat-card">
@@ -38,6 +40,7 @@
         <label>
           <span>{{ character }}</span>
           <select name="seat_kind_{{ loop.index0 }}">
+            <option value="np" {% if seat_kind == "np" %}selected{% endif %}>NP</option>
             <option value="human" {% if seat_kind == "human" %}selected{% endif %}>Human</option>
             <option value="heuristic" {% if seat_kind == "heuristic" %}selected{% endif %}>Heuristic</option>
             <option value="llm" {% if seat_kind == "llm" %}selected{% endif %}>LLM</option>
@@ -57,25 +60,36 @@
     event.preventDefault();
     const formData = new FormData(createForm);
     const seats = [];
-    for (let index = 0; index < 4; index += 1) {
+    const seatCards = createForm.querySelectorAll(".seat-card");
+    seatCards.forEach((_, index) => {
+      const seatKind = formData.get(`seat_kind_${index}`);
+      if (seatKind === "np") {
+        return;
+      }
       seats.push({
         seat_id: formData.get(`seat_id_${index}`),
         character: formData.get(`character_${index}`),
         display_name: formData.get(`display_name_${index}`),
-        seat_kind: formData.get(`seat_kind_${index}`),
+        seat_kind: seatKind,
       });
-    }
+    });
     const response = await fetch("/api/v1/games", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: formData.get("title"),
-        seed: Number(formData.get("seed")),
         seats,
       }),
     });
     const payload = await response.json();
     result.classList.remove("hidden");
+    if (!response.ok) {
+      result.innerHTML = `
+        <h2>Could not create game</h2>
+        <p>${payload.error || "Unknown error."}</p>
+      `;
+      return;
+    }
     result.innerHTML = `
       <h2>${payload.title}</h2>
       <p>Open each seat link in its own browser tab.</p>

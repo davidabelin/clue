@@ -6,8 +6,12 @@
       <p class="eyebrow">{{ seat.display_name }}</p>
       <h1 id="game-title">Clue Table</h1>
     </div>
-    <div id="turn-banner" class="turn-banner">Loading table state...</div>
+    <div class="header-status">
+      <div id="turn-banner" class="turn-banner">Loading table state...</div>
+      <p id="pace-note" class="pace-note">Synchronizing table...</p>
+    </div>
   </div>
+  <section id="request-error" class="panel request-error hidden" aria-live="polite"></section>
   <div class="layout-grid">
     <section class="panel board-panel">
       <div class="panel-head">
@@ -15,47 +19,74 @@
         <div id="phase-pill" class="phase-pill"></div>
       </div>
       <svg id="board" viewBox="0 0 720 560" class="board-svg"></svg>
-      <div id="move-hints" class="move-hints"></div>
+      <div class="board-meta-grid">
+        <section class="board-meta-card">
+          <div class="panel-head compact">
+            <h3>Move Grid</h3>
+          </div>
+          <div id="move-grid" class="move-grid"></div>
+        </section>
+        <section class="board-meta-card">
+          <div class="panel-head compact">
+            <h3>Marker Grid</h3>
+          </div>
+          <div id="position-grid" class="position-grid"></div>
+        </section>
+      </div>
     </section>
     <section class="panel side-panel">
       <div class="panel-head">
-        <h2>Your Seat</h2>
+        <h2>Private Seat</h2>
       </div>
       <div id="seat-summary"></div>
       <div class="hand-panel">
         <h3>Hand</h3>
         <ul id="hand-list"></ul>
       </div>
+      <div class="private-intel-panel">
+        <div class="panel-head compact">
+          <h3>Private Intel</h3>
+          <span id="private-count" class="status-chip">0</span>
+        </div>
+        <p class="field-note">Only you can see card reveals and other seat-private prompts.</p>
+        <ul id="private-log" class="event-log private-log"></ul>
+      </div>
       <div class="notebook-panel">
         <div class="panel-head compact">
           <h3>Notebook</h3>
-          <button id="save-notebook" type="button">Save</button>
+          <span id="notebook-status" class="status-chip">Synced</span>
         </div>
+        <p class="field-note">Private notes stay local to this seat unless you explicitly share them in table talk.</p>
         <textarea id="notebook-text" rows="12" placeholder="Track deductions here."></textarea>
+        <button id="save-notebook" type="button">Save Notebook</button>
       </div>
     </section>
     <section class="panel action-panel">
       <div class="panel-head">
         <h2>Actions</h2>
+        <span id="action-status" class="status-chip">Loading</span>
       </div>
-      <div id="action-controls"></div>
+      <p id="turn-guidance" class="guidance">Reading current turn state...</p>
+      <div id="action-controls" class="action-controls"></div>
       <div class="chat-box">
-        <label for="chat-input">Table Talk</label>
+        <label for="chat-input">Public Table Talk</label>
+        <p class="field-note">Speak only in public-game terms here. Hidden card ownership never belongs in table chat.</p>
         <textarea id="chat-input" rows="3" placeholder="Public round-table discussion"></textarea>
         <button id="send-chat" type="button">Send Chat</button>
       </div>
     </section>
     <section class="panel seat-panel">
       <div class="panel-head">
-        <h2>Seats</h2>
+        <h2>Round Table</h2>
       </div>
-      <ul id="seat-list" class="seat-list"></ul>
+      <div id="seat-list" class="seat-list"></div>
     </section>
     <section class="panel event-panel">
       <div class="panel-head">
-        <h2>Event Log</h2>
+        <h2>Table Record</h2>
+        <span id="public-count" class="status-chip">0</span>
       </div>
-      <ul id="event-log" class="event-log"></ul>
+      <ul id="public-event-log" class="event-log public-log"></ul>
     </section>
   </div>
 </section>

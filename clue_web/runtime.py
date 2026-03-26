@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import UTC, datetime
 import secrets
 from typing import Any
@@ -18,8 +19,11 @@ from clue_core.types import SeatConfig
 from clue_storage import ClueRepository
 
 
+DEFAULT_GAME_SEED = 17
+
+
 def _timestamp_slug() -> str:
-    return datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    return datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
 
 
 class GameService:
@@ -30,15 +34,13 @@ class GameService:
 
     def create_game(self, payload: dict[str, Any]) -> dict[str, Any]:
         title = str(payload.get("title", "")).strip() or "Clue Table"
-        requested_seats = payload.get("seats") or []
-        seat_configs = [
-            SeatConfig.from_dict(item)
-            for item in requested_seats
-        ]
-        if not seat_configs:
+        requested_seats = list(payload.get("seats") or [])
+        if requested_seats:
+            seat_configs = self._seat_configs_from_payload(requested_seats)
+        else:
             seat_configs = self._default_seats()
         game_id = f"clue_{_timestamp_slug()}"
-        seed = int(payload.get("seed", 0) or int(datetime.now(UTC).timestamp()))
+        seed = DEFAULT_GAME_SEED
         hidden_setup = build_hidden_setup(seat_configs, seed=seed)
         state = build_initial_state(game_id, title, seat_configs, hidden_setup)
         tokens = []
@@ -89,7 +91,7 @@ class GameService:
 
     def join_by_token(self, token: str) -> dict[str, Any]:
         seat = self.resolve_token(token)
-        self._repository.mark_seat_seen(seat["seat_id"])
+        self._repository.mark_seat_seen(seat["game_id"], seat["seat_id"])
         return seat
 
     def resolve_token(self, token: str) -> dict[str, Any]:
@@ -131,8 +133,20 @@ class GameService:
 
     def update_notebook(self, token: str, notebook: dict[str, Any]) -> dict[str, Any]:
         seat = self.resolve_token(token)
-        self._repository.update_notebook(seat["seat_id"], notebook)
+        self._repository.update_notebook(seat["game_id"], seat["seat_id"], notebook)
         return self.snapshot_for_token(token)
+
+    @staticmethod
+    def _seat_configs_from_payload(requested_seats: list[dict[str, Any]]) -> list[SeatConfig]:
+        seat_payloads = []
+        for item in requested_seats:
+            seat_kind = str(item.get("seat_kind", "human")).strip().lower()
+            if seat_kind == "np":
+                continue
+            seat_payloads.append(item | {"seat_kind": seat_kind or "human"})
+        if len(seat_payloads) < 3 or len(seat_payloads) > 6:
+            raise ValueError("Clue requires between 3 and 6 active seats.")
+        return [SeatConfig.from_dict(item) for item in seat_payloads]
 
     def maybe_run_agents(self, game_id: str, *, max_cycles: int = 32) -> None:
         cycles = 0
@@ -146,7 +160,7 @@ class GameService:
             seat = next(item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id)
             snapshot = self._build_internal_snapshot(game_id, seat_id)
             tool_snapshot = self._tool_snapshot_for(state, seat_id, snapshot["events"])
-            decision = self._agents.decide(seat=seat, snapshot=snapshot, tool_snapshot=tool_snapshot.__dict__)
+            decision = self._agents.decide(seat=seat, snapshot=snapshot, tool_snapshot=asdict(tool_snapshot))
             game = GameMaster(state)
             new_state, events = game.apply_action(seat_id, decision.to_action_payload())
             if decision.text:

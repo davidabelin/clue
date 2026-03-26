@@ -66,6 +66,7 @@ class ClueRepository:
             CREATE TABLE IF NOT EXISTS seats (
                 id TEXT PRIMARY KEY,
                 game_id TEXT NOT NULL,
+                seat_key TEXT,
                 display_name TEXT NOT NULL,
                 character_name TEXT NOT NULL,
                 seat_kind TEXT NOT NULL,
@@ -119,6 +120,7 @@ class ClueRepository:
             CREATE TABLE IF NOT EXISTS seats (
                 id TEXT PRIMARY KEY,
                 game_id TEXT NOT NULL REFERENCES games(id),
+                seat_key TEXT,
                 display_name TEXT NOT NULL,
                 character_name TEXT NOT NULL,
                 seat_kind TEXT NOT NULL,
@@ -153,6 +155,27 @@ class ClueRepository:
             CREATE INDEX IF NOT EXISTS idx_tokens_game ON seat_tokens(game_id);
         """
         self._run_script(sqlite_schema if self._dialect == "sqlite" else postgres_schema)
+        self._ensure_seat_key_column()
+
+    def _ensure_seat_key_column(self) -> None:
+        if self._dialect == "sqlite":
+            query = text("PRAGMA table_info(seats)")
+            key_name = "name"
+        else:
+            query = text(
+                """
+                SELECT column_name AS name
+                FROM information_schema.columns
+                WHERE table_name = 'seats'
+                """
+            )
+            key_name = "name"
+        with self.engine.begin() as conn:
+            columns = {str(row[key_name]) for row in conn.execute(query).mappings()}
+            if "seat_key" not in columns:
+                conn.execute(text("ALTER TABLE seats ADD COLUMN seat_key TEXT"))
+            conn.execute(text("UPDATE seats SET seat_key = COALESCE(NULLIF(seat_key, ''), id) WHERE seat_key IS NULL OR seat_key = ''"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_seats_game_key ON seats(game_id, seat_key)"))
 
     def create_game(
         self,
@@ -186,23 +209,27 @@ class ClueRepository:
                     "updated_at": created_at,
                 },
             )
+            seat_row_ids: dict[str, str] = {}
             for seat in seats:
+                seat_row_id = f"{game_id}:{seat['seat_id']}"
+                seat_row_ids[seat["seat_id"]] = seat_row_id
                 conn.execute(
                     text(
                         """
                         INSERT INTO seats (
-                            id, game_id, display_name, character_name, seat_kind, agent_model,
+                            id, game_id, seat_key, display_name, character_name, seat_kind, agent_model,
                             notebook_json, first_seen_at, created_at, updated_at
                         )
                         VALUES (
-                            :id, :game_id, :display_name, :character_name, :seat_kind, :agent_model,
+                            :id, :game_id, :seat_key, :display_name, :character_name, :seat_kind, :agent_model,
                             :notebook_json, NULL, :created_at, :updated_at
                         )
                         """
                     ),
                     {
-                        "id": seat["seat_id"],
+                        "id": seat_row_id,
                         "game_id": game_id,
+                        "seat_key": seat["seat_id"],
                         "display_name": seat["display_name"],
                         "character_name": seat["character"],
                         "seat_kind": seat["seat_kind"],
@@ -223,7 +250,7 @@ class ClueRepository:
                     {
                         "token": token_row["token"],
                         "game_id": game_id,
-                        "seat_id": token_row["seat_id"],
+                        "seat_id": seat_row_ids[token_row["seat_id"]],
                         "issued_at": created_at,
                     },
                 )
@@ -310,7 +337,7 @@ class ClueRepository:
             ).mappings()
             return [
                 {
-                    "seat_id": row["id"],
+                    "seat_id": row["seat_key"] or row["id"],
                     "game_id": row["game_id"],
                     "display_name": row["display_name"],
                     "character": row["character_name"],
@@ -328,7 +355,7 @@ class ClueRepository:
                 conn.execute(
                     text(
                         """
-                        SELECT t.token, t.game_id, t.seat_id, s.display_name, s.character_name, s.seat_kind,
+                        SELECT t.token, t.game_id, t.seat_id AS seat_row_id, s.seat_key, s.display_name, s.character_name, s.seat_kind,
                                s.agent_model, s.notebook_json, s.first_seen_at
                         FROM seat_tokens AS t
                         JOIN seats AS s ON s.id = t.seat_id
@@ -343,7 +370,7 @@ class ClueRepository:
         return {
             "token": row["token"],
             "game_id": row["game_id"],
-            "seat_id": row["seat_id"],
+            "seat_id": row["seat_key"] or row["seat_row_id"],
             "display_name": row["display_name"],
             "character": row["character_name"],
             "seat_kind": row["seat_kind"],
@@ -352,7 +379,7 @@ class ClueRepository:
             "first_seen_at": row["first_seen_at"],
         }
 
-    def mark_seat_seen(self, seat_id: str) -> None:
+    def mark_seat_seen(self, game_id: str, seat_id: str) -> None:
         with self._lock, self.engine.begin() as conn:
             now = utcnow_iso()
             conn.execute(
@@ -360,17 +387,24 @@ class ClueRepository:
                     """
                     UPDATE seats
                     SET first_seen_at = COALESCE(first_seen_at, :now), updated_at = :now
-                    WHERE id = :seat_id
+                    WHERE game_id = :game_id AND seat_key = :seat_id
                     """
                 ),
-                {"seat_id": seat_id, "now": now},
+                {"game_id": game_id, "seat_id": seat_id, "now": now},
             )
 
-    def update_notebook(self, seat_id: str, notebook: dict[str, Any]) -> None:
+    def update_notebook(self, game_id: str, seat_id: str, notebook: dict[str, Any]) -> None:
         with self._lock, self.engine.begin() as conn:
             conn.execute(
-                text("UPDATE seats SET notebook_json = :notebook_json, updated_at = :updated_at WHERE id = :seat_id"),
+                text(
+                    """
+                    UPDATE seats
+                    SET notebook_json = :notebook_json, updated_at = :updated_at
+                    WHERE game_id = :game_id AND seat_key = :seat_id
+                    """
+                ),
                 {
+                    "game_id": game_id,
                     "seat_id": seat_id,
                     "notebook_json": json.dumps(notebook),
                     "updated_at": utcnow_iso(),

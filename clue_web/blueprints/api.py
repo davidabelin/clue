@@ -14,10 +14,17 @@ def _token_from_request() -> str:
     return str(request.args.get("token", "")).strip()
 
 
+def _error(message: str, status_code: int):
+    return jsonify({"error": message}), status_code
+
+
 @api_bp.post("/games")
 def create_game():
     payload = request.get_json(silent=True) or {}
-    result = current_app.extensions["game_service"].create_game(payload)
+    try:
+        result = current_app.extensions["game_service"].create_game(payload)
+    except ValueError as exc:
+        return _error(str(exc), 400)
     return jsonify(result), 201
 
 
@@ -25,7 +32,10 @@ def create_game():
 def current_snapshot():
     token = _token_from_request()
     since_event_index = int(request.args.get("since", "0") or 0)
-    snapshot = current_app.extensions["game_service"].snapshot_for_token(token, since_event_index=since_event_index)
+    try:
+        snapshot = current_app.extensions["game_service"].snapshot_for_token(token, since_event_index=since_event_index)
+    except KeyError as exc:
+        return _error(str(exc), 404)
     return jsonify(snapshot)
 
 
@@ -33,7 +43,12 @@ def current_snapshot():
 def submit_action():
     token = _token_from_request()
     payload = request.get_json(silent=True) or {}
-    snapshot = current_app.extensions["game_service"].submit_action(token, payload)
+    try:
+        snapshot = current_app.extensions["game_service"].submit_action(token, payload)
+    except KeyError as exc:
+        return _error(str(exc), 404)
+    except ValueError as exc:
+        return _error(str(exc), 400)
     return jsonify(snapshot)
 
 
@@ -42,7 +57,10 @@ def update_notebook():
     token = _token_from_request()
     payload = request.get_json(silent=True) or {}
     notebook = dict(payload.get("notebook") or {})
-    snapshot = current_app.extensions["game_service"].update_notebook(token, notebook)
+    try:
+        snapshot = current_app.extensions["game_service"].update_notebook(token, notebook)
+    except KeyError as exc:
+        return _error(str(exc), 404)
     return jsonify(snapshot)
 
 

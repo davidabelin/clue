@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 
-from clue_core.engine import GameMaster
+from clue_core.engine import GameMaster, build_filtered_snapshot
 from clue_core.setup import build_hidden_setup, build_initial_state
 from clue_core.types import SeatConfig
 
@@ -25,6 +25,24 @@ def test_setup_deals_full_deck_without_duplicates():
     assert len(all_visible) == 18
     assert len(all_cards) == 21
     assert hidden_setup["case_file"]["room"] not in all_visible
+
+
+def test_setup_accepts_three_to_six_seats():
+    characters = [
+        "Miss Scarlet",
+        "Colonel Mustard",
+        "Mrs. White",
+        "Mr. Green",
+        "Mrs. Peacock",
+        "Professor Plum",
+    ]
+    for count in range(3, 7):
+        seats = [
+            SeatConfig(seat_id=f"seat_{index}", display_name=character, character=character, seat_kind="human")
+            for index, character in enumerate(characters[:count])
+        ]
+        hidden_setup = build_hidden_setup(seats, seed=17)
+        assert sum(len(hand) for hand in hidden_setup["hands"].values()) == 18
 
 
 def test_refutation_creates_public_and_private_events():
@@ -72,3 +90,47 @@ def test_wrong_accusation_eliminates_but_keeps_game_running():
     assert new_state["seats"]["seat_scarlet"]["can_win"] is False
     assert new_state["status"] == "active"
     assert new_state["active_seat_id"] != "seat_scarlet"
+
+
+def test_suggestion_moves_named_suspect_into_room():
+    seats = _seats()
+    hidden_setup = build_hidden_setup(seats, seed=5)
+    state = build_initial_state("game_test", "Table", seats, hidden_setup)
+    state["seats"]["seat_scarlet"]["position"] = "study"
+    state["seats"]["seat_mustard"]["position"] = "hall_1"
+    new_state, events = GameMaster(state).apply_action(
+        "seat_scarlet",
+        {"action": "suggest", "suspect": "Colonel Mustard", "weapon": "Knife"},
+    )
+    assert new_state["seats"]["seat_mustard"]["position"] == "study"
+    assert any(event["event_type"] == "suspect_moved" for event in events)
+
+
+def test_private_card_event_is_visible_only_to_suggester():
+    seats = _seats()
+    hidden_setup = {
+        "seed": 1,
+        "case_file": {"suspect": "Professor Plum", "weapon": "Rope", "room": "Kitchen"},
+        "hands": {
+            "seat_scarlet": ["Miss Scarlet", "Candlestick", "Study", "Hall", "Lounge", "Library"],
+            "seat_mustard": ["Colonel Mustard", "Knife", "Billiard Room", "Dining Room", "Ballroom", "Mrs. White"],
+            "seat_peacock": ["Mrs. Peacock", "Mr. Green", "Lead Pipe", "Revolver", "Wrench", "Conservatory"],
+        },
+    }
+    state = build_initial_state("game_test", "Table", seats, hidden_setup)
+    state["seats"]["seat_scarlet"]["position"] = "study"
+
+    state_after_suggest, _ = GameMaster(state).apply_action(
+        "seat_scarlet",
+        {"action": "suggest", "suspect": "Colonel Mustard", "weapon": "Knife"},
+    )
+    state_after_refute, events = GameMaster(state_after_suggest).apply_action(
+        "seat_mustard",
+        {"action": "show_refute_card", "card": "Colonel Mustard"},
+    )
+
+    scarlet_snapshot = build_filtered_snapshot(state_after_refute, seat_id="seat_scarlet", visible_events=events, notebook={})
+    peacock_snapshot = build_filtered_snapshot(state_after_refute, seat_id="seat_peacock", visible_events=[events[0]], notebook={})
+
+    assert any(event["event_type"] == "private_card_shown" for event in scarlet_snapshot["events"])
+    assert not any(event["event_type"] == "private_card_shown" for event in peacock_snapshot["events"])

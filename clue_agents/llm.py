@@ -26,6 +26,7 @@ class LLMSeatAgent(SeatAgent):
         if OpenAI is None or not self._api_key:
             return self._fallback.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
         legal = snapshot["legal_actions"]
+        fallback = self._fallback.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
         prompt = [
             {
                 "role": "system",
@@ -77,9 +78,28 @@ class LLMSeatAgent(SeatAgent):
             raw = json.loads(str(getattr(response, "output_text", "") or "{}"))
             decision = TurnDecision.from_dict(raw)
             if not decision.action:
-                return self._fallback.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
+                return fallback
+            if not self._decision_is_legal(decision, legal):
+                return fallback
             if decision.text:
                 decision.text = sanitize_public_chat(decision.text)
             return decision
         except Exception:
-            return self._fallback.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
+            return fallback
+
+    @staticmethod
+    def _decision_is_legal(decision: TurnDecision, legal: dict[str, Any]) -> bool:
+        available = set(legal.get("available") or [])
+        if decision.action not in available:
+            return False
+        if decision.action == "move":
+            move_targets = {str(item.get("node_id")) for item in legal.get("move_targets") or []}
+            return bool(decision.target_node) and str(decision.target_node) in move_targets
+        if decision.action == "show_refute_card":
+            refute_cards = {str(card) for card in legal.get("refute_cards") or []}
+            return bool(decision.card) and str(decision.card) in refute_cards
+        if decision.action == "suggest":
+            return bool(decision.suspect and decision.weapon)
+        if decision.action == "accuse":
+            return bool(decision.suspect and decision.weapon and decision.room)
+        return True
