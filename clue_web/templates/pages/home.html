@@ -73,7 +73,7 @@
         seat_kind: seatKind,
       });
     });
-    const response = await fetch("/api/v1/games", {
+    const response = await fetch("api/v1/games", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

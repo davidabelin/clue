@@ -60,7 +60,7 @@ class GameService:
                     "display_name": seat.display_name,
                     "character": seat.character,
                     "seat_kind": seat.seat_kind,
-                    "url": f"/join/{token}",
+                    "url": f"join/{token}",
                 }
             )
         initial_events = [

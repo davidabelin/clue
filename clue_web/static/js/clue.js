@@ -420,7 +420,7 @@ if (app) {
     button.addEventListener("click", async () => {
       try {
         const payload = payloadBuilder();
-        const snapshot = await request("/api/v1/games/current/actions", {
+        const snapshot = await request("api/v1/games/current/actions", {
           method: "POST",
           body: JSON.stringify(payload),
         });
@@ -501,7 +501,7 @@ if (app) {
     }
     refreshing = true;
     try {
-      const snapshot = await request("/api/v1/games/current");
+      const snapshot = await request("api/v1/games/current");
       renderSummary(snapshot);
     } catch (error) {
       showError(error.message);
@@ -513,7 +513,7 @@ if (app) {
 
   saveNotebook.addEventListener("click", async () => {
     try {
-      const snapshot = await request("/api/v1/games/current/notebook", {
+      const snapshot = await request("api/v1/games/current/notebook", {
         method: "POST",
         body: JSON.stringify({ notebook: { text: notebookText.value } }),
       });
@@ -533,7 +533,7 @@ if (app) {
       return;
     }
     try {
-      const snapshot = await request("/api/v1/games/current/actions", {
+      const snapshot = await request("api/v1/games/current/actions", {
         method: "POST",
         body: JSON.stringify({ action: "send_chat", text }),
       });

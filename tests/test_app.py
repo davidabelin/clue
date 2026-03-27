@@ -4,6 +4,10 @@ from clue_agents.heuristic import HeuristicSeatAgent
 from clue_core.deduction import ToolSnapshot
 
 
+def _token_from_join_url(url: str) -> str:
+    return str(url).split("join/", 1)[1]
+
+
 def test_home_page_renders(client):
     response = client.get("/")
     assert response.status_code == 200
@@ -13,6 +17,8 @@ def test_home_page_renders(client):
     assert "Professor Plum" in html
     assert "Set unused seats to NP." in html
     assert "Seed" not in html
+    assert 'fetch("api/v1/games"' in html
+    assert 'fetch("/api/v1/games"' not in html
 
 
 def test_create_game_and_snapshot_flow(client):
@@ -31,8 +37,9 @@ def test_create_game_and_snapshot_flow(client):
     payload = response.get_json()
     assert payload["game_id"].startswith("clue_")
     assert len(payload["seat_links"]) == 3
+    assert payload["seat_links"][0]["url"].startswith("join/")
 
-    token = payload["seat_links"][0]["url"].split("/join/", 1)[1]
+    token = _token_from_join_url(payload["seat_links"][0]["url"])
     snapshot_response = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token})
     assert snapshot_response.status_code == 200
     snapshot = snapshot_response.get_json()
@@ -44,7 +51,7 @@ def test_create_game_and_snapshot_flow(client):
 
 def test_notebook_update_persists_per_seat(client):
     response = client.post("/api/v1/games", json={})
-    token = response.get_json()["seat_links"][0]["url"].split("/join/", 1)[1]
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
     notebook_response = client.post(
         "/api/v1/games/current/notebook",
         headers={"X-Clue-Seat-Token": token},
@@ -57,7 +64,7 @@ def test_notebook_update_persists_per_seat(client):
 
 def test_game_page_renders_private_and_public_table_sections(client):
     response = client.post("/api/v1/games", json={})
-    token = response.get_json()["seat_links"][0]["url"].split("/join/", 1)[1]
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
     page = client.get(f"/game?token={token}")
     assert page.status_code == 200
     html = page.get_data(as_text=True)
@@ -162,7 +169,7 @@ def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypa
     )
     assert response.status_code == 201
     payload = response.get_json()
-    token = payload["seat_links"][0]["url"].split("/join/", 1)[1]
+    token = _token_from_join_url(payload["seat_links"][0]["url"])
 
     snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
     assert snapshot["status"] == "complete"
