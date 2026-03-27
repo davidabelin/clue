@@ -12,6 +12,28 @@ from clue_storage import ClueRepository
 from clue_web.runtime import GameService
 
 
+def _read_secret_version(secret_version_name: str) -> str:
+    from google.cloud import secretmanager
+
+    client = secretmanager.SecretManagerServiceClient()
+    response = client.access_secret_version(request={"name": secret_version_name})
+    return response.payload.data.decode("utf-8")
+
+
+def _resolve_secret_into_config(app: Flask, *, target_key: str, source_key: str) -> None:
+    if str(app.config.get(target_key, "")).strip():
+        return
+    secret_version_name = str(app.config.get(source_key, "")).strip()
+    if not secret_version_name:
+        return
+    try:
+        app.config[target_key] = _read_secret_version(secret_version_name)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed loading {target_key} from Secret Manager secret version '{secret_version_name}': {exc}"
+        ) from exc
+
+
 def _normalize_base_url(value: str) -> str:
     raw = str(value or "").strip()
     return raw or "/"
@@ -31,6 +53,7 @@ def create_app(config: dict | None = None) -> Flask:
     app.config.from_mapping(
         SECRET_KEY=os.getenv("CLUE_SECRET_KEY", "clue-dev-secret-key"),
         DATABASE_URL=os.getenv("CLUE_DATABASE_URL", ""),
+        DATABASE_URL_SECRET=os.getenv("CLUE_DATABASE_URL_SECRET", ""),
         DB_PATH=os.getenv("CLUE_DB_PATH", str(data_dir / "clue.db")),
         AIX_HUB_URL=os.getenv("AIX_HUB_URL", "/"),
         INTERNAL_WORKER_TOKEN=os.getenv("CLUE_INTERNAL_WORKER_TOKEN", ""),
@@ -39,6 +62,7 @@ def create_app(config: dict | None = None) -> Flask:
     if config:
         app.config.update(config)
 
+    _resolve_secret_into_config(app, target_key="DATABASE_URL", source_key="DATABASE_URL_SECRET")
     db_target = app.config["DATABASE_URL"] or app.config["DB_PATH"]
     repository = ClueRepository(db_target)
     repository.init_schema()

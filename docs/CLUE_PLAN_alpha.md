@@ -5,7 +5,7 @@
 - The first playable target includes full classic Clue rules, a dynamic browser UI, and mixed human/LLM seats from the start.
 - Core architecture is deterministic: a code-owned Game Master, an append-only event log with visibility scopes (`public`, `seat:<id>`), filtered seat snapshots, and LLM seats that can talk but cannot own rules or state.
 - Initial live UX uses structured turn APIs plus short-interval polling for board/chat/event updates; SSE, voice, and richer realtime transport are later phases.
-- As of 2026-03-26, the alpha foundation is playable locally, mounted in AIX, and production-ready for Secret Manager-backed LLM credentials; remaining open work is tracked in `docs\clue_to_do.md`.
+- As of 2026-03-26, the alpha foundation is playable locally, mounted in AIX, and production-ready for Secret Manager-backed LLM credentials plus a shared Cloud SQL backend; remaining open work is tracked in `docs\clue_to_do.md`.
 
 ## Key Interfaces / Types
 - Core domain types: `GameConfig`, `SeatConfig`, `Card`, `BoardNode`, `TurnState`, `PublicGameEvent`, `PrivateSeatEvent`, `ActionRequest`, `ActionResult`, `SeatSnapshot`.

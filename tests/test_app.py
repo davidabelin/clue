@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_core.deduction import ToolSnapshot
+from clue_web import create_app
 
 
 def _token_from_join_url(url: str) -> str:
@@ -174,3 +177,19 @@ def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypa
     snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
     assert snapshot["status"] == "complete"
     assert snapshot["winner_seat_id"] == "seat_scarlet"
+
+
+def test_create_app_loads_database_url_from_secret(monkeypatch, tmp_path: Path):
+    def _fake_read_secret(version_name: str) -> str:
+        assert version_name == "projects/p/secrets/clue-db-url/versions/latest"
+        return f"sqlite+pysqlite:///{(tmp_path / 'secret.db').as_posix()}"
+
+    monkeypatch.setattr("clue_web._read_secret_version", _fake_read_secret)
+    app = create_app(
+        {
+            "TESTING": True,
+            "DATABASE_URL": "",
+            "DATABASE_URL_SECRET": "projects/p/secrets/clue-db-url/versions/latest",
+        }
+    )
+    assert str(app.config["DATABASE_URL"]).startswith("sqlite+pysqlite:///")

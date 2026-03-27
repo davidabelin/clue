@@ -16,8 +16,10 @@
 - [x] Mixed-seat mocked completion test coverage, plus a local real-model smoke game completed on 2026-03-26.
 - [x] AIX `/clue` integration and standalone deployment files.
 - [x] Production Secret Manager wiring for `OPENAI_API_KEY`.
+- [x] Production Cloud SQL wiring on `aix-sql` with `clue-database-url` in Secret Manager, so deployed Clue no longer depends on per-instance `/tmp` SQLite.
 
 ## Active Engineering Backlog
+- [] Re-test deployed Clue with the new shared Cloud SQL backend and then decide whether the temporary single-instance App Engine cap can be removed safely.
 - [] Add browser/API end-to-end coverage for a full human-only four-seat game, including dice rolls, movement, room entry, suggestion, refute, accusation, and reconnect.
 - [] Add a reconnect and multi-browser regression test that proves separate seat tokens always restore the correct private view after refresh or tab reopen.
 - [] Add structured logs and traces around Game Master actions, seat-agent decisions, tool snapshot generation, guardrail blocks, and worker execution.
@@ -47,9 +49,9 @@
    - [X] creates new game
    - [X] four-seat mixed human/heuristic/LLM (not to completion)
   - clue-dot-aix-labs.uw.r.appspot.com/clue/ 
-   - [no] creates new game
+   - [X] creates new game
   - aix-labs.uw.r.appspot.com/clue/
-   - [no] creates new game
+   - [X] creates new game
 
 ### Private State And Sync
 - [X] Open at least three seat links in separate browser profiles or incognito windows so seat tokens remain isolated.
@@ -86,6 +88,6 @@
     - [] should be latest-first (ie. most recent at top)
   - [] Updates are still constantly over-riding human choices for Move and Accuse drop-downs, resetting to first option in list every ~500ms
 - online at aix-labs\clue and clue-aix-labs\clue
-  - [] Create a game
-  - [] (continue checklist online...)
-
+  - [x] Create a game (3, 4 players)
+  - [] UI choices remain stable (now reverting every ~500ms, making further gameplay impossible)
+  - [] (continue checklist online when gameplay possible...)

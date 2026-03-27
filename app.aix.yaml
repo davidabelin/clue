@@ -2,10 +2,17 @@ runtime: python314
 service: clue
 entrypoint: gunicorn --worker-tmp-dir /tmp -b :$PORT run:app
 
+beta_settings:
+  cloud_sql_instances: aix-labs:us-west1:aix-sql
+
+automatic_scaling:
+  max_instances: 1
+
 env_variables:
   APP_BASE_PATH: /clue
   AIX_HUB_URL: https://aix-labs.uw.r.appspot.com/
   CLUE_DATABASE_URL: ""
+  CLUE_DATABASE_URL_SECRET: projects/aix-labs/secrets/clue-database-url/versions/latest
   CLUE_DB_PATH: /tmp/clue.db
   CLUE_SECRET_KEY: ""
   CLUE_INTERNAL_WORKER_TOKEN: ""
