@@ -84,10 +84,12 @@
 ### Miscellaneous Fixes and Improvements
 - Local run
   - the Table Record panel:
-    - [] needs a scrollbar
-    - [] should be latest-first (ie. most recent at top)
-  - [] Updates are still constantly over-riding human choices for Move and Accuse drop-downs, resetting to first option in list every ~500ms
+    - [x] needs a scrollbar
+    - [x] should be latest-first (ie. most recent at top)
+  - [x] Action dropdown draft-state fix deployed so polling no longer resets Move / Suggest / Accuse / Refute selections to the first option.
+  - [] Re-verify locally that action choices now remain stable across polling after a full page reload.
 - online at aix-labs\clue and clue-aix-labs\clue
   - [x] Create a game (3, 4 players)
-  - [] UI choices remain stable (now reverting every ~500ms, making further gameplay impossible)
+  - [x] Poll-safe dropdown fix deployed to the live Clue service on 2026-03-26.
+  - [] Re-verify online that UI choices now remain stable after a hard refresh / fresh private window.
   - [] (continue checklist online when gameplay possible...)

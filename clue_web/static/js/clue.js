@@ -36,6 +36,7 @@ if (app) {
   let chatDirty = false;
   let refreshTimer = null;
   let refreshing = false;
+  const actionDrafts = new Map();
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -288,7 +289,8 @@ if (app) {
       container.innerHTML = `<li class="empty-state">${escapeHtml(emptyMessage)}</li>`;
       return;
     }
-    container.innerHTML = events.map((event) => `
+    const orderedEvents = [...events].reverse();
+    container.innerHTML = orderedEvents.map((event) => `
       <li class="log-item ${event.visibility === "public" ? "is-public" : "is-private"}">
         <div class="log-meta">
           <span class="log-badge">${escapeHtml(event.visibility === "public" ? "Public" : "Private")}</span>
@@ -390,8 +392,7 @@ if (app) {
   }
 
   function buildSelect(id, options, labelText, valueField = "value", textField = "label") {
-    const previous = document.getElementById(id);
-    const previousValue = previous ? previous.value : "";
+    const previousValue = actionDrafts.get(id) || "";
     const wrapper = document.createElement("label");
     wrapper.className = "action-row";
     wrapper.innerHTML = `<span>${escapeHtml(labelText)}</span>`;
@@ -406,6 +407,10 @@ if (app) {
     if (previousValue && options.some((option) => option[valueField] === previousValue)) {
       select.value = previousValue;
     }
+    actionDrafts.set(id, select.value);
+    select.addEventListener("change", () => {
+      actionDrafts.set(id, select.value);
+    });
     wrapper.appendChild(select);
     return wrapper;
   }
