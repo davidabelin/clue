@@ -87,9 +87,11 @@ def test_game_page_renders_private_and_public_table_sections(client):
     assert "Marker Grid" in html
     assert "Table Record" in html
     assert "Public Table Talk" in html
+    assert "Seat Intelligence" in html
     assert "Seat Debug" in html
     assert "How LLM Seats Work" in html
     assert "Round Table" not in html
+    assert "Table Seats" not in html
 
 
 def test_create_game_supports_np_seats_and_all_six_characters(client):

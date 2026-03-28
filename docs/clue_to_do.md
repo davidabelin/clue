@@ -76,7 +76,7 @@
 - [] Roll and verify only legal move destinations are highlighted.
 - [] Move through hallway nodes, enter a room, and verify position updates across all open seats.
 - [] Use a secret passage where available and verify the destination room updates correctly.
-- [] Make a suggestion and verify the named suspect token is moved into the room.
+- [x] Make a suggestion and verify the named suspect token is moved into the room.
 - [] Test a suggestion with a refuter and verify only the suggesting seat sees the shown card in `Private Intel`.
 - [] Test a suggestion with no refuter and verify the public log shows the unanswered suggestion with no private card exposure.
 - [x] Make a wrong accusation and verify that seat cannot win, gameplay continues, and the table state stays consistent.
@@ -110,13 +110,18 @@
 
 - [] Implement recommended (docs\ClueDeepDive.md) use of OpenAI SDK for LLM integration with gameplay tools
 
-- 'Active Seat' display/page: 
+- 'Active Seat' display/page panels:
+  - [x] Marker Grid: make player summaries to three lines (down fom six) by moving bottom three lines to the right of the upper three
+  - [x] reposition "Actions" beneath "Private Seat" where "Table Record" is now
+  - [x] reposition "Table Record" beneath "Board Panel" where "Actions" is now
+  - [x] remove "Table Seats" (unnecessary with "Marker Grid")
+  - [x] put "Seat Debug" and "How Seats Work" together in same panel beneath "Table Record"
   - [x] reposition the Table Record panel to where the Round Table panel is located, and remove Round Table panel.
   - [] Board panel:
-    - [x] Resize it to fit well within the boundary of the panel; make the contents about 75% the size they are now
-    - [x] Draw map-like "navigation lines" wherever there is a one-move connection, so including secret passages
-    - [x] Color the rooms individually in pale shades vaguely suggestive of their names
+    - [] Resize it again, or make re-sizeable, to fit just within the boundary of the panel
+    - [] Improve and make more map-like the "navigation lines" wherever there is a one-move connection, so including secret passages, and starting points, without awkward crossings beneath rooms, but more like very lightly stroked "navigation roses" with connecting lines thicker and color-coded for connecting points
       - [] passageway colors fade from one to the other connecting room-colors
+    - [x] Color the rooms individually in pale shades vaguely suggestive of their names
     - [x] Color player markers suggestive of their names
     - [x] Color the starting points with pale shades of the players' colors
     - [x] Remove the Move Grid subpanel
@@ -127,5 +132,7 @@
 
 - Gameplay
   - [] fix LLMs and Heuristics both getting stuck suggesting same 3 answers over and over
+  - [x] remove "trace turn metric" notifications from private intel list
 
-- aix-labs.uw.r.appspot.com/clue page: change text color, can't read "Create a game, open seat links in separate browser tabs, and ..."
+- Cosmetic
+  - aix-labs.uw.r.appspot.com/clue page: change text color, can't read "Create a game, open seat links in separate browser tabs, and ..."

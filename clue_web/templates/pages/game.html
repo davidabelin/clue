@@ -56,27 +56,6 @@
         <textarea id="notebook-text" rows="12" placeholder="Track deductions here."></textarea>
         <button id="save-notebook" type="button">Save Notebook</button>
       </div>
-      <div class="seat-debug-panel">
-        <div class="panel-head compact">
-          <h3>Seat Debug</h3>
-          <span id="debug-status" class="status-chip">Idle</span>
-        </div>
-        <div id="seat-debug"></div>
-      </div>
-    </section>
-    <section class="panel action-panel">
-      <div class="panel-head">
-        <h2>Actions</h2>
-        <span id="action-status" class="status-chip">Loading</span>
-      </div>
-      <p id="turn-guidance" class="guidance">Reading current turn state...</p>
-      <div id="action-controls" class="action-controls"></div>
-      <div class="ai-panel">
-        <div class="panel-head compact">
-          <h3>How LLM Seats Work</h3>
-        </div>
-        <div id="ai-explainer"></div>
-      </div>
     </section>
     <section class="panel event-panel">
       <div class="panel-head">
@@ -89,13 +68,35 @@
         <textarea id="chat-input" rows="3" placeholder="Public round-table discussion"></textarea>
         <button id="send-chat" type="button">Send Chat</button>
       </div>
-      <section class="table-seats-panel">
-        <div class="panel-head compact">
-          <h3>Table Seats</h3>
-        </div>
-        <div id="seat-list" class="seat-list"></div>
-      </section>
       <ul id="public-event-log" class="event-log public-log"></ul>
+    </section>
+    <section class="panel insight-panel">
+      <div class="panel-head">
+        <h2>Seat Intelligence</h2>
+        <span id="debug-status" class="status-chip">Idle</span>
+      </div>
+      <div class="intelligence-stack">
+        <section class="intelligence-card">
+          <div class="panel-head compact">
+            <h3>Seat Debug</h3>
+          </div>
+          <div id="seat-debug"></div>
+        </section>
+        <section class="intelligence-card">
+          <div class="panel-head compact">
+            <h3>How LLM Seats Work</h3>
+          </div>
+          <div id="ai-explainer"></div>
+        </section>
+      </div>
+    </section>
+    <section class="panel action-panel">
+      <div class="panel-head">
+        <h2>Actions</h2>
+        <span id="action-status" class="status-chip">Loading</span>
+      </div>
+      <p id="turn-guidance" class="guidance">Reading current turn state...</p>
+      <div id="action-controls" class="action-controls"></div>
     </section>
   </div>
 </section>

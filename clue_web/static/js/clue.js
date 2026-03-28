@@ -183,7 +183,7 @@ if (app) {
     const nodesById = boardNodeById(snapshot);
     const seatPositions = {};
     const surface = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    surface.setAttribute("transform", "translate(58 42) scale(0.78)");
+    surface.setAttribute("transform", "translate(76 46) scale(0.74)");
 
     snapshot.seats.forEach((seat) => {
       if (!seatPositions[seat.position]) {
@@ -285,11 +285,18 @@ if (app) {
       }
       return `
         <article class="${classes.join(" ")}">
-          <p class="card-kicker">${escapeHtml(seat.seat_kind)}</p>
-          <h4>${escapeHtml(seat.display_name)}</h4>
-          <p>${seat.display_name === seat.character ? "Character marker" : escapeHtml(seat.character)}</p>
-          <p class="position-node">${escapeHtml(labels.get(seat.position) || seat.position)}</p>
-          <p>${seat.can_win ? "Still in the case." : "Eliminated from winning."}</p>
+          <div class="position-grid-card">
+            <div class="position-main">
+              <p class="card-kicker">${escapeHtml(seat.seat_kind)}</p>
+              <h4>${escapeHtml(seat.display_name)}</h4>
+              <p>${seat.display_name === seat.character ? "Character marker" : escapeHtml(seat.character)}</p>
+            </div>
+            <div class="position-meta-stack">
+              <p class="position-node">${escapeHtml(labels.get(seat.position) || seat.position)}</p>
+              <p>${seat.can_win ? "Still in the case." : "Eliminated from winning."}</p>
+              <p>${escapeHtml(seat.hand_count)} cards</p>
+            </div>
+          </div>
           <span class="seat-swatch" style="--seat-color: ${escapeHtml(decorated.color)}"></span>
         </article>
       `;
@@ -321,6 +328,9 @@ if (app) {
   }
 
   function renderSeatCards(snapshot) {
+    if (!seatList) {
+      return;
+    }
     const labels = boardLabelById(snapshot);
     const seatsById = seatMap(snapshot);
     seatList.innerHTML = snapshot.seats.map((seat) => {
@@ -519,14 +529,13 @@ if (app) {
     }
 
     const publicEvents = snapshot.events.filter((event) => event.visibility === "public");
-    const privateEvents = snapshot.events.filter((event) => event.visibility !== "public");
+    const privateEvents = snapshot.events.filter((event) => event.visibility !== "public" && event.event_type !== "trace_turn_metric");
 
     publicCount.textContent = String(publicEvents.length);
     privateCount.textContent = String(privateEvents.length);
 
     renderEventList(publicEventLog, publicEvents, "The public table record will appear here.");
     renderEventList(privateLog, privateEvents, "No private reveals or seat-only prompts yet.");
-    renderSeatCards(snapshot);
     renderBoard(snapshot);
     renderPositionGrid(snapshot);
     renderActions(snapshot);
