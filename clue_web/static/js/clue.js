@@ -19,7 +19,6 @@ if (app) {
   const handList = document.getElementById("hand-list");
   const seatSummary = document.getElementById("seat-summary");
   const board = document.getElementById("board");
-  const moveGrid = document.getElementById("move-grid");
   const positionGrid = document.getElementById("position-grid");
   const actionControls = document.getElementById("action-controls");
   const turnBanner = document.getElementById("turn-banner");
@@ -36,8 +35,29 @@ if (app) {
   const notebookStatus = document.getElementById("notebook-status");
   const publicCount = document.getElementById("public-count");
   const privateCount = document.getElementById("private-count");
+  const seatDebug = document.getElementById("seat-debug");
+  const debugStatus = document.getElementById("debug-status");
+  const aiExplainer = document.getElementById("ai-explainer");
 
-  const COLORS = ["#d43d51", "#d6a548", "#f3e1bc", "#4da163", "#5693d1", "#8f6ac7"];
+  const CHARACTER_COLORS = {
+    "Miss Scarlet": "#c43c4d",
+    "Colonel Mustard": "#c8a63a",
+    "Mrs. White": "#ece5d6",
+    "Mr. Green": "#4f8e52",
+    "Mrs. Peacock": "#3f78b2",
+    "Professor Plum": "#7b5fa8",
+  };
+  const ROOM_COLORS = {
+    study: "#e0d6f2",
+    hall: "#efe1c5",
+    lounge: "#f3cfc2",
+    library: "#d6e6cf",
+    billiard: "#cfe1d7",
+    dining: "#f0dbc0",
+    conservatory: "#d7ecd7",
+    ballroom: "#e7d8ef",
+    kitchen: "#f5e0bd",
+  };
   const POLL_FAST_MS = 900;
   const POLL_NORMAL_MS = 2200;
   const POLL_IDLE_MS = 4200;
@@ -60,8 +80,11 @@ if (app) {
 
   function seatMap(snapshot) {
     const map = new Map();
-    snapshot.seats.forEach((seat, index) => {
-      map.set(seat.seat_id, { ...seat, color: COLORS[index % COLORS.length] });
+    snapshot.seats.forEach((seat) => {
+      map.set(seat.seat_id, {
+        ...seat,
+        color: CHARACTER_COLORS[seat.character] || "#8e2331",
+      });
     });
     return map;
   }
@@ -72,6 +95,23 @@ if (app) {
       map.set(node.id, node.label);
     });
     return map;
+  }
+
+  function boardNodeById(snapshot) {
+    const map = new Map();
+    snapshot.board_nodes.forEach((node) => {
+      map.set(node.id, node);
+    });
+    return map;
+  }
+
+  function setMoveDraft(nodeId) {
+    const select = document.getElementById("move-target");
+    if (!select) {
+      return;
+    }
+    select.value = nodeId;
+    actionDrafts.set("move-target", nodeId);
   }
 
   function currentSeatIsRefuting(snapshot) {
@@ -140,7 +180,10 @@ if (app) {
   function renderBoard(snapshot) {
     const highlights = new Set((snapshot.legal_actions.move_targets || []).map((item) => item.node_id));
     const seatsById = seatMap(snapshot);
+    const nodesById = boardNodeById(snapshot);
     const seatPositions = {};
+    const surface = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    surface.setAttribute("transform", "translate(58 42) scale(0.78)");
 
     snapshot.seats.forEach((seat) => {
       if (!seatPositions[seat.position]) {
@@ -150,6 +193,20 @@ if (app) {
     });
 
     board.innerHTML = "";
+    (snapshot.board_edges || []).forEach((edge) => {
+      const from = nodesById.get(edge.from);
+      const to = nodesById.get(edge.to);
+      if (!from || !to) {
+        return;
+      }
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", `board-edge board-edge-${edge.kind || "walk"}`);
+      line.setAttribute("x1", from.x);
+      line.setAttribute("y1", from.y);
+      line.setAttribute("x2", to.x);
+      line.setAttribute("y2", to.y);
+      surface.appendChild(line);
+    });
     snapshot.board_nodes.forEach((node) => {
       const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
       const nodeClasses = [`node`, node.kind];
@@ -167,12 +224,18 @@ if (app) {
         rect.setAttribute("width", 130);
         rect.setAttribute("height", 76);
         rect.setAttribute("rx", 14);
+        rect.setAttribute("fill", ROOM_COLORS[node.id] || "#f6edd9");
         g.appendChild(rect);
       } else {
         const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
         circle.setAttribute("cx", node.x);
         circle.setAttribute("cy", node.y);
         circle.setAttribute("r", node.kind === "hallway" ? 16 : 12);
+        if (node.kind === "start") {
+          const seatColor = CHARACTER_COLORS[Object.keys(CHARACTER_COLORS).find((name) => node.label.includes(name.split(" ").slice(-1)[0]))] || "#efe3c7";
+          circle.setAttribute("fill", seatColor);
+          circle.setAttribute("fill-opacity", "0.32");
+        }
         g.appendChild(circle);
       }
 
@@ -194,23 +257,15 @@ if (app) {
         token.setAttribute("fill", seat.color);
         g.appendChild(token);
       });
-      board.appendChild(g);
+      if (highlights.has(node.id)) {
+        g.classList.add("clickable-node");
+        g.addEventListener("click", () => {
+          setMoveDraft(node.id);
+        });
+      }
+      surface.appendChild(g);
     });
-  }
-
-  function renderMoveGrid(snapshot) {
-    const targets = snapshot.legal_actions.move_targets || [];
-    if (!targets.length) {
-      moveGrid.innerHTML = '<p class="empty-state">No movement options are open right now.</p>';
-      return;
-    }
-    moveGrid.innerHTML = targets.map((item) => `
-      <article class="move-card move-mode-${escapeHtml(item.mode || "walk")}">
-        <p class="card-kicker">${escapeHtml(item.mode === "passage" ? "Secret Passage" : "Movement")}</p>
-        <h4>${escapeHtml(item.label)}</h4>
-        <p>${item.mode === "passage" ? "Instant room transfer." : `Cost: ${escapeHtml(item.cost)}`}</p>
-      </article>
-    `).join("");
+    board.appendChild(surface);
   }
 
   function renderPositionGrid(snapshot) {
@@ -232,7 +287,7 @@ if (app) {
         <article class="${classes.join(" ")}">
           <p class="card-kicker">${escapeHtml(seat.seat_kind)}</p>
           <h4>${escapeHtml(seat.display_name)}</h4>
-          <p>${escapeHtml(seat.character)}</p>
+          <p>${seat.display_name === seat.character ? "Character marker" : escapeHtml(seat.character)}</p>
           <p class="position-node">${escapeHtml(labels.get(seat.position) || seat.position)}</p>
           <p>${seat.can_win ? "Still in the case." : "Eliminated from winning."}</p>
           <span class="seat-swatch" style="--seat-color: ${escapeHtml(decorated.color)}"></span>
@@ -286,7 +341,7 @@ if (app) {
             <span class="seat-swatch" style="--seat-color: ${escapeHtml(decorated.color)}"></span>
             <div>
               <h3>${escapeHtml(seat.display_name)}</h3>
-              <p>${escapeHtml(seat.character)}</p>
+              <p>${seat.display_name === seat.character ? escapeHtml(seat.seat_kind) : escapeHtml(seat.character)}</p>
             </div>
           </div>
           <p>${escapeHtml(labels.get(seat.position) || seat.position)}</p>
@@ -334,7 +389,7 @@ if (app) {
       if (available.has("roll")) {
         turnGuidance.textContent = "Open the turn with a roll, or use a secret passage if one is available.";
       } else if (available.has("move")) {
-        turnGuidance.textContent = "Choose a legal destination from the move grid or the action controls.";
+        turnGuidance.textContent = "Choose a legal destination from the board highlights or the action controls.";
       } else if (available.has("suggest")) {
         turnGuidance.textContent = "You can suggest from your current room. Refutations will stay private when required.";
       } else if (available.has("accuse")) {
@@ -353,6 +408,79 @@ if (app) {
     turnGuidance.textContent = activeSeat
       ? `Waiting on ${activeSeat.display_name} to act.`
       : "Waiting on the next seat.";
+  }
+
+  function renderSeatDebug(snapshot) {
+    const debug = snapshot.analysis?.seat_debug || {};
+    const metric = debug.metric || null;
+    const toolSnapshot = debug.tool_snapshot || {};
+    const topHypotheses = toolSnapshot.top_hypotheses || [];
+    const topSuggestions = toolSnapshot.suggestion_ranking || [];
+    const accusation = toolSnapshot.accusation || {};
+
+    if (!metric && !topHypotheses.length && !topSuggestions.length) {
+      debugStatus.textContent = "Idle";
+      seatDebug.innerHTML = '<p class="empty-state">No private agent-debug payload has been recorded for this seat yet.</p>';
+      return;
+    }
+
+    debugStatus.textContent = metric?.fallback_used ? "Fallback" : "Live";
+    seatDebug.innerHTML = `
+      <div class="debug-grid">
+        <article class="summary-stat">
+          <span class="card-kicker">Joint Entropy</span>
+          <strong>${escapeHtml(toolSnapshot.belief_summary?.joint_case_entropy_bits ?? "--")}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Accuse Confidence</span>
+          <strong>${escapeHtml(accusation.confidence ?? "--")}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Last Action</span>
+          <strong>${escapeHtml(debug.decision?.action || metric?.action || "--")}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Latency</span>
+          <strong>${escapeHtml(metric?.latency_ms ?? "--")} ms</strong>
+        </article>
+      </div>
+      <div class="debug-block">
+        <p class="card-kicker">Top Hypotheses</p>
+        <ul class="debug-list">
+          ${topHypotheses.length ? topHypotheses.map((item) => `<li>${escapeHtml(`${item.suspect} / ${item.weapon} / ${item.room} (${item.p})`)}</li>`).join("") : '<li>No hypothesis sample yet.</li>'}
+        </ul>
+      </div>
+      <div class="debug-block">
+        <p class="card-kicker">Top Suggestion</p>
+        <p>${escapeHtml(topSuggestions[0]?.why || debug.decision_debug?.model_rationale || "No suggestion ranking yet.")}</p>
+      </div>
+    `;
+  }
+
+  function renderAiExplainer(snapshot) {
+    const metrics = snapshot.analysis?.game_metrics || {};
+    const targets = snapshot.analysis?.latency_targets_ms || {};
+    aiExplainer.innerHTML = `
+      <p class="field-note">LLM seats get a private deduction snapshot, choose one legal action with structured output, and fall back to the deterministic heuristic policy if the model times out, emits malformed JSON, or proposes an illegal move.</p>
+      <div class="debug-grid">
+        <article class="summary-stat">
+          <span class="card-kicker">Fallback Rate</span>
+          <strong>${escapeHtml(metrics.fallback_rate ?? 0)}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Guardrail Blocks</span>
+          <strong>${escapeHtml(metrics.guardrail_blocks ?? 0)}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Tool Budget</span>
+          <strong>${escapeHtml(targets.tool_snapshot_ms ?? "--")} ms</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">LLM Budget</span>
+          <strong>${escapeHtml(targets.llm_turn_ms ?? "--")} ms</strong>
+        </article>
+      </div>
+    `;
   }
 
   function updateDraftControls() {
@@ -400,10 +528,11 @@ if (app) {
     renderEventList(privateLog, privateEvents, "No private reveals or seat-only prompts yet.");
     renderSeatCards(snapshot);
     renderBoard(snapshot);
-    renderMoveGrid(snapshot);
     renderPositionGrid(snapshot);
     renderActions(snapshot);
     renderGuidance(snapshot);
+    renderSeatDebug(snapshot);
+    renderAiExplainer(snapshot);
     updateDraftControls();
   }
 

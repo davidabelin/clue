@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -19,12 +19,16 @@ class TurnDecision:
     card: str | None = None
     text: str | None = None
     rationale_private: str = ""
+    debug_private: dict[str, Any] = field(default_factory=dict)
+    agent_meta: dict[str, Any] = field(default_factory=dict)
 
     def to_action_payload(self) -> dict[str, Any]:
         """Drop purely explanatory fields before handing the action to the rules engine."""
 
         payload = {key: value for key, value in asdict(self).items() if value is not None}
         payload.pop("rationale_private", None)
+        payload.pop("debug_private", None)
+        payload.pop("agent_meta", None)
         return payload
 
     @classmethod
@@ -40,6 +44,8 @@ class TurnDecision:
             card=payload.get("card"),
             text=payload.get("text"),
             rationale_private=str(payload.get("rationale_private", "")),
+            debug_private=dict(payload.get("debug_private") or {}),
+            agent_meta=dict(payload.get("agent_meta") or {}),
         )
 
 

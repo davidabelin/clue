@@ -84,10 +84,12 @@ def test_game_page_renders_private_and_public_table_sections(client):
     assert page.status_code == 200
     html = page.get_data(as_text=True)
     assert "Private Intel" in html
-    assert "Move Grid" in html
     assert "Marker Grid" in html
     assert "Table Record" in html
     assert "Public Table Talk" in html
+    assert "Seat Debug" in html
+    assert "How LLM Seats Work" in html
+    assert "Round Table" not in html
 
 
 def test_create_game_supports_np_seats_and_all_six_characters(client):
@@ -152,6 +154,30 @@ def test_create_game_can_reuse_same_seat_ids_across_multiple_games(client):
     assert first.status_code == 201
     assert second.status_code == 201
     assert first.get_json()["game_id"] != second.get_json()["game_id"]
+
+
+def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client):
+    """Autonomous turns should persist eval metrics plus seat-private debug payloads."""
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Telemetry Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "heuristic"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    assert response.status_code == 201
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+    assert snapshot["analysis"]["game_metrics"]["autonomous_actions"] >= 1
+    assert snapshot["analysis"]["recent_turn_metrics"]
+    assert snapshot["analysis"]["seat_debug"]["decision"]["action"]
+    assert snapshot["analysis"]["seat_debug"]["tool_snapshot"]["top_hypotheses"]
 
 
 def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypatch):

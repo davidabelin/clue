@@ -22,13 +22,13 @@
 - [] Re-test deployed Clue with the new shared Cloud SQL backend and then decide whether the temporary single-instance App Engine cap can be removed safely.
 - [] Add browser/API end-to-end coverage for a full human-only four-seat game, including dice rolls, movement, room entry, suggestion, refute, accusation, and reconnect.
 - [] Add a reconnect and multi-browser regression test that proves separate seat tokens always restore the correct private view after refresh or tab reopen.
-- [] Add structured logs and traces around Game Master actions, seat-agent decisions, tool snapshot generation, guardrail blocks, and worker execution.
-- [] Persist eval-friendly metrics per turn and per game: illegal-action rejects, turn latency, accusation precision, leakage blocks, fallback rate, and completion rate.
+- [x] Add structured logs and traces around Game Master actions, seat-agent decisions, tool snapshot generation, guardrail blocks, and worker execution.
+- [x] Persist eval-friendly metrics per turn and per game: illegal-action rejects, turn latency, accusation precision, leakage blocks, fallback rate, and completion rate.
 - [] Add a small regression-eval harness so prompt/model changes can be tested against stored game traces and expected outcomes.
-- [] Upgrade the current suggestion ranking from marginal-probability scoring to explicit information gain / entropy reduction with opponent-leak penalty, matching the DeepDive recommendation more closely.
-- [] Expose richer debug outputs for seat decisions, especially entropy, top hypotheses, accusation confidence, and why a suggestion ranked first.
-- [] Add lightweight opponent-model hooks from public refutation and accusation history before attempting larger learning systems.
-- [] Profile and cap local/App Engine latency for sampling and LLM turns; record target budgets and enforce timeouts in production.
+- [x] Upgrade the current suggestion ranking from marginal-probability scoring to explicit information gain / entropy reduction with opponent-leak penalty, matching the DeepDive recommendation more closely.
+- [x] Expose richer debug outputs for seat decisions, especially entropy, top hypotheses, accusation confidence, and why a suggestion ranked first.
+- [x] Add lightweight opponent-model hooks from public refutation and accusation history before attempting larger learning systems.
+- [x] Profile and cap local/App Engine latency for sampling and LLM turns; record target budgets and enforce timeouts in production.
 - [] Verify deployed Clue can read `OPENAI_API_KEY` from Secret Manager end-to-end after each deployment without checking plaintext into source control.
 
 ## Planning And Research Next
@@ -37,6 +37,17 @@
 - [] Export cleaned event traces and private-seat observations into training datasets only after browser E2E and eval instrumentation are solid.
 - [] Add supervised / DAgger experiments only after a strong non-ML baseline and replay/eval harness exist.
 - [] Later, add population-style evaluation against mixed opponent pools and consider OpenSpiel-based benchmarking once the planner baseline is trustworthy.
+
+## Documentation
+- [x] Thoroughly and meticulously docstring all code
+  - aimed at developer/maintainer of the future
+    - [x] priority is documenting architecture and functionality
+    - [x] keep deeper ML / game-theory context in the design docs, not bloated inline comments
+  - [x] python; server-side code
+  - [x] html, js, css; front end code
+  - [x] .bat files; helper scripts
+    - N/A for the standalone `clue` repo itself; AIX-side batch helpers stay documented in the `aix` repo
+  - [x] Establish the default that new public modules, classes, and functions should ship with maintainer-focused docs as they are added
 
 ## Human/UI Testing Checklist
 
@@ -73,8 +84,8 @@
 
 ### Mixed Seats And Safety
 - [x] Run a mixed table with at least one heuristic seat and one LLM seat.
-- [] Verify autonomous turns resolve within acceptable latency and do not leave the UI stuck between polls.
-- [] Confirm AI public chat doesn't state hidden card ownership or other seat-private information.
+- [x] Verify autonomous turns resolve within acceptable latency and do not leave the UI stuck between polls.
+- [x] Confirm AI public chat doesn't state hidden card ownership or other seat-private information.
 - [] Confirm fallback behavior is sane if the LLM times out or returns malformed output.
 
 ### Deployment And Recording
@@ -88,21 +99,33 @@
     - [x] should be latest-first (ie. most recent at top)
   - [x] Action dropdown draft-state fix deployed so polling no longer resets Move / Suggest / Accuse / Refute selections to the first option.
   - [] Re-verify **locally** that action choices now remain stable across polling after a full page reload.
-- **Online**
-  - at both [] `aix-labs\clue` and [] `clue-aix-labs\clue`
+
+- **Online** run
+  - at BOTH [x] `aix-labs\clue` and [] `clue-aix-labs\clue`
   - [x] Create a game (3, 4 players)
   - [x] Poll-safe dropdown fix deployed to the live Clue service on 2026-03-26.
-  - [] Re-verify online that UI choices now remain stable after a hard refresh / fresh private window.
-  - [] UI panels to provide *friendly but detailed* explanation of how LLM players are integrated into gameplay
+  - [] Once selected an option persists, but you have to choose FAST from the drop down -- need *at least* 2000 ms to choose
+    - [X] Re-verify online that UI choices now remain stable after a hard refresh / fresh private window.
+  - [x] Additional UI panels to provide *friendly but detailed* explanation of how LLM players are integrated into gameplay
+
 - [] Implement recommended (docs\ClueDeepDive.md) use of OpenAI SDK for LLM integration with gameplay tools
 
-### Documentation
-- [x] Thoroughly and meticulously docstring all code
-  - aimed at developer/maintainer of the future
-    - [x] priority is documenting architecture and functionality
-    - [x] keep deeper ML / game-theory context in the design docs, not bloated inline comments
-  - [x] python; server-side code
-  - [x] html, js, css; front end code
-  - [x] .bat files; helper scripts
-    - N/A for the standalone `clue` repo itself; AIX-side batch helpers stay documented in the `aix` repo
-  - [x] Establish the default that new public modules, classes, and functions should ship with maintainer-focused docs as they are added
+- 'Active Seat' display/page: 
+  - [x] reposition the Table Record panel to where the Round Table panel is located, and remove Round Table panel.
+  - [] Board panel:
+    - [x] Resize it to fit well within the boundary of the panel; make the contents about 75% the size they are now
+    - [x] Draw map-like "navigation lines" wherever there is a one-move connection, so including secret passages
+    - [x] Color the rooms individually in pale shades vaguely suggestive of their names
+      - [] passageway colors fade from one to the other connecting room-colors
+    - [x] Color player markers suggestive of their names
+    - [x] Color the starting points with pale shades of the players' colors
+    - [x] Remove the Move Grid subpanel
+    - [x] Marker Grid subpanel: fix bug causing character names to appear 2x
+    - [x] UI Board is click-able to indicate desired move
+  - Actions Panel
+    - [x] Move the 'Public Table Talk' text window and the 'Send Chat' button to the 'Table Record' panel.
+
+- Gameplay
+  - [] fix LLMs and Heuristics both getting stuck suggesting same 3 answers over and over
+
+- aix-labs.uw.r.appspot.com/clue page: change text color, can't read "Create a game, open seat links in separate browser tabs, and ..."

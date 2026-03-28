@@ -8,6 +8,7 @@ from typing import Any
 
 from clue_core.board import (
     BOARD_NODES,
+    GRAPH,
     NODE_TO_ROOM_NAME,
     ROOM_NAME_TO_NODE,
     SECRET_PASSAGES,
@@ -491,6 +492,7 @@ def build_filtered_snapshot(
 
     game = GameMaster(state)
     hidden = state["hidden"]
+    analysis = dict(state.get("analysis") or {})
     public_seats = []
     for other_seat_id in state["seat_order"]:
         seat = state["seats"][other_seat_id]
@@ -517,11 +519,28 @@ def build_filtered_snapshot(
         "current_roll": state["current_roll"],
         "remaining_steps": state["remaining_steps"],
         "board_nodes": list(BOARD_NODES.values()),
+        "board_edges": [
+            {
+                "from": node_id,
+                "to": neighbor,
+                "kind": ("passage" if SECRET_PASSAGES.get(node_id) == neighbor else "walk"),
+            }
+            for node_id, neighbors in GRAPH.items()
+            for neighbor in neighbors
+            if node_id < neighbor
+        ],
         "secret_passages": deepcopy(SECRET_PASSAGES),
         "seat": state["seats"][seat_id] | {"hand": list(hidden["hands"][seat_id])},
         "seats": public_seats,
         "legal_actions": game.legal_actions(seat_id),
         "events": visible_events,
         "notebook": notebook or {},
+        "analysis": {
+            "run_context": dict(analysis.get("run_context") or {}),
+            "latency_targets_ms": dict(analysis.get("latency_targets_ms") or {}),
+            "game_metrics": dict(analysis.get("game_metrics") or {}),
+            "recent_turn_metrics": list(analysis.get("turn_metrics") or [])[-10:],
+            "seat_debug": dict((analysis.get("latest_private_debug_by_seat") or {}).get(seat_id) or {}),
+        },
         "case_file_categories": deepcopy(CARD_CATEGORIES),
     }

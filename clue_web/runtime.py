@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import UTC, datetime
+import os
 import secrets
+import time
 from typing import Any
 
 from itsdangerous import BadSignature, URLSafeSerializer
@@ -20,6 +22,8 @@ from clue_storage import ClueRepository
 
 
 DEFAULT_GAME_SEED = 17
+DEFAULT_TOOL_SNAPSHOT_BUDGET_MS = 250
+TURN_METRIC_LIMIT = 256
 
 
 def _timestamp_slug() -> str:
@@ -38,6 +42,151 @@ class GameService:
         self._serializer = URLSafeSerializer(secret_key, salt="clue-seat-token")
         self._agents = AgentRuntime()
 
+    @staticmethod
+    def _latency_targets() -> dict[str, int]:
+        """Return the current runtime latency budgets exposed to telemetry."""
+
+        llm_timeout_seconds = max(float(os.getenv("CLUE_LLM_TIMEOUT_SECONDS", "12")), 1.0)
+        return {
+            "tool_snapshot_ms": int(os.getenv("CLUE_TOOL_SNAPSHOT_BUDGET_MS", str(DEFAULT_TOOL_SNAPSHOT_BUDGET_MS))),
+            "llm_turn_ms": int(llm_timeout_seconds * 1000),
+            "agent_cycle_ms": int(llm_timeout_seconds * 1000) + int(
+                os.getenv("CLUE_TOOL_SNAPSHOT_BUDGET_MS", str(DEFAULT_TOOL_SNAPSHOT_BUDGET_MS))
+            ),
+        }
+
+    @staticmethod
+    def _environment_label() -> str:
+        """Describe whether this game is running locally or on App Engine."""
+
+        if os.getenv("GAE_ENV"):
+            service = str(os.getenv("GAE_SERVICE", "default")).strip() or "default"
+            return f"gae:{service}"
+        return "local"
+
+    def _build_analysis_defaults(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Create the persisted analysis block used for traces and eval metrics."""
+
+        seat_mix: dict[str, int] = {}
+        for seat in state["seats"].values():
+            seat_kind = str(seat["seat_kind"])
+            seat_mix[seat_kind] = seat_mix.get(seat_kind, 0) + 1
+        return {
+            "run_context": {
+                "created_at": datetime.now(UTC).isoformat(),
+                "environment": self._environment_label(),
+                "seat_mix": seat_mix,
+                "seat_order": list(state["seat_order"]),
+            },
+            "latency_targets_ms": self._latency_targets(),
+            "game_metrics": {
+                "actions_applied": 0,
+                "human_actions": 0,
+                "autonomous_actions": 0,
+                "rejected_actions": 0,
+                "illegal_action_rejects": 0,
+                "fallback_count": 0,
+                "fallback_rate": 0.0,
+                "guardrail_blocks": 0,
+                "sampling_timeouts": 0,
+                "latency_budget_breaches": 0,
+                "turn_latency_ms_max": 0.0,
+                "tool_snapshot_latency_ms_max": 0.0,
+                "agent_decision_latency_ms_max": 0.0,
+                "accusations_total": 0,
+                "accusations_correct": 0,
+                "accusation_precision": 0.0,
+                "completion_rate": 0.0,
+            },
+            "turn_metrics": [],
+            "latest_private_debug_by_seat": {},
+        }
+
+    def _ensure_analysis(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Backfill the per-game analysis structure onto a persisted state snapshot."""
+
+        defaults = self._build_analysis_defaults(state)
+        analysis = dict(state.get("analysis") or {})
+        analysis.setdefault("run_context", defaults["run_context"])
+        analysis.setdefault("latency_targets_ms", defaults["latency_targets_ms"])
+        analysis.setdefault("game_metrics", defaults["game_metrics"])
+        analysis.setdefault("turn_metrics", [])
+        analysis.setdefault("latest_private_debug_by_seat", {})
+        state["analysis"] = analysis
+        return analysis
+
+    @staticmethod
+    def _trace_event(
+        event_type: str,
+        *,
+        message: str,
+        payload: dict[str, Any],
+        visibility: str = "public",
+    ) -> dict[str, Any]:
+        """Create one telemetry event without changing the core rules engine."""
+
+        return make_event(event_type, payload=payload, message=message, visibility=visibility)
+
+    def _record_turn_metric(self, state: dict[str, Any], metric: dict[str, Any], *, private_debug: dict[str, Any] | None = None) -> None:
+        """Persist one per-turn metric row and roll its values into game-level aggregates."""
+
+        analysis = self._ensure_analysis(state)
+        turn_metrics = list(analysis.get("turn_metrics") or [])
+        turn_metrics.append(metric)
+        analysis["turn_metrics"] = turn_metrics[-TURN_METRIC_LIMIT:]
+        if private_debug and metric.get("seat_id"):
+            latest_private_debug = dict(analysis.get("latest_private_debug_by_seat") or {})
+            latest_private_debug[str(metric["seat_id"])] = private_debug
+            analysis["latest_private_debug_by_seat"] = latest_private_debug
+
+        aggregates = dict(analysis.get("game_metrics") or {})
+        if metric.get("rejected"):
+            aggregates["rejected_actions"] = int(aggregates.get("rejected_actions", 0)) + 1
+            aggregates["illegal_action_rejects"] = int(aggregates.get("illegal_action_rejects", 0)) + 1
+        else:
+            aggregates["actions_applied"] = int(aggregates.get("actions_applied", 0)) + 1
+            actor = str(metric.get("actor", "human"))
+            if actor == "human":
+                aggregates["human_actions"] = int(aggregates.get("human_actions", 0)) + 1
+            else:
+                aggregates["autonomous_actions"] = int(aggregates.get("autonomous_actions", 0)) + 1
+        if metric.get("fallback_used"):
+            aggregates["fallback_count"] = int(aggregates.get("fallback_count", 0)) + 1
+        if metric.get("guardrail_blocks"):
+            aggregates["guardrail_blocks"] = int(aggregates.get("guardrail_blocks", 0)) + int(metric["guardrail_blocks"])
+        if metric.get("sampling_timed_out"):
+            aggregates["sampling_timeouts"] = int(aggregates.get("sampling_timeouts", 0)) + 1
+        if metric.get("latency_budget_breached"):
+            aggregates["latency_budget_breaches"] = int(aggregates.get("latency_budget_breaches", 0)) + 1
+        aggregates["turn_latency_ms_max"] = round(
+            max(float(aggregates.get("turn_latency_ms_max", 0.0)), float(metric.get("latency_ms", 0.0))),
+            2,
+        )
+        aggregates["tool_snapshot_latency_ms_max"] = round(
+            max(float(aggregates.get("tool_snapshot_latency_ms_max", 0.0)), float(metric.get("tool_snapshot_latency_ms", 0.0))),
+            2,
+        )
+        aggregates["agent_decision_latency_ms_max"] = round(
+            max(float(aggregates.get("agent_decision_latency_ms_max", 0.0)), float(metric.get("agent_decision_latency_ms", 0.0))),
+            2,
+        )
+        if metric.get("action") == "accuse":
+            aggregates["accusations_total"] = int(aggregates.get("accusations_total", 0)) + 1
+            if metric.get("accusation_correct"):
+                aggregates["accusations_correct"] = int(aggregates.get("accusations_correct", 0)) + 1
+        accusations_total = int(aggregates.get("accusations_total", 0))
+        aggregates["accusation_precision"] = round(
+            (int(aggregates.get("accusations_correct", 0)) / accusations_total) if accusations_total else 0.0,
+            4,
+        )
+        autonomous_actions = int(aggregates.get("autonomous_actions", 0))
+        aggregates["fallback_rate"] = round(
+            (int(aggregates.get("fallback_count", 0)) / autonomous_actions) if autonomous_actions else 0.0,
+            4,
+        )
+        aggregates["completion_rate"] = 1.0 if state.get("status") == "complete" else 0.0
+        analysis["game_metrics"] = aggregates
+
     def create_game(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Create one new game, persist it, and immediately run any autonomous seats."""
 
@@ -51,6 +200,7 @@ class GameService:
         seed = DEFAULT_GAME_SEED
         hidden_setup = build_hidden_setup(seat_configs, seed=seed)
         state = build_initial_state(game_id, title, seat_configs, hidden_setup)
+        state["analysis"] = self._build_analysis_defaults(state)
         tokens = []
         seat_links = []
         for seat in seat_configs:
@@ -77,6 +227,11 @@ class GameService:
                 "turn_started",
                 payload={"seat_id": state["active_seat_id"], "turn_index": state["turn_index"]},
                 message=f"It is now {state['seats'][state['active_seat_id']]['display_name']}'s turn.",
+            ),
+            self._trace_event(
+                "trace_game_context",
+                message=f"Telemetry initialized for {title}.",
+                payload=state["analysis"]["run_context"] | {"latency_targets_ms": state["analysis"]["latency_targets_ms"]},
             ),
         ]
         self._repository.create_game(
@@ -136,13 +291,86 @@ class GameService:
 
         seat = self.resolve_token(token)
         state = self._repository.get_state(seat["game_id"])
+        self._ensure_analysis(state)
+        started = time.perf_counter()
         game = GameMaster(state)
-        new_state, events = game.apply_action(seat["seat_id"], action)
+        try:
+            new_state, events = game.apply_action(seat["seat_id"], action)
+        except ValueError as exc:
+            metric = {
+                "recorded_at": datetime.now(UTC).isoformat(),
+                "turn_index": int(state["turn_index"]),
+                "seat_id": seat["seat_id"],
+                "seat_kind": str(state["seats"][seat["seat_id"]]["seat_kind"]),
+                "actor": "human",
+                "action": str(action.get("action", "")),
+                "latency_ms": round((time.perf_counter() - started) * 1000.0, 2),
+                "tool_snapshot_latency_ms": 0.0,
+                "agent_decision_latency_ms": 0.0,
+                "fallback_used": False,
+                "guardrail_blocks": 0,
+                "sampling_timed_out": False,
+                "latency_budget_breached": False,
+                "rejected": True,
+                "error": str(exc),
+            }
+            self._record_turn_metric(state, metric)
+            self._repository.save_state_and_events(
+                seat["game_id"],
+                state=state,
+                events=[
+                    self._trace_event(
+                        "trace_action_rejected",
+                        message=f"{seat['display_name']} submitted an illegal {action.get('action', 'unknown')} action.",
+                        payload=metric,
+                        visibility=f"seat:{seat['seat_id']}",
+                    )
+                ],
+            )
+            raise
         public_chat = sanitize_public_chat(str(action.get("text", "")).strip()) if action.get("action") != "send_chat" else ""
+        guardrail_blocks = 0
         if public_chat:
             chat_game = GameMaster(new_state)
             new_state, chat_events = chat_game.apply_action(seat["seat_id"], {"action": "send_chat", "text": public_chat})
             events.extend(chat_events)
+            if public_chat != str(action.get("text", "")).strip():
+                guardrail_blocks = 1
+                events.append(
+                    self._trace_event(
+                        "trace_guardrail_blocked",
+                        message=f"Public chat from {seat['display_name']} was sanitized before posting.",
+                        payload={"seat_id": seat["seat_id"], "action": str(action.get("action", ""))},
+                    )
+                )
+        metric = {
+            "recorded_at": datetime.now(UTC).isoformat(),
+            "turn_index": int(new_state["turn_index"]),
+            "seat_id": seat["seat_id"],
+            "seat_kind": str(new_state["seats"][seat["seat_id"]]["seat_kind"]),
+            "actor": "human",
+            "action": str(action.get("action", "")),
+            "latency_ms": round((time.perf_counter() - started) * 1000.0, 2),
+            "tool_snapshot_latency_ms": 0.0,
+            "agent_decision_latency_ms": 0.0,
+            "fallback_used": False,
+            "guardrail_blocks": guardrail_blocks,
+            "sampling_timed_out": False,
+            "latency_budget_breached": False,
+            "rejected": False,
+            "accusation_correct": bool(action.get("action") == "accuse" and new_state.get("winner_seat_id") == seat["seat_id"]),
+        }
+        self._record_turn_metric(new_state, metric)
+        events.extend(
+            [
+                self._trace_event(
+                    "trace_turn_metric",
+                    message=f"Turn metric recorded for {seat['display_name']} ({action.get('action', 'unknown')}).",
+                    payload=metric,
+                    visibility=f"seat:{seat['seat_id']}",
+                )
+            ]
+        )
         self._repository.save_state_and_events(seat["game_id"], state=new_state, events=events)
         self.maybe_run_agents(seat["game_id"])
         return self.snapshot_for_token(token)
@@ -174,23 +402,147 @@ class GameService:
         cycles = 0
         while cycles < max_cycles:
             state = self._repository.get_state(game_id)
+            self._ensure_analysis(state)
             if state["status"] != "active":
                 return
             seat_id = self._autonomous_seat_to_act(state)
             if seat_id is None:
                 return
             seat = next(item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id)
+            cycle_started = time.perf_counter()
             snapshot = self._build_internal_snapshot(game_id, seat_id)
             tool_snapshot = self._tool_snapshot_for(state, seat_id, snapshot["events"])
-            decision = self._agents.decide(seat=seat, snapshot=snapshot, tool_snapshot=asdict(tool_snapshot))
+            tool_snapshot_payload = asdict(tool_snapshot)
+            decision_started = time.perf_counter()
+            decision = self._agents.decide(seat=seat, snapshot=snapshot, tool_snapshot=tool_snapshot_payload)
+            decision_latency_ms = round((time.perf_counter() - decision_started) * 1000.0, 2)
             game = GameMaster(state)
-            new_state, events = game.apply_action(seat_id, decision.to_action_payload())
+            try:
+                new_state, events = game.apply_action(seat_id, decision.to_action_payload())
+            except ValueError as exc:
+                rejected_metric = {
+                    "recorded_at": datetime.now(UTC).isoformat(),
+                    "turn_index": int(state["turn_index"]),
+                    "seat_id": seat_id,
+                    "seat_kind": str(seat["seat_kind"]),
+                    "actor": str(seat["seat_kind"]),
+                    "action": str(decision.action),
+                    "latency_ms": round((time.perf_counter() - cycle_started) * 1000.0, 2),
+                    "tool_snapshot_latency_ms": float(tool_snapshot.generation.get("elapsed_ms", 0.0)),
+                    "agent_decision_latency_ms": decision_latency_ms,
+                    "fallback_used": bool(decision.agent_meta.get("fallback_used")),
+                    "fallback_reason": str(decision.agent_meta.get("fallback_reason", "")),
+                    "guardrail_blocks": 0,
+                    "sampling_timed_out": bool(tool_snapshot.generation.get("sampling_timed_out")),
+                    "latency_budget_breached": False,
+                    "rejected": True,
+                    "error": str(exc),
+                }
+                self._record_turn_metric(state, rejected_metric)
+                self._repository.save_state_and_events(
+                    game_id,
+                    state=state,
+                    events=[
+                        self._trace_event(
+                            "trace_action_rejected",
+                            message=f"Autonomous action from {seat['display_name']} was rejected and logged.",
+                            payload=rejected_metric,
+                            visibility=f"seat:{seat_id}",
+                        )
+                    ],
+                )
+                return
+            guardrail_blocks = 0
             if decision.text:
                 safe_chat = sanitize_public_chat(decision.text)
                 if safe_chat:
                     chat_game = GameMaster(new_state)
                     new_state, chat_events = chat_game.apply_action(seat_id, {"action": "send_chat", "text": safe_chat})
                     events.extend(chat_events)
+                if safe_chat != decision.text:
+                    guardrail_blocks = 1
+                    events.append(
+                        self._trace_event(
+                            "trace_guardrail_blocked",
+                            message=f"Public chat from {seat['display_name']} was sanitized before posting.",
+                            payload={"seat_id": seat_id, "actor": seat["seat_kind"]},
+                        )
+                    )
+            metric = {
+                "recorded_at": datetime.now(UTC).isoformat(),
+                "turn_index": int(new_state["turn_index"]),
+                "seat_id": seat_id,
+                "seat_kind": str(seat["seat_kind"]),
+                "actor": str(seat["seat_kind"]),
+                "action": str(decision.action),
+                "latency_ms": round((time.perf_counter() - cycle_started) * 1000.0, 2),
+                "tool_snapshot_latency_ms": float(tool_snapshot.generation.get("elapsed_ms", 0.0)),
+                "agent_decision_latency_ms": decision_latency_ms,
+                "fallback_used": bool(decision.agent_meta.get("fallback_used")),
+                "fallback_reason": str(decision.agent_meta.get("fallback_reason", "")),
+                "guardrail_blocks": guardrail_blocks + int(bool(decision.agent_meta.get("guardrail_blocked"))),
+                "sampling_timed_out": bool(tool_snapshot.generation.get("sampling_timed_out")),
+                "latency_budget_breached": bool(
+                    float(tool_snapshot.generation.get("elapsed_ms", 0.0))
+                    > float(state["analysis"]["latency_targets_ms"]["tool_snapshot_ms"])
+                    or decision_latency_ms > float(state["analysis"]["latency_targets_ms"]["llm_turn_ms"])
+                ),
+                "rejected": False,
+                "sample_count": int(tool_snapshot.sample_count),
+                "accusation_correct": bool(decision.action == "accuse" and new_state.get("winner_seat_id") == seat_id),
+            }
+            private_debug = {
+                "recorded_at": metric["recorded_at"],
+                "decision": {
+                    "action": decision.action,
+                    "rationale_private": decision.rationale_private,
+                    "agent_meta": dict(decision.agent_meta or {}),
+                },
+                "tool_snapshot": {
+                    "belief_summary": dict(tool_snapshot.belief_summary or {}),
+                    "top_hypotheses": list(tool_snapshot.top_hypotheses or [])[:3],
+                    "suggestion_ranking": list(tool_snapshot.suggestion_ranking or [])[:3],
+                    "accusation": dict(tool_snapshot.accusation or {}),
+                    "opponent_model": dict(tool_snapshot.opponent_model or {}),
+                    "generation": dict(tool_snapshot.generation or {}),
+                },
+                "decision_debug": dict(decision.debug_private or {}),
+                "metric": metric,
+            }
+            self._record_turn_metric(new_state, metric, private_debug=private_debug)
+            events.extend(
+                [
+                    self._trace_event(
+                        "trace_tool_snapshot",
+                        message=f"Private tool snapshot recorded for {seat['display_name']}.",
+                        payload=private_debug["tool_snapshot"],
+                        visibility=f"seat:{seat_id}",
+                    ),
+                    self._trace_event(
+                        "trace_seat_decision",
+                        message=f"Private decision trace recorded for {seat['display_name']}.",
+                        payload=private_debug["decision"] | {"decision_debug": private_debug["decision_debug"]},
+                        visibility=f"seat:{seat_id}",
+                    ),
+                    self._trace_event(
+                        "trace_turn_metric",
+                        message=f"Private turn metric recorded for {seat['display_name']}.",
+                        payload=metric,
+                        visibility=f"seat:{seat_id}",
+                    ),
+                    self._trace_event(
+                        "trace_worker_cycle",
+                        message=f"{seat['display_name']} resolved {decision.action} in {metric['latency_ms']} ms.",
+                        payload={
+                            "seat_id": seat_id,
+                            "seat_kind": seat["seat_kind"],
+                            "action": decision.action,
+                            "latency_ms": metric["latency_ms"],
+                            "fallback_used": metric["fallback_used"],
+                        },
+                    ),
+                ]
+            )
             self._repository.save_state_and_events(game_id, state=new_state, events=events)
             cycles += 1
 
@@ -210,6 +562,7 @@ class GameService:
             hand_counts=hand_counts,
             visible_events=visible_events,
             room_name=room_name,
+            time_budget_ms=self._latency_targets()["tool_snapshot_ms"],
         )
 
     def _build_internal_snapshot(self, game_id: str, seat_id: str) -> dict[str, Any]:
