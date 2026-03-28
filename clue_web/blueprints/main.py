@@ -9,17 +9,23 @@ main_bp = Blueprint("main", __name__)
 
 @main_bp.get("/")
 def home() -> str:
+    """Render the create-game landing page."""
+
     return render_template("pages/home.html", title="Clue")
 
 
 @main_bp.get("/join/<token>")
 def join_by_token(token: str):
+    """Mark the seat as seen and redirect the invite link onto the game page."""
+
     current_app.extensions["game_service"].join_by_token(token)
     return redirect(url_for("main.game_page", token=token))
 
 
 @main_bp.get("/game")
 def game_page() -> str:
+    """Render the seat-specific game view when a valid token is present."""
+
     token = str(request.args.get("token", "")).strip()
     if not token:
         return redirect(url_for("main.home"))

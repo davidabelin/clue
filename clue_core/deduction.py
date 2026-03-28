@@ -14,6 +14,8 @@ CASE_FILE_OWNER = "case_file"
 
 @dataclass(slots=True)
 class ToolSnapshot:
+    """Seat-local deduction summary exposed to heuristic and LLM policies."""
+
     envelope_marginals: dict[str, dict[str, float]]
     top_hypotheses: list[dict[str, Any]]
     suggestion_ranking: list[dict[str, Any]]
@@ -32,6 +34,8 @@ class ClueBeliefTracker:
         perspective_seat_id: str,
         own_hand: list[str],
     ) -> None:
+        """Initialize ownership domains, hand quotas, and known private cards."""
+
         self.seat_ids = list(seat_ids)
         self.hand_counts = dict(hand_counts)
         self.perspective_seat_id = perspective_seat_id
@@ -46,10 +50,14 @@ class ClueBeliefTracker:
         self._propagate()
 
     def set_owner(self, card_name: str, owner: str) -> None:
+        """Collapse one card to a single known owner and propagate consequences."""
+
         self.possible[card_name] = {owner}
         self._propagate()
 
     def eliminate(self, card_name: str, owner: str) -> None:
+        """Remove one owner from the candidate set for a card."""
+
         options = self.possible[card_name]
         if owner not in options:
             return
@@ -59,12 +67,16 @@ class ClueBeliefTracker:
         self._propagate()
 
     def owner_if_known(self, card_name: str) -> str | None:
+        """Return the resolved owner when the tracker has only one possibility left."""
+
         options = self.possible[card_name]
         if len(options) == 1:
             return next(iter(options))
         return None
 
     def apply_event(self, event: dict[str, Any]) -> None:
+        """Update the tracker from one visible public or private gameplay event."""
+
         event_type = str(event.get("event_type", ""))
         payload = dict(event.get("payload") or {})
         if event_type == "private_card_shown":
@@ -94,6 +106,8 @@ class ClueBeliefTracker:
                     self.eliminate(card_name, seat_id)
 
     def apply_events(self, events: list[dict[str, Any]]) -> None:
+        """Replay a visible event stream into the tracker in order."""
+
         latest_suggestion: dict[str, str] | None = None
         for event in events:
             event_type = str(event.get("event_type", ""))
@@ -108,6 +122,8 @@ class ClueBeliefTracker:
             self.apply_event(event)
 
     def marginal_probabilities(self, *, samples: int = 128, seed: int = 0) -> tuple[dict[str, dict[str, float]], list[dict[str, str]]]:
+        """Estimate envelope marginals by sampling assignments consistent with current knowledge."""
+
         assignments = self.sample_assignments(samples=samples, seed=seed)
         envelope_counts = {category: {card_name: 0 for card_name in names} for category, names in CARD_CATEGORIES.items()}
         for assignment in assignments:
@@ -129,11 +145,15 @@ class ClueBeliefTracker:
         }, assignments
 
     def sample_assignments(self, *, samples: int = 128, seed: int = 0) -> list[dict[str, str]]:
+        """Generate consistent complete ownership assignments with backtracking search."""
+
         rng = random.Random(seed)
         cards = sorted(self.possible.keys(), key=lambda card_name: (len(self.possible[card_name]), card_name))
         results: list[dict[str, str]] = []
 
         def is_clause_consistent(assignments: dict[str, str]) -> bool:
+            """Check whether each pending refutation clause can still be satisfied."""
+
             for owner, cards_in_clause in self._clauses:
                 if any(assignments.get(card_name) == owner for card_name in cards_in_clause):
                     continue
@@ -144,6 +164,8 @@ class ClueBeliefTracker:
             return True
 
         def backtrack(index: int, assignments: dict[str, str], seat_loads: dict[str, int], case_file_by_category: dict[str, str]) -> None:
+            """Explore one branch of the consistent-deal search tree."""
+
             if len(results) >= samples:
                 return
             if index >= len(cards):
@@ -187,6 +209,8 @@ class ClueBeliefTracker:
         return normalized
 
     def suggestion_ranking(self, room_name: str, *, samples: int = 128, seed: int = 0) -> list[dict[str, Any]]:
+        """Score suspect/weapon suggestions for the current room using current uncertainty."""
+
         marginals, assignments = self.marginal_probabilities(samples=samples, seed=seed)
         ranking = []
         for suspect in SUSPECTS:
@@ -205,6 +229,8 @@ class ClueBeliefTracker:
         return ranking[:10]
 
     def accusation_recommendation(self, *, samples: int = 128, seed: int = 0) -> dict[str, Any]:
+        """Return the highest-probability accusation plus a simple confidence gate."""
+
         marginals, assignments = self.marginal_probabilities(samples=samples, seed=seed)
         best = {
             "suspect": max(marginals["suspect"].items(), key=lambda item: item[1])[0],
@@ -224,12 +250,16 @@ class ClueBeliefTracker:
         }
 
     def _latest_suggestion(self, payload: dict[str, Any], event: dict[str, Any]) -> dict[str, str] | None:
+        """Read the most recent suggestion cached onto a downstream refutation event."""
+
         latest = payload.get("_latest_suggestion")
         if latest:
             return dict(latest)
         return None
 
     def _propagate(self) -> None:
+        """Enforce simple ownership, quota, and refutation-clause constraints until stable."""
+
         changed = True
         while changed:
             changed = False
@@ -289,6 +319,8 @@ def build_tool_snapshot(
     room_name: str | None,
     sample_count: int = 128,
 ) -> ToolSnapshot:
+    """Build the tool payload consumed by autonomous seat policies for one turn."""
+
     tracker = ClueBeliefTracker(
         seat_ids=list(hand_counts.keys()),
         hand_counts=hand_counts,

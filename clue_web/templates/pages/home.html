@@ -1,3 +1,4 @@
+{# Create-game landing page for standalone or AIX-mounted Clue. #}
 {% extends "base.html" %}
 {% block content %}
 <section class="home">
@@ -54,6 +55,8 @@
   <section id="create-result" class="panel result-panel hidden"></section>
 </section>
 <script>
+  // This small script keeps the home page static-first while still allowing
+  // direct game creation without adding a separate frontend build system.
   const createForm = document.getElementById("create-game-form");
   const result = document.getElementById("create-result");
   createForm.addEventListener("submit", async (event) => {

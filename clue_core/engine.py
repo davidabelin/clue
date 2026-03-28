@@ -25,27 +25,41 @@ class GameMaster:
     """Apply validated actions to one Clue game state."""
 
     def __init__(self, state: dict[str, Any], rng: random.Random | None = None) -> None:
+        """Copy one persisted state snapshot into a mutable rules-engine instance."""
+
         self.state = deepcopy(state)
         self._rng = rng or random.Random()
 
     @property
     def active_seat_id(self) -> str:
+        """Return the seat id whose turn or refutation window is currently active."""
+
         return str(self.state["active_seat_id"])
 
     def seat(self, seat_id: str) -> dict[str, Any]:
+        """Return the public seat record for one seat id."""
+
         return self.state["seats"][seat_id]
 
     def current_room(self, seat_id: str) -> str | None:
+        """Return the room name for a seat, or ``None`` when not in a room."""
+
         node_id = str(self.seat(seat_id)["position"])
         return NODE_TO_ROOM_NAME.get(node_id)
 
     def hidden_hand(self, seat_id: str) -> list[str]:
+        """Return the private hand for one seat from the hidden state block."""
+
         return list(self.state["hidden"]["hands"][seat_id])
 
     def case_file(self) -> dict[str, str]:
+        """Return the hidden solution envelope."""
+
         return dict(self.state["hidden"]["case_file"])
 
     def occupied_hallways(self, *, exclude_seat: str | None = None) -> set[str]:
+        """Collect hallway nodes that are blocked by other seat positions."""
+
         blocked = set()
         for seat_id, seat in self.state["seats"].items():
             if exclude_seat is not None and seat_id == exclude_seat:
@@ -56,6 +70,8 @@ class GameMaster:
         return blocked
 
     def legal_actions(self, seat_id: str) -> dict[str, Any]:
+        """Compute the current legal-action envelope for one seat-local snapshot."""
+
         if self.state["status"] != "active":
             return {"available": []}
 
@@ -125,6 +141,8 @@ class GameMaster:
         }
 
     def apply_action(self, seat_id: str, action: Action) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Validate and apply one seat action, returning the next state and emitted events."""
+
         kind = str(action.get("action", "")).strip().lower()
         if not kind:
             raise ValueError("Missing action.")
@@ -148,6 +166,8 @@ class GameMaster:
         raise ValueError(f"Unsupported action: {kind}")
 
     def _apply_chat(self, seat_id: str, action: Action) -> dict[str, Any]:
+        """Turn one chat payload into a public event row."""
+
         text = str(action.get("text", "")).strip()
         if not text:
             raise ValueError("Chat text must not be empty.")
@@ -159,6 +179,8 @@ class GameMaster:
         )
 
     def _apply_roll(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Roll movement and transition the active seat into the move phase."""
+
         if self.state["phase"] != "start_turn":
             raise ValueError("You cannot roll right now.")
         roll_value = int(self._rng.randint(1, 6))
@@ -174,6 +196,8 @@ class GameMaster:
         ]
 
     def _apply_move(self, seat_id: str, action: Action) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Apply a hallway walk or secret-passage move for the active seat."""
+
         target_node = str(action.get("target_node", "")).strip()
         if target_node not in BOARD_NODES:
             raise ValueError("Unknown movement target.")
@@ -221,6 +245,8 @@ class GameMaster:
         return self.state, events
 
     def _apply_suggest(self, seat_id: str, action: Action) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Apply an in-room suggestion and open the refutation sequence if needed."""
+
         room_name = self.current_room(seat_id)
         if not room_name:
             raise ValueError("Suggestions may only be made from inside a room.")
@@ -284,6 +310,8 @@ class GameMaster:
         action: Action,
         pending_refute: dict[str, Any],
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Resolve one seat's turn in the private/public refutation chain."""
+
         if seat_id != str(pending_refute["current_refuter"]):
             raise ValueError("This seat is not currently being asked to refute.")
         suggestion = dict(pending_refute["suggestion"])
@@ -339,6 +367,8 @@ class GameMaster:
         return self.state, events
 
     def _apply_accuse(self, seat_id: str, action: Action) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Resolve an accusation, including elimination or game completion."""
+
         accusation = {
             "suspect": str(action.get("suspect", "")).strip(),
             "weapon": str(action.get("weapon", "")).strip(),
@@ -395,6 +425,8 @@ class GameMaster:
         return self.state, events
 
     def _advance_turn(self, message: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Close the current turn and rotate to the next seat that can still win."""
+
         if self.state["status"] != "active":
             return self.state, []
         events = [make_event("turn_ended", payload={"seat_id": self.active_seat_id}, message=message)]
@@ -416,12 +448,16 @@ class GameMaster:
         return self.state, events
 
     def _seat_id_for_character(self, character: str) -> str | None:
+        """Look up the seat currently controlling one named character token."""
+
         for seat_id, seat in self.state["seats"].items():
             if seat["character"] == character:
                 return seat_id
         return None
 
     def _next_turn_seat(self, from_seat: str) -> str:
+        """Find the next seat in turn order that remains eligible to win."""
+
         order = list(self.state["seat_order"])
         start_index = order.index(from_seat)
         for offset in range(1, len(order) + 1):
@@ -431,11 +467,15 @@ class GameMaster:
         return from_seat
 
     def _refute_order(self, suggester_id: str) -> list[str]:
+        """Return the clockwise refutation order after one suggestion."""
+
         order = list(self.state["seat_order"])
         start = order.index(suggester_id)
         return [order[(start + offset) % len(order)] for offset in range(1, len(order))]
 
     def _refute_cards_for_seat(self, seat_id: str, suggestion: dict[str, str]) -> list[str]:
+        """List the cards in a seat hand that can legally refute one suggestion."""
+
         hand = set(self.hidden_hand(seat_id))
         return sorted([card for card in suggestion.values() if card in hand])
 
@@ -447,6 +487,8 @@ def build_filtered_snapshot(
     visible_events: list[dict[str, Any]],
     notebook: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Project the full game state into the public/private view for one seat."""
+
     game = GameMaster(state)
     hidden = state["hidden"]
     public_seats = []

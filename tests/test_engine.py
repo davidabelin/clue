@@ -1,3 +1,5 @@
+"""Rules-engine tests for setup, suggestion/refutation flow, and visibility filtering."""
+
 from __future__ import annotations
 
 import random
@@ -8,6 +10,8 @@ from clue_core.types import SeatConfig
 
 
 def _seats() -> list[SeatConfig]:
+    """Return a compact three-seat table used across engine tests."""
+
     return [
         SeatConfig(seat_id="seat_scarlet", display_name="Miss Scarlet", character="Miss Scarlet", seat_kind="human"),
         SeatConfig(seat_id="seat_mustard", display_name="Colonel Mustard", character="Colonel Mustard", seat_kind="human"),
@@ -16,6 +20,8 @@ def _seats() -> list[SeatConfig]:
 
 
 def test_setup_deals_full_deck_without_duplicates():
+    """The hidden deal should cover all cards exactly once across hands and case file."""
+
     seats = _seats()
     hidden_setup = build_hidden_setup(seats, seed=7)
     all_visible = []
@@ -28,6 +34,8 @@ def test_setup_deals_full_deck_without_duplicates():
 
 
 def test_setup_accepts_three_to_six_seats():
+    """Setup should support every legal Clue player count."""
+
     characters = [
         "Miss Scarlet",
         "Colonel Mustard",
@@ -46,6 +54,8 @@ def test_setup_accepts_three_to_six_seats():
 
 
 def test_refutation_creates_public_and_private_events():
+    """Showing a refute card should emit both table-public and suggester-private events."""
+
     seats = _seats()
     hidden_setup = {
         "seed": 1,
@@ -78,6 +88,8 @@ def test_refutation_creates_public_and_private_events():
 
 
 def test_wrong_accusation_eliminates_but_keeps_game_running():
+    """A wrong accusation should eliminate only the acting seat, not end the game outright."""
+
     seats = _seats()
     hidden_setup = build_hidden_setup(seats, seed=3)
     state = build_initial_state("game_test", "Table", seats, hidden_setup)
@@ -93,6 +105,8 @@ def test_wrong_accusation_eliminates_but_keeps_game_running():
 
 
 def test_suggestion_moves_named_suspect_into_room():
+    """Suggestions should drag the named suspect token into the suggested room."""
+
     seats = _seats()
     hidden_setup = build_hidden_setup(seats, seed=5)
     state = build_initial_state("game_test", "Table", seats, hidden_setup)
@@ -107,6 +121,8 @@ def test_suggestion_moves_named_suspect_into_room():
 
 
 def test_private_card_event_is_visible_only_to_suggester():
+    """Private shown-card events must not leak into other seat snapshots."""
+
     seats = _seats()
     hidden_setup = {
         "seed": 1,

@@ -1,3 +1,5 @@
+"""Shared pytest fixtures for the standalone Clue app tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,6 +16,8 @@ from clue_web import create_app
 
 @pytest.fixture
 def app(tmp_path: Path):
+    """Create one isolated app instance backed by a temporary SQLite database."""
+
     app = create_app(
         {
             "TESTING": True,
@@ -27,4 +31,6 @@ def app(tmp_path: Path):
 
 @pytest.fixture
 def client(app):
+    """Return the Flask test client for the configured Clue app."""
+
     return app.test_client()

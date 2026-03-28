@@ -1,3 +1,5 @@
+"""Integration-style tests for the standalone Clue page and API surface."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,10 +10,14 @@ from clue_web import create_app
 
 
 def _token_from_join_url(url: str) -> str:
+    """Extract the signed seat token from one relative join URL."""
+
     return str(url).split("join/", 1)[1]
 
 
 def test_home_page_renders(client):
+    """The landing page should expose the intended create-game affordances."""
+
     response = client.get("/")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
@@ -25,6 +31,8 @@ def test_home_page_renders(client):
 
 
 def test_create_game_and_snapshot_flow(client):
+    """Creating a game should return invite links and a valid seat snapshot flow."""
+
     response = client.post(
         "/api/v1/games",
         json={
@@ -53,6 +61,8 @@ def test_create_game_and_snapshot_flow(client):
 
 
 def test_notebook_update_persists_per_seat(client):
+    """Notebook saves should persist inside one seat's private snapshot."""
+
     response = client.post("/api/v1/games", json={})
     token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
     notebook_response = client.post(
@@ -66,6 +76,8 @@ def test_notebook_update_persists_per_seat(client):
 
 
 def test_game_page_renders_private_and_public_table_sections(client):
+    """The game page should render the core board, private intel, and table record sections."""
+
     response = client.post("/api/v1/games", json={})
     token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
     page = client.get(f"/game?token={token}")
@@ -79,6 +91,8 @@ def test_game_page_renders_private_and_public_table_sections(client):
 
 
 def test_create_game_supports_np_seats_and_all_six_characters(client):
+    """NP seats should be excluded while still supporting all six canonical characters."""
+
     response = client.post(
         "/api/v1/games",
         json={
@@ -105,6 +119,8 @@ def test_create_game_supports_np_seats_and_all_six_characters(client):
 
 
 def test_create_game_requires_three_active_seats(client):
+    """Game creation should reject tables with fewer than three active seats."""
+
     response = client.post(
         "/api/v1/games",
         json={
@@ -121,6 +137,8 @@ def test_create_game_requires_three_active_seats(client):
 
 
 def test_create_game_can_reuse_same_seat_ids_across_multiple_games(client):
+    """Seat ids should be scoped per game rather than globally unique forever."""
+
     payload = {
         "title": "Repeated Seats",
         "seats": [
@@ -137,12 +155,18 @@ def test_create_game_can_reuse_same_seat_ids_across_multiple_games(client):
 
 
 def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypatch):
+    """A mixed heuristic/LLM table should finish when the LLM path is mocked deterministically."""
+
     heuristic = HeuristicSeatAgent()
 
     def _mock_llm_decide(self, *, snapshot, tool_snapshot):
+        """Reuse the heuristic policy as a deterministic stand-in for the LLM policy."""
+
         return heuristic.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
 
     def _fast_tool_snapshot(self, state, seat_id, visible_events):
+        """Force a trivial perfect-knowledge tool snapshot so the game finishes quickly."""
+
         return ToolSnapshot(
             envelope_marginals={},
             top_hypotheses=[],
@@ -180,7 +204,11 @@ def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypa
 
 
 def test_create_app_loads_database_url_from_secret(monkeypatch, tmp_path: Path):
+    """App config should populate DATABASE_URL from Secret Manager when requested."""
+
     def _fake_read_secret(version_name: str) -> str:
+        """Return a temporary SQLite URL in place of a real secret lookup."""
+
         assert version_name == "projects/p/secrets/clue-db-url/versions/latest"
         return f"sqlite+pysqlite:///{(tmp_path / 'secret.db').as_posix()}"
 

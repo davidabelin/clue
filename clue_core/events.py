@@ -7,6 +7,8 @@ from typing import Any
 
 
 def utcnow_iso() -> str:
+    """Return a timezone-aware UTC timestamp for persisted event rows."""
+
     return datetime.now(UTC).isoformat()
 
 
@@ -17,6 +19,8 @@ def make_event(
     message: str,
     visibility: str = "public",
 ) -> dict[str, Any]:
+    """Build one append-only event record with a fresh timestamp."""
+
     return {
         "event_type": event_type,
         "payload": payload or {},

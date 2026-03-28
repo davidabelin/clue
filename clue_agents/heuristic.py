@@ -11,6 +11,8 @@ class HeuristicSeatAgent(SeatAgent):
     """Simple rules-first agent that leans on the deduction tool snapshot."""
 
     def decide_turn(self, *, snapshot: dict[str, Any], tool_snapshot: dict[str, Any]) -> TurnDecision:
+        """Pick a deterministic fallback action using only legal moves and tool hints."""
+
         legal = snapshot["legal_actions"]
         available = set(legal.get("available") or [])
         if "show_refute_card" in available:

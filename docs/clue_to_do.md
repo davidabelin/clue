@@ -38,7 +38,7 @@
 - [] Add supervised / DAgger experiments only after a strong non-ML baseline and replay/eval harness exist.
 - [] Later, add population-style evaluation against mixed opponent pools and consider OpenSpiel-based benchmarking once the planner baseline is trustworthy.
 
-## Human UI Testing Checklist
+## Human/UI Testing Checklist
 
 ### Setup And Launch
 - [X] Start standalone Clue locally and confirm the home page loads without JS errors.
@@ -62,11 +62,11 @@
 - [X] Refresh or reopen a seat URL and confirm the correct private snapshot, turn banner, and notebook state are restored.
 
 ### Core All-Human Gameplay
-- [x] Roll and verify only legal move destinations are highlighted.
+- [] Roll and verify only legal move destinations are highlighted.
 - [] Move through hallway nodes, enter a room, and verify position updates across all open seats.
 - [] Use a secret passage where available and verify the destination room updates correctly.
 - [] Make a suggestion and verify the named suspect token is moved into the room.
-- [x] Test a suggestion with a refuter and verify only the suggesting seat sees the shown card in `Private Intel`.
+- [] Test a suggestion with a refuter and verify only the suggesting seat sees the shown card in `Private Intel`.
 - [] Test a suggestion with no refuter and verify the public log shows the unanswered suggestion with no private card exposure.
 - [x] Make a wrong accusation and verify that seat cannot win, gameplay continues, and the table state stays consistent.
 - [] Finish a full human-only game and verify winner display, final logs, and stable post-game review.
@@ -82,14 +82,27 @@
 - [] During every manual run, (automatically) record debug info (where?)including the date, seat mix, environment, latency spikes, fallback count, leakage incidents, and any sync defects that still need fixes.
 
 ### Miscellaneous Fixes and Improvements
-- Local run
+- **Local** run
   - the Table Record panel:
     - [x] needs a scrollbar
     - [x] should be latest-first (ie. most recent at top)
   - [x] Action dropdown draft-state fix deployed so polling no longer resets Move / Suggest / Accuse / Refute selections to the first option.
-  - [] Re-verify locally that action choices now remain stable across polling after a full page reload.
-- online at aix-labs\clue and clue-aix-labs\clue
+  - [] Re-verify **locally** that action choices now remain stable across polling after a full page reload.
+- **Online**
+  - at both [] `aix-labs\clue` and [] `clue-aix-labs\clue`
   - [x] Create a game (3, 4 players)
   - [x] Poll-safe dropdown fix deployed to the live Clue service on 2026-03-26.
   - [] Re-verify online that UI choices now remain stable after a hard refresh / fresh private window.
-  - [] (continue checklist online when gameplay possible...)
+  - [] UI panels to provide *friendly but detailed* explanation of how LLM players are integrated into gameplay
+- [] Implement recommended (docs\ClueDeepDive.md) use of OpenAI SDK for LLM integration with gameplay tools
+
+### Documentation
+- [x] Thoroughly and meticulously docstring all code
+  - aimed at developer/maintainer of the future
+    - [x] priority is documenting architecture and functionality
+    - [x] keep deeper ML / game-theory context in the design docs, not bloated inline comments
+  - [x] python; server-side code
+  - [x] html, js, css; front end code
+  - [x] .bat files; helper scripts
+    - N/A for the standalone `clue` repo itself; AIX-side batch helpers stay documented in the `aix` repo
+  - [x] Establish the default that new public modules, classes, and functions should ship with maintainer-focused docs as they are added

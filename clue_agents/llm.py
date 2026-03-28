@@ -18,12 +18,18 @@ except Exception:  # pragma: no cover - import guard for local test envs
 
 
 class LLMSeatAgent(SeatAgent):
+    """Structured-output OpenAI seat agent with a deterministic fallback policy."""
+
     def __init__(self, *, model: str = "", api_key: str = "") -> None:
+        """Capture runtime model settings and resolve the production API key if present."""
+
         self._model = str(model or os.getenv("CLUE_LLM_MODEL", "gpt-4o-mini")).strip()
         self._api_key = resolve_openai_api_key(api_key=api_key)
         self._fallback = HeuristicSeatAgent()
 
     def decide_turn(self, *, snapshot: dict[str, Any], tool_snapshot: dict[str, Any]) -> TurnDecision:
+        """Ask the model for one structured turn decision, or fall back safely on any failure."""
+
         if OpenAI is None or not self._api_key:
             return self._fallback.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
         legal = snapshot["legal_actions"]
@@ -90,6 +96,8 @@ class LLMSeatAgent(SeatAgent):
 
     @staticmethod
     def _decision_is_legal(decision: TurnDecision, legal: dict[str, Any]) -> bool:
+        """Validate model output against the current legal-action envelope."""
+
         available = set(legal.get("available") or [])
         if decision.action not in available:
             return False

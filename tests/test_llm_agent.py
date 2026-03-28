@@ -1,3 +1,5 @@
+"""LLM-seat tests covering fallback, legality checks, and secret resolution."""
+
 from __future__ import annotations
 
 import types
@@ -7,6 +9,8 @@ from clue_agents.secrets import _access_secret_version, resolve_openai_api_key
 
 
 def _snapshot(*, legal_actions: dict | None = None) -> dict:
+    """Build a minimal seat snapshot for unit-testing the agent policy."""
+
     return {
         "seat": {
             "display_name": "Miss Scarlet",
@@ -19,14 +23,22 @@ def _snapshot(*, legal_actions: dict | None = None) -> dict:
 
 
 def test_llm_agent_falls_back_without_api_key():
+    """Without an API key, the LLM seat should defer to the heuristic fallback."""
+
     agent = LLMSeatAgent(api_key="")
     decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
     assert decision.action == "end_turn"
 
 
 def test_resolve_openai_api_key_reads_secret_manager(monkeypatch):
+    """Secret Manager indirection should populate the OpenAI API key when env is blank."""
+
     class FakeClient:
+        """Minimal fake Secret Manager client for unit tests."""
+
         def access_secret_version(self, request: dict) -> types.SimpleNamespace:
+            """Return a canned secret payload for the requested resource name."""
+
             assert request["name"] == "projects/aix-labs/secrets/openai-api-key/versions/latest"
             return types.SimpleNamespace(payload=types.SimpleNamespace(data=b"secret-from-sm"))
 
@@ -43,8 +55,14 @@ def test_resolve_openai_api_key_reads_secret_manager(monkeypatch):
 
 
 def test_llm_agent_falls_back_on_malformed_json(monkeypatch):
+    """Malformed model output should trigger the deterministic fallback policy."""
+
     class FakeClient:
+        """Fake OpenAI client that returns invalid JSON payloads."""
+
         def __init__(self, api_key: str) -> None:
+            """Capture the API key shape and expose a malformed responses interface."""
+
             self.responses = types.SimpleNamespace(
                 create=lambda **kwargs: types.SimpleNamespace(output_text="{not-json")
             )
@@ -57,8 +75,14 @@ def test_llm_agent_falls_back_on_malformed_json(monkeypatch):
 
 
 def test_llm_agent_rejects_illegal_actions(monkeypatch):
+    """Illegal model actions should be rejected in favor of the heuristic fallback."""
+
     class FakeClient:
+        """Fake OpenAI client that emits one illegal action payload."""
+
         def __init__(self, api_key: str) -> None:
+            """Expose a canned illegal action through the responses API shape."""
+
             self.responses = types.SimpleNamespace(
                 create=lambda **kwargs: types.SimpleNamespace(
                     output_text='{"action":"teleport","rationale_private":"illegal"}'
@@ -73,8 +97,14 @@ def test_llm_agent_rejects_illegal_actions(monkeypatch):
 
 
 def test_llm_agent_falls_back_on_timeout(monkeypatch):
+    """Timeouts from the model client should fall back without crashing the turn."""
+
     class FakeClient:
+        """Fake OpenAI client that raises a timeout on every call."""
+
         def __init__(self, api_key: str) -> None:
+            """Expose a responses API that immediately times out."""
+
             self.responses = types.SimpleNamespace(
                 create=lambda **kwargs: (_ for _ in ()).throw(TimeoutError("timed out"))
             )
@@ -87,8 +117,14 @@ def test_llm_agent_falls_back_on_timeout(monkeypatch):
 
 
 def test_llm_agent_sanitizes_public_leak(monkeypatch):
+    """Model chat that leaks hidden ownership should be blanked before use."""
+
     class FakeClient:
+        """Fake OpenAI client that emits a hidden-information public message."""
+
         def __init__(self, api_key: str) -> None:
+            """Return one otherwise-legal action with unsafe public chat text."""
+
             self.responses = types.SimpleNamespace(
                 create=lambda **kwargs: types.SimpleNamespace(
                     output_text=(
@@ -107,10 +143,16 @@ def test_llm_agent_sanitizes_public_leak(monkeypatch):
 
 
 def test_llm_agent_uses_secret_manager_key_when_env_var_missing(monkeypatch):
+    """The instantiated OpenAI client should receive the key resolved from Secret Manager."""
+
     captured: dict[str, str] = {}
 
     class FakeClient:
+        """Fake OpenAI client that records the supplied API key."""
+
         def __init__(self, api_key: str) -> None:
+            """Capture the resolved API key and return one legal action payload."""
+
             captured["api_key"] = api_key
             self.responses = types.SimpleNamespace(
                 create=lambda **kwargs: types.SimpleNamespace(

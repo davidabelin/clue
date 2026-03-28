@@ -11,6 +11,8 @@ from clue_core.types import SeatConfig
 
 
 def build_hidden_setup(seats: list[SeatConfig], *, seed: int | None = None) -> dict[str, Any]:
+    """Choose the case file and deal the remaining cards across active seats."""
+
     if not (3 <= len(seats) <= 6):
         raise ValueError("Clue requires between 3 and 6 seats.")
     rng = random.Random(seed)
@@ -37,6 +39,8 @@ def build_hidden_setup(seats: list[SeatConfig], *, seed: int | None = None) -> d
 
 
 def build_initial_state(game_id: str, title: str, seats: list[SeatConfig], hidden_setup: dict[str, Any]) -> dict[str, Any]:
+    """Build the first public+private game state snapshot from a hidden deal."""
+
     ordered_seat_ids = [seat.seat_id for seat in seats]
     seat_state = {}
     for seat in seats:

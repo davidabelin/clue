@@ -23,16 +23,24 @@ DEFAULT_GAME_SEED = 17
 
 
 def _timestamp_slug() -> str:
+    """Generate sortable timestamp ids for new game records."""
+
     return datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
 
 
 class GameService:
+    """High-level gameplay service that bridges web requests, storage, and agents."""
+
     def __init__(self, repository: ClueRepository, *, secret_key: str) -> None:
+        """Store repository access and build the seat-token serializer."""
+
         self._repository = repository
         self._serializer = URLSafeSerializer(secret_key, salt="clue-seat-token")
         self._agents = AgentRuntime()
 
     def create_game(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Create one new game, persist it, and immediately run any autonomous seats."""
+
         title = str(payload.get("title", "")).strip() or "Clue Table"
         requested_seats = list(payload.get("seats") or [])
         if requested_seats:
@@ -90,11 +98,15 @@ class GameService:
         return {"game_id": game_id, "title": title, "seat_links": seat_links}
 
     def join_by_token(self, token: str) -> dict[str, Any]:
+        """Resolve one seat token and mark the seat as having joined the table."""
+
         seat = self.resolve_token(token)
         self._repository.mark_seat_seen(seat["game_id"], seat["seat_id"])
         return seat
 
     def resolve_token(self, token: str) -> dict[str, Any]:
+        """Validate a signed seat token against the persisted token record."""
+
         try:
             payload = self._serializer.loads(token)
         except BadSignature as exc:
@@ -107,6 +119,8 @@ class GameService:
         return seat
 
     def snapshot_for_token(self, token: str, *, since_event_index: int = 0) -> dict[str, Any]:
+        """Return the public/private snapshot visible to one seat token."""
+
         seat = self.resolve_token(token)
         state = self._repository.get_state(seat["game_id"])
         visible_events = self._repository.visible_events(seat["game_id"], seat_id=seat["seat_id"], since_event_index=since_event_index)
@@ -118,6 +132,8 @@ class GameService:
         )
 
     def submit_action(self, token: str, action: dict[str, Any]) -> dict[str, Any]:
+        """Apply one human-seat action, then continue any autonomous follow-up turns."""
+
         seat = self.resolve_token(token)
         state = self._repository.get_state(seat["game_id"])
         game = GameMaster(state)
@@ -132,12 +148,16 @@ class GameService:
         return self.snapshot_for_token(token)
 
     def update_notebook(self, token: str, notebook: dict[str, Any]) -> dict[str, Any]:
+        """Persist a seat notebook change and return the refreshed filtered snapshot."""
+
         seat = self.resolve_token(token)
         self._repository.update_notebook(seat["game_id"], seat["seat_id"], notebook)
         return self.snapshot_for_token(token)
 
     @staticmethod
     def _seat_configs_from_payload(requested_seats: list[dict[str, Any]]) -> list[SeatConfig]:
+        """Normalize create-game seat payloads and drop seats marked as not playing."""
+
         seat_payloads = []
         for item in requested_seats:
             seat_kind = str(item.get("seat_kind", "human")).strip().lower()
@@ -149,6 +169,8 @@ class GameService:
         return [SeatConfig.from_dict(item) for item in seat_payloads]
 
     def maybe_run_agents(self, game_id: str, *, max_cycles: int = 32) -> None:
+        """Advance queued heuristic/LLM turns until a human seat must respond."""
+
         cycles = 0
         while cycles < max_cycles:
             state = self._repository.get_state(game_id)
@@ -173,6 +195,8 @@ class GameService:
             cycles += 1
 
     def _tool_snapshot_for(self, state: dict[str, Any], seat_id: str, visible_events: list[dict[str, Any]]):
+        """Build the deduction helper payload for one autonomous seat decision."""
+
         hand_counts = {other_id: int(seat["hand_count"]) for other_id, seat in state["seats"].items()}
         room_name = None
         seat_position = str(state["seats"][seat_id]["position"])
@@ -189,6 +213,8 @@ class GameService:
         )
 
     def _build_internal_snapshot(self, game_id: str, seat_id: str) -> dict[str, Any]:
+        """Build the full seat-private snapshot used internally by autonomous seats."""
+
         state = self._repository.get_state(game_id)
         seat_row = next(item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id)
         visible_events = self._repository.visible_events(game_id, seat_id=seat_id, since_event_index=0)
@@ -196,6 +222,8 @@ class GameService:
 
     @staticmethod
     def _autonomous_seat_to_act(state: dict[str, Any]) -> str | None:
+        """Return the non-human seat that should act next, if any."""
+
         pending_refute = state.get("pending_refute")
         if pending_refute:
             current_refuter = str(pending_refute["current_refuter"])
@@ -209,6 +237,8 @@ class GameService:
 
     @staticmethod
     def _default_seats() -> list[SeatConfig]:
+        """Return the default mixed-seat table used when no explicit payload is supplied."""
+
         defaults = [
             ("seat_scarlet", "Miss Scarlet", "Miss Scarlet", "human"),
             ("seat_mustard", "Colonel Mustard", "Colonel Mustard", "heuristic"),

@@ -7,6 +7,8 @@ from functools import lru_cache
 
 
 def resolve_openai_api_key(*, api_key: str = "") -> str:
+    """Prefer an explicit key, then env, then Secret Manager indirection."""
+
     direct_value = str(api_key or os.getenv("OPENAI_API_KEY", "")).strip()
     if direct_value:
         return direct_value
@@ -17,6 +19,8 @@ def resolve_openai_api_key(*, api_key: str = "") -> str:
 
 
 def _create_secret_manager_client():
+    """Construct the lazy Secret Manager client only when a secret is needed."""
+
     from google.cloud import secretmanager
 
     return secretmanager.SecretManagerServiceClient()
@@ -24,6 +28,8 @@ def _create_secret_manager_client():
 
 @lru_cache(maxsize=None)
 def _access_secret_version(secret_version: str) -> str:
+    """Read and cache one Secret Manager version, returning an empty string on failure."""
+
     try:
         client = _create_secret_manager_client()
         response = client.access_secret_version(request={"name": secret_version})

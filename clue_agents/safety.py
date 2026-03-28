@@ -11,6 +11,8 @@ _OWNERSHIP_VERBS = (" has ", " holds ", " owns ", " showed ", " must have ")
 
 
 def sanitize_public_chat(text: str) -> str:
+    """Strip whitespace noise and block likely hidden-card ownership leaks."""
+
     candidate = str(text or "").strip()
     if not candidate:
         return ""
