@@ -1,3 +1,14 @@
+/*
+  Seat-specific browser runtime for the standalone Clue table.
+
+  Maintainer notes:
+  - This file owns the polling loop, DOM rendering, seat-local draft state, and
+    action/notebook/chat submission UX for one joined seat.
+  - Server responses are authoritative; the browser only preserves in-progress
+    human input such as notebook text, chat text, and action dropdown choices.
+  - Public/private visibility boundaries are enforced server-side, so the UI
+    should treat returned snapshots as already filtered for the current seat.
+*/
 const app = document.getElementById("game-app");
 
 if (app) {
@@ -109,6 +120,7 @@ if (app) {
   }
 
   async function request(path, options = {}) {
+    // Every authenticated game request is scoped by the signed seat token.
     const response = await fetch(path, {
       ...options,
       headers: {
@@ -350,6 +362,10 @@ if (app) {
   }
 
   function renderSummary(snapshot) {
+    /*
+      Re-render the full seat view from one authoritative snapshot while
+      preserving any unsaved notebook/chat text and action draft selections.
+    */
     const previousNotebook = notebookText.value;
     const previousChat = chatInput.value;
     currentSnapshot = snapshot;
@@ -392,6 +408,7 @@ if (app) {
   }
 
   function buildSelect(id, options, labelText, valueField = "value", textField = "label") {
+    // Draft selections survive polling so humans can think before clicking.
     const previousValue = actionDrafts.get(id) || "";
     const wrapper = document.createElement("label");
     wrapper.className = "action-row";
@@ -441,6 +458,7 @@ if (app) {
   }
 
   function renderActions(snapshot) {
+    // Action controls are rebuilt every refresh because legality changes by phase.
     const legal = snapshot.legal_actions || {};
     const available = new Set(legal.available || []);
     actionControls.innerHTML = "";
@@ -501,6 +519,7 @@ if (app) {
   }
 
   async function refresh() {
+    // Polling is the v1 synchronization mechanism for board state and event logs.
     if (refreshing) {
       return;
     }

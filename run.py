@@ -12,10 +12,14 @@ class PathPrefixMiddleware:
     """Strip one configured URL prefix so app routes work behind dispatch.yaml."""
 
     def __init__(self, wsgi_app, prefix: str) -> None:
+        """Remember the wrapped app and normalized prefix to strip."""
+
         self._app = wsgi_app
         self._prefix = "/" + str(prefix or "").strip().strip("/")
 
     def __call__(self, environ, start_response):
+        """Rewrite PATH_INFO/SCRIPT_NAME when the request arrives under the mounted prefix."""
+
         if self._prefix == "/":
             return self._app(environ, start_response)
         path_info = str(environ.get("PATH_INFO", "") or "")

@@ -102,14 +102,20 @@ NODE_TO_ROOM_NAME = {node_id: label for label, node_id in ROOM_NAME_TO_NODE.item
 
 
 def node_kind(node_id: str) -> str:
+    """Return the board-node kind for one node id."""
+
     return str(BOARD_NODES[node_id]["kind"])
 
 
 def is_room(node_id: str) -> bool:
+    """Report whether one node id is a room rather than a hallway or start node."""
+
     return node_kind(node_id) == "room"
 
 
 def shortest_paths(start: str, blocked: set[str] | None = None) -> dict[str, int]:
+    """Compute shortest graph distances while treating occupied hallways as blocked."""
+
     blocked_nodes = {item for item in (blocked or set()) if node_kind(item) == "hallway"}
     distances = {start: 0}
     queue: deque[str] = deque([start])
@@ -126,6 +132,8 @@ def shortest_paths(start: str, blocked: set[str] | None = None) -> dict[str, int
 
 
 def reachable_nodes(start: str, steps: int, blocked: set[str] | None = None) -> dict[str, int]:
+    """Return nodes reachable within the rolled movement budget."""
+
     distances = shortest_paths(start, blocked=blocked)
     return {
         node_id: distance

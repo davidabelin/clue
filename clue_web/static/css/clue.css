@@ -1,3 +1,12 @@
+/*
+  Visual system for the standalone Clue web UI.
+
+  The layout intentionally separates:
+  - public/shared table state
+  - private seat intelligence
+  - active action controls
+  so the game reads like a round-table board game rather than a generic app.
+*/
 :root {
   --paper: #efe3c7;
   --paper-strong: #ddc9a1;

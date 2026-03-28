@@ -14,10 +14,14 @@ from clue_core.events import utcnow_iso
 
 
 def _looks_like_database_url(value: str) -> bool:
+    """Best-effort check for SQLAlchemy-style connection URLs."""
+
     return "://" in str(value)
 
 
 def _to_sqlite_url(path_value: str) -> str:
+    """Convert one filesystem path into a SQLite SQLAlchemy URL."""
+
     path = Path(path_value).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite+pysqlite:///{path.as_posix()}"
@@ -27,6 +31,8 @@ class ClueRepository:
     """Persistence facade for standalone and AIX-mounted Clue gameplay."""
 
     def __init__(self, db_target: str) -> None:
+        """Initialize the SQLAlchemy engine for SQLite or PostgreSQL storage."""
+
         target = str(db_target).strip()
         if not target:
             raise ValueError("Database target must not be empty.")
@@ -39,16 +45,22 @@ class ClueRepository:
 
     @staticmethod
     def _first_or_none(rows: MappingResult) -> dict[str, Any] | None:
+        """Return the first mapping row as a plain dict, or ``None`` when empty."""
+
         row = rows.first()
         return dict(row) if row is not None else None
 
     def _run_script(self, script: str) -> None:
+        """Execute a semicolon-delimited schema script statement-by-statement."""
+
         statements = [part.strip() for part in script.split(";") if part.strip()]
         with self.engine.begin() as conn:
             for statement in statements:
                 conn.execute(text(statement))
 
     def init_schema(self) -> None:
+        """Create the required tables and indexes for the active SQL dialect."""
+
         sqlite_schema = """
             PRAGMA foreign_keys = ON;
 
@@ -158,6 +170,8 @@ class ClueRepository:
         self._ensure_seat_key_column()
 
     def _ensure_seat_key_column(self) -> None:
+        """Backfill the stable seat-key column used by token lookups across games."""
+
         if self._dialect == "sqlite":
             query = text("PRAGMA table_info(seats)")
             key_name = "name"
@@ -189,6 +203,8 @@ class ClueRepository:
         seat_tokens: list[dict[str, str]],
         events: list[dict[str, Any]],
     ) -> None:
+        """Persist one freshly created game plus seats, tokens, and opening events."""
+
         created_at = utcnow_iso()
         with self._lock, self.engine.begin() as conn:
             conn.execute(
@@ -257,6 +273,8 @@ class ClueRepository:
             self._insert_events(conn, game_id=game_id, events=events)
 
     def _insert_events(self, conn, *, game_id: str, events: list[dict[str, Any]]) -> None:
+        """Append ordered event rows to the event log for one game."""
+
         current_index = self.next_event_index(game_id, conn=conn)
         for offset, event in enumerate(events, start=1):
             conn.execute(
@@ -278,6 +296,8 @@ class ClueRepository:
             )
 
     def next_event_index(self, game_id: str, *, conn=None) -> int:
+        """Return the current highest event index for one game."""
+
         owns_connection = conn is None
         if owns_connection:
             context = self.engine.begin()
@@ -292,6 +312,8 @@ class ClueRepository:
                 context.__exit__(None, None, None)
 
     def get_game_record(self, game_id: str) -> dict[str, Any] | None:
+        """Load the persisted config/setup/state bundle for one game id."""
+
         with self.engine.begin() as conn:
             row = self._first_or_none(
                 conn.execute(text("SELECT * FROM games WHERE id = :game_id"), {"game_id": game_id}).mappings()
@@ -310,12 +332,16 @@ class ClueRepository:
         }
 
     def get_state(self, game_id: str) -> dict[str, Any]:
+        """Return the mutable gameplay state payload for one game."""
+
         row = self.get_game_record(game_id)
         if row is None:
             raise KeyError(f"Unknown game: {game_id}")
         return dict(row["state"])
 
     def save_state_and_events(self, game_id: str, *, state: dict[str, Any], events: list[dict[str, Any]]) -> None:
+        """Persist one post-action state snapshot and its newly emitted events."""
+
         updated_at = utcnow_iso()
         with self._lock, self.engine.begin() as conn:
             conn.execute(
@@ -330,6 +356,8 @@ class ClueRepository:
             self._insert_events(conn, game_id=game_id, events=events)
 
     def list_seats(self, game_id: str) -> list[dict[str, Any]]:
+        """Return the seat rows for one game in creation order."""
+
         with self.engine.begin() as conn:
             rows = conn.execute(
                 text("SELECT * FROM seats WHERE game_id = :game_id ORDER BY created_at, id"),
@@ -350,6 +378,8 @@ class ClueRepository:
             ]
 
     def get_seat_by_token(self, token: str) -> dict[str, Any] | None:
+        """Resolve one signed seat token to its persisted seat context."""
+
         with self.engine.begin() as conn:
             row = self._first_or_none(
                 conn.execute(
@@ -380,6 +410,8 @@ class ClueRepository:
         }
 
     def mark_seat_seen(self, game_id: str, seat_id: str) -> None:
+        """Record first-join time for one seat without overwriting earlier joins."""
+
         with self._lock, self.engine.begin() as conn:
             now = utcnow_iso()
             conn.execute(
@@ -394,6 +426,8 @@ class ClueRepository:
             )
 
     def update_notebook(self, game_id: str, seat_id: str, notebook: dict[str, Any]) -> None:
+        """Persist the private notebook payload for one seat."""
+
         with self._lock, self.engine.begin() as conn:
             conn.execute(
                 text(
@@ -412,6 +446,8 @@ class ClueRepository:
             )
 
     def visible_events(self, game_id: str, *, seat_id: str, since_event_index: int = 0) -> list[dict[str, Any]]:
+        """Return public plus seat-private events visible to one seat after a cursor."""
+
         with self.engine.begin() as conn:
             rows = conn.execute(
                 text(

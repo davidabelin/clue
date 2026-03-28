@@ -13,6 +13,8 @@ from clue_web.runtime import GameService
 
 
 def _read_secret_version(secret_version_name: str) -> str:
+    """Read one Secret Manager version into plaintext app config."""
+
     from google.cloud import secretmanager
 
     client = secretmanager.SecretManagerServiceClient()
@@ -21,6 +23,8 @@ def _read_secret_version(secret_version_name: str) -> str:
 
 
 def _resolve_secret_into_config(app: Flask, *, target_key: str, source_key: str) -> None:
+    """Fill one config entry from Secret Manager when the direct value is empty."""
+
     if str(app.config.get(target_key, "")).strip():
         return
     secret_version_name = str(app.config.get(source_key, "")).strip()
@@ -35,11 +39,15 @@ def _resolve_secret_into_config(app: Flask, *, target_key: str, source_key: str)
 
 
 def _normalize_base_url(value: str) -> str:
+    """Normalize empty AIX link targets to the root path."""
+
     raw = str(value or "").strip()
     return raw or "/"
 
 
 def _aix_page_url(base_url: str, path: str) -> str:
+    """Compose one AIX-owned chrome link from the configured hub base URL."""
+
     base = _normalize_base_url(base_url)
     if base == "/":
         return path
@@ -47,6 +55,8 @@ def _aix_page_url(base_url: str, path: str) -> str:
 
 
 def create_app(config: dict | None = None) -> Flask:
+    """Create the standalone Clue Flask app and wire storage, routes, and chrome links."""
+
     root = Path(__file__).resolve().parents[1]
     data_dir = root / "data"
     app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -77,6 +87,8 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.context_processor
     def inject_template_globals() -> dict:
+        """Expose AIX navigation URLs to the shared Clue templates."""
+
         hub_url = _normalize_base_url(app.config.get("AIX_HUB_URL", "/"))
         return {
             "aix_hub_url": hub_url,

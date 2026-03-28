@@ -42,6 +42,8 @@ CARD_CATEGORIES = {
 
 
 def card_category(card_name: str) -> str:
+    """Map one card name to its case-file category."""
+
     if card_name in SUSPECTS:
         return "suspect"
     if card_name in WEAPONS:

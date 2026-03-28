@@ -10,6 +10,8 @@ from clue_core.constants import CHARACTERS
 
 @dataclass(slots=True)
 class SeatConfig:
+    """Normalized seat configuration used by setup, storage, and web payloads."""
+
     seat_id: str
     display_name: str
     character: str
@@ -18,6 +20,8 @@ class SeatConfig:
     notebook: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Validate character identity and normalize the seat kind."""
+
         if self.character not in CHARACTERS:
             raise ValueError(f"Unsupported character: {self.character}")
         normalized = str(self.seat_kind or "human").strip().lower()
@@ -26,10 +30,14 @@ class SeatConfig:
         self.seat_kind = normalized
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the config into the dict shape used across the app."""
+
         return asdict(self)
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "SeatConfig":
+        """Build one config from a request payload or persisted row."""
+
         return cls(
             seat_id=str(payload["seat_id"]),
             display_name=str(payload["display_name"]),
