@@ -10,6 +10,7 @@
     <div class="header-status">
       <div id="turn-banner" class="turn-banner">Loading table state...</div>
       <p id="pace-note" class="pace-note">Synchronizing table...</p>
+      <button id="diagnostics-toggle" type="button" class="secondary-action diagnostics-toggle" aria-pressed="false">Show Diagnostics</button>
     </div>
   </div>
   <section id="request-error" class="panel request-error hidden" aria-live="polite"></section>
@@ -75,6 +76,7 @@
         <h2>Seat Intelligence</h2>
         <span id="debug-status" class="status-chip">Idle</span>
       </div>
+      <p class="field-note">Optional diagnostics keep the telemetry, tool traces, and seat-private reasoning nearby without crowding normal play.</p>
       <div class="intelligence-stack">
         <section class="intelligence-card">
           <div class="panel-head compact">

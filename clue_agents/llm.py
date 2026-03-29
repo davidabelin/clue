@@ -9,6 +9,7 @@ from typing import Any
 
 from clue_agents.base import SeatAgent, TurnDecision
 from clue_agents.heuristic import HeuristicSeatAgent
+from clue_agents.policy import accusation_window, persona_prompt, stock_public_comment
 from clue_agents.secrets import resolve_openai_api_key
 from clue_agents.safety import sanitize_public_chat
 
@@ -33,6 +34,7 @@ class LLMSeatAgent(SeatAgent):
         self,
         fallback: TurnDecision,
         *,
+        snapshot: dict[str, Any],
         reason: str,
         tool_snapshot: dict[str, Any],
         error: Exception | None = None,
@@ -43,6 +45,7 @@ class LLMSeatAgent(SeatAgent):
         debug_private.setdefault("belief_summary", dict(tool_snapshot.get("belief_summary") or {}))
         debug_private.setdefault("top_hypotheses", list(tool_snapshot.get("top_hypotheses") or [])[:3])
         debug_private.setdefault("top_ranked_suggestions", list(tool_snapshot.get("suggestion_ranking") or [])[:3])
+        debug_private.setdefault("accusation_window", accusation_window(snapshot, tool_snapshot))
         if error is not None:
             debug_private["fallback_error"] = str(error)
         return TurnDecision(
@@ -59,6 +62,7 @@ class LLMSeatAgent(SeatAgent):
                 **dict(fallback.agent_meta or {}),
                 "policy": "llm",
                 "model": self._model,
+                "persona": str(snapshot["seat"].get("character") or ""),
                 "timeout_s": self._timeout_seconds,
                 "fallback_used": True,
                 "fallback_reason": reason,
@@ -72,16 +76,20 @@ class LLMSeatAgent(SeatAgent):
         if OpenAI is None or not self._api_key:
             return self._fallback_decision(
                 fallback,
+                snapshot=snapshot,
                 reason=("missing_openai_sdk" if OpenAI is None else "missing_api_key"),
                 tool_snapshot=tool_snapshot,
             )
+        accusation_gate = accusation_window(snapshot, tool_snapshot)
         legal = snapshot["legal_actions"]
         prompt = [
             {
                 "role": "system",
                 "content": (
                     "You are a Clue seat agent. Obey legal actions exactly. Use the tool summary as ground truth. "
-                    "Never claim hidden card ownership in public chat. Keep rationale_private brief."
+                    "Never claim hidden card ownership in public chat. Keep rationale_private brief. "
+                    f"Stay lightly in character as {snapshot['seat']['character']}: {persona_prompt(str(snapshot['seat']['character']))} "
+                    "Public chat is optional and should be at most one short sentence about the current public action."
                 ),
             },
             {
@@ -92,6 +100,7 @@ class LLMSeatAgent(SeatAgent):
                     f"Legal actions: {legal}\n"
                     f"Private hand: {snapshot['seat']['hand']}\n"
                     f"Tool snapshot: {tool_snapshot}\n"
+                    f"Accusation pacing gate: {accusation_gate}\n"
                     "Return the single best next action."
                 ),
             },
@@ -130,21 +139,36 @@ class LLMSeatAgent(SeatAgent):
             raw = json.loads(str(getattr(response, "output_text", "") or "{}"))
             decision = TurnDecision.from_dict(raw)
             if not decision.action:
-                return self._fallback_decision(fallback, reason="empty_action", tool_snapshot=tool_snapshot)
+                return self._fallback_decision(fallback, snapshot=snapshot, reason="empty_action", tool_snapshot=tool_snapshot)
             if not self._decision_is_legal(decision, legal):
-                return self._fallback_decision(fallback, reason="illegal_action", tool_snapshot=tool_snapshot)
+                return self._fallback_decision(fallback, snapshot=snapshot, reason="illegal_action", tool_snapshot=tool_snapshot)
+            if decision.action == "accuse" and not accusation_gate["ready"]:
+                return self._fallback_decision(fallback, snapshot=snapshot, reason="accusation_hold", tool_snapshot=tool_snapshot)
             original_text = decision.text or ""
             if decision.text:
                 decision.text = sanitize_public_chat(decision.text)
+            if not decision.text:
+                decision.text = stock_public_comment(
+                    snapshot,
+                    {
+                        "action": decision.action,
+                        "target_node": decision.target_node,
+                        "suspect": decision.suspect,
+                        "weapon": decision.weapon,
+                        "room": decision.room,
+                    },
+                )
             decision.debug_private = {
                 **dict(tool_snapshot.get("belief_summary") or {}),
                 "top_hypotheses": list(tool_snapshot.get("top_hypotheses") or [])[:3],
                 "top_ranked_suggestions": list(tool_snapshot.get("suggestion_ranking") or [])[:3],
+                "accusation_window": accusation_gate,
                 "model_rationale": decision.rationale_private,
             }
             decision.agent_meta = {
                 "policy": "llm",
                 "model": self._model,
+                "persona": str(snapshot["seat"].get("character") or ""),
                 "timeout_s": self._timeout_seconds,
                 "fallback_used": False,
                 "guardrail_blocked": bool(original_text and not decision.text),
@@ -152,11 +176,11 @@ class LLMSeatAgent(SeatAgent):
             }
             return decision
         except json.JSONDecodeError as exc:
-            return self._fallback_decision(fallback, reason="malformed_json", tool_snapshot=tool_snapshot, error=exc)
+            return self._fallback_decision(fallback, snapshot=snapshot, reason="malformed_json", tool_snapshot=tool_snapshot, error=exc)
         except TimeoutError as exc:
-            return self._fallback_decision(fallback, reason="timeout", tool_snapshot=tool_snapshot, error=exc)
+            return self._fallback_decision(fallback, snapshot=snapshot, reason="timeout", tool_snapshot=tool_snapshot, error=exc)
         except Exception as exc:
-            return self._fallback_decision(fallback, reason="model_error", tool_snapshot=tool_snapshot, error=exc)
+            return self._fallback_decision(fallback, snapshot=snapshot, reason="model_error", tool_snapshot=tool_snapshot, error=exc)
 
     @staticmethod
     def _decision_is_legal(decision: TurnDecision, legal: dict[str, Any]) -> bool:

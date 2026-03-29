@@ -38,6 +38,8 @@ if (app) {
   const seatDebug = document.getElementById("seat-debug");
   const debugStatus = document.getElementById("debug-status");
   const aiExplainer = document.getElementById("ai-explainer");
+  const diagnosticsToggle = document.getElementById("diagnostics-toggle");
+  const insightPanel = document.querySelector(".insight-panel");
 
   const CHARACTER_COLORS = {
     "Miss Scarlet": "#c43c4d",
@@ -61,12 +63,25 @@ if (app) {
   const POLL_FAST_MS = 900;
   const POLL_NORMAL_MS = 2200;
   const POLL_IDLE_MS = 4200;
+  const DIAGNOSTICS_STORAGE_KEY = "clue-show-diagnostics";
+  const ROOM_NAME_TO_NODE = {
+    Study: "study",
+    Hall: "hall",
+    Lounge: "lounge",
+    Library: "library",
+    "Billiard Room": "billiard",
+    "Dining Room": "dining",
+    Conservatory: "conservatory",
+    Ballroom: "ballroom",
+    Kitchen: "kitchen",
+  };
 
   let currentSnapshot = null;
   let notebookDirty = false;
   let chatDirty = false;
   let refreshTimer = null;
   let refreshing = false;
+  let showDiagnostics = window.localStorage.getItem(DIAGNOSTICS_STORAGE_KEY) === "1";
   const actionDrafts = new Map();
 
   function escapeHtml(value) {
@@ -103,6 +118,105 @@ if (app) {
       map.set(node.id, node);
     });
     return map;
+  }
+
+  function hexChannels(hex) {
+    const normalized = String(hex || "").replace("#", "");
+    if (normalized.length !== 6) {
+      return { r: 125, g: 97, b: 70 };
+    }
+    const value = Number.parseInt(normalized, 16);
+    return {
+      r: (value >> 16) & 255,
+      g: (value >> 8) & 255,
+      b: value & 255,
+    };
+  }
+
+  function blendHexColors(a, b) {
+    const first = hexChannels(a);
+    const second = hexChannels(b);
+    return `rgb(${Math.round((first.r + second.r) / 2)}, ${Math.round((first.g + second.g) / 2)}, ${Math.round((first.b + second.b) / 2)})`;
+  }
+
+  function hallwayAccentColor(node) {
+    const roomNodeIds = String(node.label || "")
+      .split(" / ")
+      .map((part) => ROOM_NAME_TO_NODE[part])
+      .filter(Boolean);
+    const first = ROOM_COLORS[roomNodeIds[0]] || "#d9c4a0";
+    const second = ROOM_COLORS[roomNodeIds[1]] || first;
+    return blendHexColors(first, second);
+  }
+
+  function accentColorForNode(node) {
+    if (!node) {
+      return "#7d6146";
+    }
+    if (node.kind === "room") {
+      return ROOM_COLORS[node.id] || "#dcc6a3";
+    }
+    if (node.kind === "hallway") {
+      return hallwayAccentColor(node);
+    }
+    if (node.kind === "start") {
+      const markerName = Object.keys(CHARACTER_COLORS).find((name) => node.label.includes(name.split(" ").slice(-1)[0]));
+      return CHARACTER_COLORS[markerName] || "#e4cfaa";
+    }
+    return "#7d6146";
+  }
+
+  function anchorPoint(node, towardNode) {
+    const dx = towardNode.x - node.x;
+    const dy = towardNode.y - node.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    if (node.kind === "room") {
+      const halfWidth = 76;
+      const halfHeight = 46;
+      const scale = 1 / Math.max(Math.abs(dx) / halfWidth || 0, Math.abs(dy) / halfHeight || 0, 1);
+      return {
+        x: node.x + (dx * scale),
+        y: node.y + (dy * scale),
+      };
+    }
+    const radius = node.kind === "hallway" ? 20 : 16;
+    return {
+      x: node.x + ((dx / distance) * radius),
+      y: node.y + ((dy / distance) * radius),
+    };
+  }
+
+  function edgePathData(from, to, edge) {
+    const start = anchorPoint(from, to);
+    const end = anchorPoint(to, from);
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const distance = Math.hypot(dx, dy) || 1;
+    const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+    const perpX = -dy / distance;
+    const perpY = dx / distance;
+    let bend = 0;
+    if (edge.kind === "passage") {
+      bend = 92 * ((from.x < to.x) === (from.y < to.y) ? -1 : 1);
+    } else if (from.kind === "start" || to.kind === "start") {
+      bend = 26 * (from.x < 360 ? -1 : 1);
+    } else if (from.kind === "hallway" && to.kind === "hallway") {
+      bend = 14 * ((from.x + from.y) <= (to.x + to.y) ? 1 : -1);
+    }
+    const control = {
+      x: midpoint.x + (perpX * bend),
+      y: midpoint.y + (perpY * bend),
+    };
+    return `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
+  }
+
+  function updateDiagnosticsVisibility() {
+    if (!diagnosticsToggle || !insightPanel) {
+      return;
+    }
+    diagnosticsToggle.textContent = showDiagnostics ? "Hide Diagnostics" : "Show Diagnostics";
+    diagnosticsToggle.setAttribute("aria-pressed", String(showDiagnostics));
+    insightPanel.classList.toggle("panel-collapsed", !showDiagnostics);
   }
 
   function setMoveDraft(nodeId) {
@@ -182,8 +296,9 @@ if (app) {
     const seatsById = seatMap(snapshot);
     const nodesById = boardNodeById(snapshot);
     const seatPositions = {};
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
     const surface = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    surface.setAttribute("transform", "translate(76 46) scale(0.74)");
+    surface.setAttribute("transform", "translate(88 54) scale(0.69)");
 
     snapshot.seats.forEach((seat) => {
       if (!seatPositions[seat.position]) {
@@ -193,20 +308,47 @@ if (app) {
     });
 
     board.innerHTML = "";
-    (snapshot.board_edges || []).forEach((edge) => {
+    (snapshot.board_edges || []).forEach((edge, index) => {
       const from = nodesById.get(edge.from);
       const to = nodesById.get(edge.to);
       if (!from || !to) {
         return;
       }
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("class", `board-edge board-edge-${edge.kind || "walk"}`);
-      line.setAttribute("x1", from.x);
-      line.setAttribute("y1", from.y);
-      line.setAttribute("x2", to.x);
-      line.setAttribute("y2", to.y);
-      surface.appendChild(line);
+      const gradientId = `board-edge-gradient-${index}`;
+      const gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
+      gradient.setAttribute("id", gradientId);
+      gradient.setAttribute("gradientUnits", "userSpaceOnUse");
+      gradient.setAttribute("x1", String(from.x));
+      gradient.setAttribute("y1", String(from.y));
+      gradient.setAttribute("x2", String(to.x));
+      gradient.setAttribute("y2", String(to.y));
+
+      const startStop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+      startStop.setAttribute("offset", "0%");
+      startStop.setAttribute("stop-color", accentColorForNode(from));
+      startStop.setAttribute("stop-opacity", edge.kind === "passage" ? "0.52" : "0.28");
+      gradient.appendChild(startStop);
+
+      const endStop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
+      endStop.setAttribute("offset", "100%");
+      endStop.setAttribute("stop-color", accentColorForNode(to));
+      endStop.setAttribute("stop-opacity", edge.kind === "passage" ? "0.52" : "0.28");
+      gradient.appendChild(endStop);
+      defs.appendChild(gradient);
+
+      const glow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      glow.setAttribute("class", `board-edge-glow board-edge-glow-${edge.kind || "walk"}`);
+      glow.setAttribute("d", edgePathData(from, to, edge));
+      glow.setAttribute("stroke", `url(#${gradientId})`);
+      surface.appendChild(glow);
+
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("class", `board-edge board-edge-${edge.kind || "walk"}`);
+      path.setAttribute("d", edgePathData(from, to, edge));
+      path.setAttribute("stroke", `url(#${gradientId})`);
+      surface.appendChild(path);
     });
+    board.appendChild(defs);
     snapshot.board_nodes.forEach((node) => {
       const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
       const nodeClasses = [`node`, node.kind];
@@ -235,6 +377,9 @@ if (app) {
           const seatColor = CHARACTER_COLORS[Object.keys(CHARACTER_COLORS).find((name) => node.label.includes(name.split(" ").slice(-1)[0]))] || "#efe3c7";
           circle.setAttribute("fill", seatColor);
           circle.setAttribute("fill-opacity", "0.32");
+        } else if (node.kind === "hallway") {
+          circle.setAttribute("fill", hallwayAccentColor(node));
+          circle.setAttribute("fill-opacity", "0.62");
         }
         g.appendChild(circle);
       }
@@ -528,8 +673,18 @@ if (app) {
       chatInput.value = previousChat;
     }
 
-    const publicEvents = snapshot.events.filter((event) => event.visibility === "public");
-    const privateEvents = snapshot.events.filter((event) => event.visibility !== "public" && event.event_type !== "trace_turn_metric");
+    const publicEvents = snapshot.events.filter((event) => {
+      if (event.visibility !== "public") {
+        return false;
+      }
+      return showDiagnostics || !String(event.event_type || "").startsWith("trace_");
+    });
+    const privateEvents = snapshot.events.filter((event) => {
+      if (event.visibility === "public" || event.event_type === "trace_turn_metric") {
+        return false;
+      }
+      return showDiagnostics || !String(event.event_type || "").startsWith("trace_");
+    });
 
     publicCount.textContent = String(publicEvents.length);
     privateCount.textContent = String(privateEvents.length);
@@ -543,6 +698,7 @@ if (app) {
     renderSeatDebug(snapshot);
     renderAiExplainer(snapshot);
     updateDraftControls();
+    updateDiagnosticsVisibility();
   }
 
   function buildSelect(id, options, labelText, valueField = "value", textField = "label") {
@@ -720,5 +876,15 @@ if (app) {
     updateDraftControls();
   });
 
+  diagnosticsToggle?.addEventListener("click", () => {
+    showDiagnostics = !showDiagnostics;
+    window.localStorage.setItem(DIAGNOSTICS_STORAGE_KEY, showDiagnostics ? "1" : "0");
+    updateDiagnosticsVisibility();
+    if (currentSnapshot) {
+      renderSummary(currentSnapshot);
+    }
+  });
+
+  updateDiagnosticsVisibility();
   refresh();
 }

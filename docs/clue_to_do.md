@@ -89,8 +89,9 @@
 - [] Confirm fallback behavior is sane if the LLM times out or returns malformed output.
 
 ### Deployment And Recording
-- [] On deployed Clue, verify LLM seats work with `OPENAI_API_KEY` coming from Secret Manager rather than repo config.
-- [] During every manual run, (automatically) record debug info (where?)including the date, seat mix, environment, latency spikes, fallback count, leakage incidents, and any sync defects that still need fixes.
+- [x] On deployed Clue, verify LLM seats work with `OPENAI_API_KEY` coming from Secret Manager rather than repo config.
+- [x] During every manual run, (automatically) record debug info (where?)including the date, seat mix, environment, latency spikes, fallback count, leakage incidents, and any sync defects that still need fixes.
+  - [x] Make this optional: default is NO debugging or log info displayed during gameplay
 
 ### Miscellaneous Fixes and Improvements
 - **Local** run
@@ -108,8 +109,6 @@
     - [X] Re-verify online that UI choices now remain stable after a hard refresh / fresh private window.
   - [x] Additional UI panels to provide *friendly but detailed* explanation of how LLM players are integrated into gameplay
 
-- [] Implement recommended (docs\ClueDeepDive.md) use of OpenAI SDK for LLM integration with gameplay tools
-
 - 'Active Seat' display/page panels:
   - [x] Marker Grid: make player summaries to three lines (down fom six) by moving bottom three lines to the right of the upper three
   - [x] reposition "Actions" beneath "Private Seat" where "Table Record" is now
@@ -117,10 +116,10 @@
   - [x] remove "Table Seats" (unnecessary with "Marker Grid")
   - [x] put "Seat Debug" and "How Seats Work" together in same panel beneath "Table Record"
   - [x] reposition the Table Record panel to where the Round Table panel is located, and remove Round Table panel.
-  - [] Board panel:
-    - [] Resize it again, or make re-sizeable, to fit just within the boundary of the panel
-    - [] Improve and make more map-like the "navigation lines" wherever there is a one-move connection, so including secret passages, and starting points, without awkward crossings beneath rooms, but more like very lightly stroked "navigation roses" with connecting lines thicker and color-coded for connecting points
-      - [] passageway colors fade from one to the other connecting room-colors
+  - [x] Board panel:
+    - [x] Resize it again, or make re-sizeable, to fit just within the boundary of the panel
+    - [x] Improve and make more map-like the "navigation lines" wherever there is a one-move connection, so including secret passages, and starting points, without awkward crossings beneath rooms, but more like very lightly stroked "navigation roses" with connecting lines thicker and color-coded for connecting points
+      - [x] passageway colors fade from one to the other connecting room-colors
     - [x] Color the rooms individually in pale shades vaguely suggestive of their names
     - [x] Color player markers suggestive of their names
     - [x] Color the starting points with pale shades of the players' colors
@@ -131,8 +130,13 @@
     - [x] Move the 'Public Table Talk' text window and the 'Send Chat' button to the 'Table Record' panel.
 
 - Gameplay
-  - [] fix LLMs and Heuristics both getting stuck suggesting same 3 answers over and over
+  - [x] fix LLMs and Heuristics both getting stuck suggesting same 3 answers over and over
+  - [x] now fix so non-human players don't Accuse right away
   - [x] remove "trace turn metric" notifications from private intel list
+  - [x] implement intelligent heuristic gameplay
+  - [x] give stock autonomous seats distinct in-character public table-talk lines for suggestions, accusations, and secret-passage moves
+  - [] combine heuristics into all-LLM (or human) players
 
 - Cosmetic
-  - aix-labs.uw.r.appspot.com/clue page: change text color, can't read "Create a game, open seat links in separate browser tabs, and ..."
+  - [x] /clue page: change text color, can't read "Create a game, open seat links in separate browser tabs, and ..."
+  - [x] same footer all pages

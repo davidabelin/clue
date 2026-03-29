@@ -20,5 +20,15 @@
     <main>
       {% block content %}{% endblock %}
     </main>
+    <footer class="shell-footer">
+      <p>Clue runs as a standalone lab with shared AIX navigation, private seat state, and public table play.</p>
+      <nav class="shell-nav shell-footer-nav">
+        <a href="{{ url_for('main.home') }}">Clue Home</a>
+        <a href="{{ aix_hub_url }}">AIX Labs</a>
+        <a href="{{ aix_contact_url }}">Contact</a>
+        <a href="{{ aix_privacy_url }}">Privacy</a>
+        <a href="{{ aix_toc_url }}">TOC</a>
+      </nav>
+    </footer>
   </body>
 </html>

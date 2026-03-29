@@ -78,6 +78,24 @@ a {
   color: #fff6e2;
 }
 
+.shell-footer {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1.05rem 1.5rem 1.4rem;
+  border-top: 1px solid rgba(255, 241, 221, 0.16);
+  background: rgba(27, 19, 14, 0.68);
+  color: #f8ead0;
+}
+
+.shell-footer p {
+  margin: 0;
+  color: #f8ead0;
+}
+
+.shell-footer-nav {
+  gap: 0.85rem;
+}
+
 main {
   padding: 1.5rem;
 }
@@ -96,6 +114,8 @@ main {
 .hero {
   max-width: 56rem;
   margin-bottom: 1.5rem;
+  background:
+    linear-gradient(145deg, rgba(255, 250, 237, 0.98), rgba(244, 229, 194, 0.94));
 }
 
 .eyebrow,
@@ -240,6 +260,10 @@ button:disabled {
   max-width: 24rem;
 }
 
+.diagnostics-toggle {
+  min-width: 10.5rem;
+}
+
 .turn-banner,
 .phase-pill,
 .status-chip {
@@ -283,6 +307,10 @@ button:disabled {
 .insight-panel { grid-area: insights; }
 .action-panel { grid-area: actions; }
 
+.panel-collapsed {
+  display: none;
+}
+
 .panel-head {
   display: flex;
   align-items: center;
@@ -305,7 +333,8 @@ button:disabled {
 
 .board-svg {
   width: 100%;
-  min-height: 352px;
+  min-height: 336px;
+  aspect-ratio: 16 / 10;
   background:
     radial-gradient(circle at 50% 30%, rgba(255, 245, 220, 0.32), transparent 34%),
     linear-gradient(180deg, #b69262, #d6bb8a 48%, #e7d2aa);
@@ -324,18 +353,31 @@ button:disabled {
 }
 
 .board-edge {
+  fill: none;
   stroke-linecap: round;
-  stroke-width: 7;
-  opacity: 0.58;
+  stroke-width: 6;
+  opacity: 0.78;
+}
+
+.board-edge-glow {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 14;
+  opacity: 0.18;
 }
 
 .board-edge-walk {
-  stroke: rgba(81, 59, 42, 0.36);
+  stroke-width: 6;
 }
 
 .board-edge-passage {
-  stroke: rgba(63, 120, 178, 0.38);
-  stroke-dasharray: 16 12;
+  stroke-width: 7;
+  stroke-dasharray: 18 12;
+}
+
+.board-edge-glow-passage {
+  stroke-width: 16;
+  opacity: 0.24;
 }
 
 .node.room rect {

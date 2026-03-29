@@ -12,13 +12,16 @@ def _snapshot(*, legal_actions: dict | None = None) -> dict:
     """Build a minimal seat snapshot for unit-testing the agent policy."""
 
     return {
+        "turn_index": 1,
         "seat": {
+            "seat_id": "seat_scarlet",
             "display_name": "Miss Scarlet",
             "character": "Miss Scarlet",
             "hand": ["Candlestick"],
         },
         "phase": "start_turn",
         "legal_actions": legal_actions or {"available": ["end_turn"]},
+        "events": [],
     }
 
 
@@ -170,3 +173,47 @@ def test_llm_agent_uses_secret_manager_key_when_env_var_missing(monkeypatch):
     decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
     assert captured["api_key"] == "secret-from-sm"
     assert decision.action == "end_turn"
+
+
+def test_llm_agent_holds_early_accusation_and_uses_safe_fallback(monkeypatch):
+    """Even legal model accusations should be deferred when the pacing gate is not ready."""
+
+    class FakeClient:
+        """Fake OpenAI client that emits one eager accusation payload."""
+
+        def __init__(self, api_key: str) -> None:
+            """Return one otherwise-legal accusation action."""
+
+            self.responses = types.SimpleNamespace(
+                create=lambda **kwargs: types.SimpleNamespace(
+                    output_text=(
+                        '{"action":"accuse","suspect":"Colonel Mustard","weapon":"Knife","room":"Hall",'
+                        '"rationale_private":"I am sure enough."}'
+                    )
+                )
+            )
+
+    monkeypatch.setattr("clue_agents.llm.OpenAI", FakeClient)
+
+    agent = LLMSeatAgent(api_key="test-key")
+    decision = agent.decide_turn(
+        snapshot=_snapshot(legal_actions={"available": ["accuse", "end_turn"]}),
+        tool_snapshot={
+            "accusation": {
+                "should_accuse": True,
+                "confidence": 0.87,
+                "confidence_gap": 0.2,
+                "entropy_bits": 0.72,
+                "sample_count": 64,
+                "accusation": {"suspect": "Colonel Mustard", "weapon": "Knife", "room": "Hall"},
+            },
+            "belief_summary": {
+                "joint_case_entropy_bits": 0.72,
+                "resolved_cards": 5,
+                "case_file_candidate_counts": {"suspect": 2, "weapon": 2, "room": 2},
+            },
+        },
+    )
+
+    assert decision.action == "end_turn"
+    assert decision.agent_meta["fallback_reason"] == "accusation_hold"

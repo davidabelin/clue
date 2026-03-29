@@ -25,6 +25,7 @@ def test_home_page_renders(client):
     assert "Mrs. Peacock" in html
     assert "Professor Plum" in html
     assert "Set unused seats to NP." in html
+    assert "Clue runs as a standalone lab" in html
     assert "Seed" not in html
     assert 'fetch("api/v1/games"' in html
     assert 'fetch("/api/v1/games"' not in html
@@ -90,6 +91,7 @@ def test_game_page_renders_private_and_public_table_sections(client):
     assert "Seat Intelligence" in html
     assert "Seat Debug" in html
     assert "How LLM Seats Work" in html
+    assert "Show Diagnostics" in html
     assert "Round Table" not in html
     assert "Table Seats" not in html
 
@@ -202,9 +204,17 @@ def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypa
             accusation={
                 "accusation": dict(state["hidden"]["case_file"]),
                 "confidence": 1.0,
+                "confidence_gap": 1.0,
+                "entropy_bits": 0.0,
                 "should_accuse": True,
+                "sample_count": 48,
             },
-            sample_count=1,
+            belief_summary={
+                "joint_case_entropy_bits": 0.0,
+                "resolved_cards": 12,
+                "case_file_candidate_counts": {"suspect": 1, "weapon": 1, "room": 1},
+            },
+            sample_count=48,
         )
 
     monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.decide_turn", _mock_llm_decide)
