@@ -8,6 +8,8 @@
     human input such as notebook text, chat text, and action dropdown choices.
   - Public/private visibility boundaries are enforced server-side, so the UI
     should treat returned snapshots as already filtered for the current seat.
+  - v1.5.0 adds richer autonomous-seat diagnostics so maintainers can inspect
+    the OpenAI SDK runtime without exposing other seats' hidden information.
 */
 const app = document.getElementById("game-app");
 
@@ -567,6 +569,8 @@ if (app) {
 
   function renderSeatDebug(snapshot) {
     const debug = snapshot.analysis?.seat_debug || {};
+    const runtime = snapshot.analysis?.agent_runtime || {};
+    const runContext = snapshot.analysis?.run_context || {};
     const metric = debug.metric || null;
     const toolSnapshot = debug.tool_snapshot || {};
     const topHypotheses = toolSnapshot.top_hypotheses || [];
@@ -575,7 +579,19 @@ if (app) {
 
     if (!metric && !topHypotheses.length && !topSuggestions.length) {
       debugStatus.textContent = "Idle";
-      seatDebug.innerHTML = '<p class="empty-state">No private agent-debug payload has been recorded for this seat yet.</p>';
+      seatDebug.innerHTML = `
+        <div class="debug-grid">
+          <article class="summary-stat">
+            <span class="card-kicker">Release</span>
+            <strong>${escapeHtml(runContext.release_label || runtime.release_label || "--")}</strong>
+          </article>
+          <article class="summary-stat">
+            <span class="card-kicker">Seat Runtime</span>
+            <strong>${escapeHtml(runtime.sdk_backend || "--")}</strong>
+          </article>
+        </div>
+        <p class="empty-state">No private agent-debug payload has been recorded for this seat yet.</p>
+      `;
       return;
     }
 
@@ -598,6 +614,22 @@ if (app) {
           <span class="card-kicker">Latency</span>
           <strong>${escapeHtml(metric?.latency_ms ?? "--")} ms</strong>
         </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Model</span>
+          <strong>${escapeHtml(debug.decision?.agent_meta?.model || metric?.model || runtime.default_model || "--")}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Reasoning</span>
+          <strong>${escapeHtml(debug.decision?.agent_meta?.reasoning_effort || metric?.reasoning_effort || runtime.reasoning_effort || "--")}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Trace ID</span>
+          <strong>${escapeHtml(debug.decision?.agent_meta?.trace_id || metric?.trace_id || "--")}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Session ID</span>
+          <strong>${escapeHtml(debug.decision?.agent_meta?.session_id || metric?.session_id || "--")}</strong>
+        </article>
       </div>
       <div class="debug-block">
         <p class="card-kicker">Top Hypotheses</p>
@@ -609,15 +641,37 @@ if (app) {
         <p class="card-kicker">Top Suggestion</p>
         <p>${escapeHtml(topSuggestions[0]?.why || debug.decision_debug?.model_rationale || "No suggestion ranking yet.")}</p>
       </div>
+      <div class="debug-block">
+        <p class="card-kicker">Guardrails And Tools</p>
+        <ul class="debug-list">
+          <li>${escapeHtml(`Fallback reason: ${debug.decision?.agent_meta?.fallback_reason || metric?.fallback_reason || "none"}`)}</li>
+          <li>${escapeHtml(`Tool calls: ${debug.decision?.agent_meta?.tool_call_count ?? metric?.tool_call_count ?? 0}`)}</li>
+          <li>${escapeHtml(`Guardrail blocks: ${metric?.guardrail_blocks ?? 0}`)}</li>
+        </ul>
+      </div>
     `;
   }
 
   function renderAiExplainer(snapshot) {
     const metrics = snapshot.analysis?.game_metrics || {};
     const targets = snapshot.analysis?.latency_targets_ms || {};
+    const runtime = snapshot.analysis?.agent_runtime || {};
+    const runContext = snapshot.analysis?.run_context || {};
     aiExplainer.innerHTML = `
-      <p class="field-note">LLM seats get a private deduction snapshot, choose one legal action with structured output, and fall back to the deterministic heuristic policy if the model times out, emits malformed JSON, or proposes an illegal move.</p>
+      <p class="field-note">LLM seats in ${escapeHtml(runContext.release_label || runtime.release_label || "this release")} use the OpenAI Agents SDK with read-only Clue tools, structured output, local encrypted session memory, and deterministic fallback when the model path is blocked or fails.</p>
       <div class="debug-grid">
+        <article class="summary-stat">
+          <span class="card-kicker">Runtime</span>
+          <strong>${escapeHtml(runtime.sdk_backend || "--")}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Default Model</span>
+          <strong>${escapeHtml(runtime.default_model || "--")}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Reasoning</span>
+          <strong>${escapeHtml(runtime.reasoning_effort || "--")}</strong>
+        </article>
         <article class="summary-stat">
           <span class="card-kicker">Fallback Rate</span>
           <strong>${escapeHtml(metrics.fallback_rate ?? 0)}</strong>
@@ -625,6 +679,22 @@ if (app) {
         <article class="summary-stat">
           <span class="card-kicker">Guardrail Blocks</span>
           <strong>${escapeHtml(metrics.guardrail_blocks ?? 0)}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Tracing</span>
+          <strong>${runtime.tracing_enabled ? "Enabled" : "Local Only"}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Sensitive Trace Data</span>
+          <strong>${runtime.trace_include_sensitive_data ? "Included" : "Redacted"}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Session TTL</span>
+          <strong>${escapeHtml(runtime.session_ttl_seconds ?? "--")} s</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Max Tool Calls</span>
+          <strong>${escapeHtml(runtime.max_tool_calls ?? "--")}</strong>
         </article>
         <article class="summary-stat">
           <span class="card-kicker">Tool Budget</span>

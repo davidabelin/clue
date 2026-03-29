@@ -537,6 +537,7 @@ def build_filtered_snapshot(
         "notebook": notebook or {},
         "analysis": {
             "run_context": dict(analysis.get("run_context") or {}),
+            "agent_runtime": dict(analysis.get("agent_runtime") or {}),
             "latency_targets_ms": dict(analysis.get("latency_targets_ms") or {}),
             "game_metrics": dict(analysis.get("game_metrics") or {}),
             "recent_turn_metrics": list(analysis.get("turn_metrics") or [])[-10:],

@@ -8,6 +8,7 @@ from urllib.parse import urljoin
 
 from flask import Flask
 
+from clue_core.version import CLUE_RELEASE_LABEL, CLUE_VERSION
 from clue_storage import ClueRepository
 from clue_web.runtime import GameService
 
@@ -55,12 +56,19 @@ def _aix_page_url(base_url: str, path: str) -> str:
 
 
 def create_app(config: dict | None = None) -> Flask:
-    """Create the standalone Clue Flask app and wire storage, routes, and chrome links."""
+    """Create the standalone Clue Flask app and wire storage, routes, and chrome links.
+
+    The app factory is also the central configuration bridge for v1.5.0. It
+    keeps deployment defaults explicit so future maintainers can see which knobs
+    belong to the OpenAI seat runtime versus the core Flask or storage layers.
+    """
 
     root = Path(__file__).resolve().parents[1]
     data_dir = root / "data"
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config.from_mapping(
+        CLUE_VERSION=CLUE_VERSION,
+        CLUE_RELEASE_LABEL=CLUE_RELEASE_LABEL,
         SECRET_KEY=os.getenv("CLUE_SECRET_KEY", "clue-dev-secret-key"),
         DATABASE_URL=os.getenv("CLUE_DATABASE_URL", ""),
         DATABASE_URL_SECRET=os.getenv("CLUE_DATABASE_URL_SECRET", ""),
@@ -68,6 +76,17 @@ def create_app(config: dict | None = None) -> Flask:
         AIX_HUB_URL=os.getenv("AIX_HUB_URL", "/"),
         INTERNAL_WORKER_TOKEN=os.getenv("CLUE_INTERNAL_WORKER_TOKEN", ""),
         APP_BASE_PATH=os.getenv("APP_BASE_PATH", ""),
+        CLUE_LLM_MODEL=os.getenv("CLUE_LLM_MODEL", "gpt-5.4-mini-2026-03-17"),
+        CLUE_LLM_REASONING_EFFORT=os.getenv("CLUE_LLM_REASONING_EFFORT", "medium"),
+        CLUE_LLM_TIMEOUT_SECONDS=os.getenv("CLUE_LLM_TIMEOUT_SECONDS", "12"),
+        CLUE_LLM_MAX_TOOL_CALLS=os.getenv("CLUE_LLM_MAX_TOOL_CALLS", "6"),
+        CLUE_AGENT_MAX_TURNS=os.getenv("CLUE_AGENT_MAX_TURNS", "8"),
+        CLUE_AGENT_TRACING_ENABLED=os.getenv("CLUE_AGENT_TRACING_ENABLED", "0"),
+        CLUE_AGENT_TRACE_INCLUDE_SENSITIVE_DATA=os.getenv("CLUE_AGENT_TRACE_INCLUDE_SENSITIVE_DATA", "0"),
+        CLUE_AGENT_SESSION_TTL_SECONDS=os.getenv("CLUE_AGENT_SESSION_TTL_SECONDS", "900"),
+        CLUE_AGENT_SESSION_DB_PATH=os.getenv("CLUE_AGENT_SESSION_DB_PATH", str(data_dir / "clue_agent_sessions.db")),
+        CLUE_AGENT_SESSION_ENCRYPTION_KEY=os.getenv("CLUE_AGENT_SESSION_ENCRYPTION_KEY", ""),
+        CLUE_AGENT_EVAL_EXPORT_ENABLED=os.getenv("CLUE_AGENT_EVAL_EXPORT_ENABLED", "0"),
     )
     if config:
         app.config.update(config)
@@ -87,10 +106,12 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.context_processor
     def inject_template_globals() -> dict:
-        """Expose AIX navigation URLs to the shared Clue templates."""
+        """Expose shared chrome and release metadata to the Clue templates."""
 
         hub_url = _normalize_base_url(app.config.get("AIX_HUB_URL", "/"))
         return {
+            "clue_version": app.config["CLUE_VERSION"],
+            "clue_release_label": app.config["CLUE_RELEASE_LABEL"],
             "aix_hub_url": hub_url,
             "aix_contact_url": _aix_page_url(hub_url, "/contact"),
             "aix_privacy_url": _aix_page_url(hub_url, "/privacy"),

@@ -16,7 +16,17 @@ env_variables:
   CLUE_DB_PATH: /tmp/clue.db
   CLUE_SECRET_KEY: ""
   CLUE_INTERNAL_WORKER_TOKEN: ""
-  CLUE_LLM_MODEL: gpt-4o-mini
+  CLUE_LLM_MODEL: gpt-5.4-mini-2026-03-17
+  CLUE_LLM_REASONING_EFFORT: medium
+  CLUE_LLM_TIMEOUT_SECONDS: "12"
+  CLUE_LLM_MAX_TOOL_CALLS: "6"
+  CLUE_AGENT_MAX_TURNS: "8"
+  CLUE_AGENT_TRACING_ENABLED: "0"
+  CLUE_AGENT_TRACE_INCLUDE_SENSITIVE_DATA: "0"
+  CLUE_AGENT_SESSION_TTL_SECONDS: "900"
+  CLUE_AGENT_SESSION_DB_PATH: /tmp/clue_agent_sessions.db
+  CLUE_AGENT_SESSION_ENCRYPTION_KEY: ""
+  CLUE_AGENT_EVAL_EXPORT_ENABLED: "0"
   OPENAI_API_KEY_SECRET_VERSION: projects/aix-labs/secrets/openai-api-key/versions/latest
 
 service_account: aix-admin@aix-labs.iam.gserviceaccount.com

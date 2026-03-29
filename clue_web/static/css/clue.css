@@ -6,6 +6,8 @@
   - private seat intelligence
   - active action controls
   so the game reads like a round-table board game rather than a generic app.
+  v1.5.0 keeps the broad layout stable while making the diagnostics panels
+  useful for inspecting the new OpenAI Agents SDK seat runtime.
 */
 :root {
   --paper: #efe3c7;

@@ -25,10 +25,10 @@
       {% set defaults = [
         ("seat_scarlet", "Miss Scarlet", "human"),
         ("seat_mustard", "Colonel Mustard", "heuristic"),
-        ("seat_white", "Mrs. White", "human"),
-        ("seat_green", "Mr. Green", "llm"),
-        ("seat_peacock", "Mrs. Peacock", "np"),
-        ("seat_plum", "Professor Plum", "np"),
+        ("seat_white", "Mrs. White", "np"),
+        ("seat_green", "Mr. Green", "np"),
+        ("seat_peacock", "Mrs. Peacock", "llm"),
+        ("seat_plum", "Professor Plum", "human"),
       ] %}
       {% for seat_id, character, seat_kind in defaults %}
       <div class="seat-card">

@@ -12,12 +12,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from clue_web import create_app
+from clue_agents.config import load_llm_runtime_config
 
 
 @pytest.fixture
-def app(tmp_path: Path):
+def app(tmp_path: Path, monkeypatch):
     """Create one isolated app instance backed by a temporary SQLite database."""
 
+    monkeypatch.setenv("CLUE_AGENT_SESSION_DB_PATH", str(tmp_path / "clue_agent_sessions.db"))
+    monkeypatch.setenv("CLUE_AGENT_SESSION_ENCRYPTION_KEY", "test-session-key")
     app = create_app(
         {
             "TESTING": True,
@@ -27,6 +30,22 @@ def app(tmp_path: Path):
         }
     )
     yield app
+
+
+@pytest.fixture(autouse=True)
+def isolate_openai_env(monkeypatch):
+    """Clear live OpenAI env vars so tests do not accidentally call the network."""
+
+    load_llm_runtime_config.cache_clear()
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY_SECRET_VERSION", raising=False)
+    monkeypatch.delenv("CLUE_AGENT_SESSION_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("CLUE_AGENT_SESSION_DB_PATH", raising=False)
+    monkeypatch.delenv("CLUE_AGENT_TRACING_ENABLED", raising=False)
+    monkeypatch.delenv("CLUE_AGENT_TRACE_INCLUDE_SENSITIVE_DATA", raising=False)
+    monkeypatch.delenv("CLUE_AGENT_EVAL_EXPORT_ENABLED", raising=False)
+    yield
+    load_llm_runtime_config.cache_clear()
 
 
 @pytest.fixture

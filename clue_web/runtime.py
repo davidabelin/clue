@@ -18,6 +18,7 @@ from clue_core.engine import GameMaster, build_filtered_snapshot
 from clue_core.events import make_event
 from clue_core.setup import build_hidden_setup, build_initial_state
 from clue_core.types import SeatConfig
+from clue_core.version import CLUE_RELEASE_LABEL, CLUE_VERSION
 from clue_storage import ClueRepository
 
 
@@ -65,7 +66,7 @@ class GameService:
         return "local"
 
     def _build_analysis_defaults(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Create the persisted analysis block used for traces and eval metrics."""
+        """Create the persisted analysis block used for traces, evals, and diagnostics."""
 
         seat_mix: dict[str, int] = {}
         for seat in state["seats"].values():
@@ -75,9 +76,12 @@ class GameService:
             "run_context": {
                 "created_at": datetime.now(UTC).isoformat(),
                 "environment": self._environment_label(),
+                "version": CLUE_VERSION,
+                "release_label": CLUE_RELEASE_LABEL,
                 "seat_mix": seat_mix,
                 "seat_order": list(state["seat_order"]),
             },
+            "agent_runtime": self._agents.runtime_summary(),
             "latency_targets_ms": self._latency_targets(),
             "game_metrics": {
                 "actions_applied": 0,
@@ -108,12 +112,28 @@ class GameService:
         defaults = self._build_analysis_defaults(state)
         analysis = dict(state.get("analysis") or {})
         analysis.setdefault("run_context", defaults["run_context"])
+        analysis.setdefault("agent_runtime", defaults["agent_runtime"])
         analysis.setdefault("latency_targets_ms", defaults["latency_targets_ms"])
         analysis.setdefault("game_metrics", defaults["game_metrics"])
         analysis.setdefault("turn_metrics", [])
         analysis.setdefault("latest_private_debug_by_seat", {})
         state["analysis"] = analysis
         return analysis
+
+    def _cleanup_llm_sessions_if_complete(self, state: dict[str, Any]) -> None:
+        """Clear local LLM seat sessions after a game reaches a terminal state."""
+
+        if str(state.get("status") or "") != "complete":
+            return
+        seats = [
+            {
+                "seat_id": seat_id,
+                "seat_kind": seat.get("seat_kind", ""),
+                "agent_model": seat.get("agent_model", ""),
+            }
+            for seat_id, seat in state.get("seats", {}).items()
+        ]
+        self._agents.clear_llm_sessions(game_id=str(state.get("game_id", "")), seats=seats)
 
     @staticmethod
     def _trace_event(
@@ -231,7 +251,11 @@ class GameService:
             self._trace_event(
                 "trace_game_context",
                 message=f"Telemetry initialized for {title}.",
-                payload=state["analysis"]["run_context"] | {"latency_targets_ms": state["analysis"]["latency_targets_ms"]},
+                payload=state["analysis"]["run_context"]
+                | {
+                    "latency_targets_ms": state["analysis"]["latency_targets_ms"],
+                    "agent_runtime": state["analysis"]["agent_runtime"],
+                },
             ),
         ]
         self._repository.create_game(
@@ -327,6 +351,7 @@ class GameService:
                     )
                 ],
             )
+            self._cleanup_llm_sessions_if_complete(state)
             raise
         public_chat = sanitize_public_chat(str(action.get("text", "")).strip()) if action.get("action") != "send_chat" else ""
         guardrail_blocks = 0
@@ -372,6 +397,7 @@ class GameService:
             ]
         )
         self._repository.save_state_and_events(seat["game_id"], state=new_state, events=events)
+        self._cleanup_llm_sessions_if_complete(new_state)
         self.maybe_run_agents(seat["game_id"])
         return self.snapshot_for_token(token)
 
@@ -404,6 +430,7 @@ class GameService:
             state = self._repository.get_state(game_id)
             self._ensure_analysis(state)
             if state["status"] != "active":
+                self._cleanup_llm_sessions_if_complete(state)
                 return
             seat_id = self._autonomous_seat_to_act(state)
             if seat_id is None:
@@ -432,6 +459,12 @@ class GameService:
                     "agent_decision_latency_ms": decision_latency_ms,
                     "fallback_used": bool(decision.agent_meta.get("fallback_used")),
                     "fallback_reason": str(decision.agent_meta.get("fallback_reason", "")),
+                    "trace_id": str(decision.agent_meta.get("trace_id", "")),
+                    "session_id": str(decision.agent_meta.get("session_id", "")),
+                    "last_response_id": str(decision.agent_meta.get("last_response_id", "")),
+                    "tool_call_count": int(decision.agent_meta.get("tool_call_count", 0) or 0),
+                    "reasoning_effort": str(decision.agent_meta.get("reasoning_effort", "")),
+                    "model": str(decision.agent_meta.get("model", "")),
                     "guardrail_blocks": 0,
                     "sampling_timed_out": bool(tool_snapshot.generation.get("sampling_timed_out")),
                     "latency_budget_breached": False,
@@ -451,6 +484,7 @@ class GameService:
                         )
                     ],
                 )
+                self._cleanup_llm_sessions_if_complete(state)
                 return
             guardrail_blocks = 0
             if decision.text:
@@ -480,6 +514,13 @@ class GameService:
                 "agent_decision_latency_ms": decision_latency_ms,
                 "fallback_used": bool(decision.agent_meta.get("fallback_used")),
                 "fallback_reason": str(decision.agent_meta.get("fallback_reason", "")),
+                "trace_id": str(decision.agent_meta.get("trace_id", "")),
+                "session_id": str(decision.agent_meta.get("session_id", "")),
+                "last_response_id": str(decision.agent_meta.get("last_response_id", "")),
+                "tool_call_count": int(decision.agent_meta.get("tool_call_count", 0) or 0),
+                "tool_calls": list(decision.agent_meta.get("tool_calls") or []),
+                "reasoning_effort": str(decision.agent_meta.get("reasoning_effort", "")),
+                "model": str(decision.agent_meta.get("model", "")),
                 "guardrail_blocks": guardrail_blocks + int(bool(decision.agent_meta.get("guardrail_blocked"))),
                 "sampling_timed_out": bool(tool_snapshot.generation.get("sampling_timed_out")),
                 "latency_budget_breached": bool(
@@ -544,6 +585,7 @@ class GameService:
                 ]
             )
             self._repository.save_state_and_events(game_id, state=new_state, events=events)
+            self._cleanup_llm_sessions_if_complete(new_state)
             cycles += 1
 
     def _tool_snapshot_for(self, state: dict[str, Any], seat_id: str, visible_events: list[dict[str, Any]]):

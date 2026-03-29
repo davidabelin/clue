@@ -1,17 +1,19 @@
-"""LLM-seat tests covering fallback, legality checks, and secret resolution."""
+"""LLM-seat tests for the v1.5.0 Agents SDK runtime wrapper."""
 
 from __future__ import annotations
 
 import types
 
 from clue_agents.llm import LLMSeatAgent
+from clue_agents.sdk_runtime import AgentTurnOutput
 from clue_agents.secrets import _access_secret_version, resolve_openai_api_key
 
 
 def _snapshot(*, legal_actions: dict | None = None) -> dict:
-    """Build a minimal seat snapshot for unit-testing the agent policy."""
+    """Build a minimal seat snapshot for unit-testing the LLM seat wrapper."""
 
     return {
+        "game_id": "game_test",
         "turn_index": 1,
         "seat": {
             "seat_id": "seat_scarlet",
@@ -20,17 +22,36 @@ def _snapshot(*, legal_actions: dict | None = None) -> dict:
             "hand": ["Candlestick"],
         },
         "phase": "start_turn",
+        "notebook": {"text": "Watch refutations carefully."},
         "legal_actions": legal_actions or {"available": ["end_turn"]},
         "events": [],
     }
 
 
-def test_llm_agent_falls_back_without_api_key():
+def _artifacts(**overrides) -> dict:
+    """Return a compact fake SDK-artifact payload for tests."""
+
+    base = {
+        "trace_id": "trace_test",
+        "session_id": "game_test:seat_scarlet",
+        "last_response_id": "resp_test",
+        "tool_calls": [{"name": "get_legal_action_envelope", "arguments": {}}],
+        "output_guardrails": [],
+        "tool_input_guardrails": [],
+    }
+    base.update(overrides)
+    return base
+
+
+def test_llm_agent_falls_back_without_api_key(monkeypatch):
     """Without an API key, the LLM seat should defer to the heuristic fallback."""
 
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY_SECRET_VERSION", raising=False)
     agent = LLMSeatAgent(api_key="")
     decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
     assert decision.action == "end_turn"
+    assert decision.agent_meta["fallback_reason"] == "missing_api_key"
 
 
 def test_resolve_openai_api_key_reads_secret_manager(monkeypatch):
@@ -57,143 +78,133 @@ def test_resolve_openai_api_key_reads_secret_manager(monkeypatch):
     _access_secret_version.cache_clear()
 
 
-def test_llm_agent_falls_back_on_malformed_json(monkeypatch):
-    """Malformed model output should trigger the deterministic fallback policy."""
+def test_llm_agent_falls_back_on_model_error(monkeypatch):
+    """Unexpected runner failures should trigger the deterministic fallback policy."""
 
-    class FakeClient:
-        """Fake OpenAI client that returns invalid JSON payloads."""
-
-        def __init__(self, api_key: str) -> None:
-            """Capture the API key shape and expose a malformed responses interface."""
-
-            self.responses = types.SimpleNamespace(
-                create=lambda **kwargs: types.SimpleNamespace(output_text="{not-json")
-            )
-
-    monkeypatch.setattr("clue_agents.llm.OpenAI", FakeClient)
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     agent = LLMSeatAgent(api_key="test-key")
     decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
     assert decision.action == "end_turn"
+    assert decision.agent_meta["fallback_reason"] == "model_error"
 
 
 def test_llm_agent_rejects_illegal_actions(monkeypatch):
     """Illegal model actions should be rejected in favor of the heuristic fallback."""
 
-    class FakeClient:
-        """Fake OpenAI client that emits one illegal action payload."""
-
-        def __init__(self, api_key: str) -> None:
-            """Expose a canned illegal action through the responses API shape."""
-
-            self.responses = types.SimpleNamespace(
-                create=lambda **kwargs: types.SimpleNamespace(
-                    output_text='{"action":"teleport","rationale_private":"illegal"}'
-                )
-            )
-
-    monkeypatch.setattr("clue_agents.llm.OpenAI", FakeClient)
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (
+            AgentTurnOutput(action="teleport", rationale_private="illegal"),
+            _artifacts(),
+        ),
+    )
 
     agent = LLMSeatAgent(api_key="test-key")
     decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
     assert decision.action == "end_turn"
+    assert decision.agent_meta["fallback_reason"] == "illegal_action"
 
 
 def test_llm_agent_falls_back_on_timeout(monkeypatch):
-    """Timeouts from the model client should fall back without crashing the turn."""
+    """Timeouts from the agent runner should fall back without crashing the turn."""
 
-    class FakeClient:
-        """Fake OpenAI client that raises a timeout on every call."""
-
-        def __init__(self, api_key: str) -> None:
-            """Expose a responses API that immediately times out."""
-
-            self.responses = types.SimpleNamespace(
-                create=lambda **kwargs: (_ for _ in ()).throw(TimeoutError("timed out"))
-            )
-
-    monkeypatch.setattr("clue_agents.llm.OpenAI", FakeClient)
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (_ for _ in ()).throw(TimeoutError("timed out")),
+    )
 
     agent = LLMSeatAgent(api_key="test-key")
     decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
     assert decision.action == "end_turn"
+    assert decision.agent_meta["fallback_reason"] == "timeout"
 
 
-def test_llm_agent_sanitizes_public_leak(monkeypatch):
-    """Model chat that leaks hidden ownership should be blanked before use."""
+def test_llm_agent_blocks_unsafe_public_leak(monkeypatch):
+    """Unsafe public ownership claims should cause the model path to fall back."""
 
-    class FakeClient:
-        """Fake OpenAI client that emits a hidden-information public message."""
-
-        def __init__(self, api_key: str) -> None:
-            """Return one otherwise-legal action with unsafe public chat text."""
-
-            self.responses = types.SimpleNamespace(
-                create=lambda **kwargs: types.SimpleNamespace(
-                    output_text=(
-                        '{"action":"end_turn","text":"Colonel Mustard has the Rope.",'
-                        '"rationale_private":"done"}'
-                    )
-                )
-            )
-
-    monkeypatch.setattr("clue_agents.llm.OpenAI", FakeClient)
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (
+            AgentTurnOutput(
+                action="end_turn",
+                text="Colonel Mustard has the Rope.",
+                rationale_private="done",
+            ),
+            _artifacts(),
+        ),
+    )
 
     agent = LLMSeatAgent(api_key="test-key")
     decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
     assert decision.action == "end_turn"
-    assert decision.text == ""
+    assert decision.agent_meta["fallback_reason"] == "unsafe_public_chat"
 
 
 def test_llm_agent_uses_secret_manager_key_when_env_var_missing(monkeypatch):
-    """The instantiated OpenAI client should receive the key resolved from Secret Manager."""
+    """The seat wrapper should cache the key resolved through Secret Manager."""
 
-    captured: dict[str, str] = {}
-
-    class FakeClient:
-        """Fake OpenAI client that records the supplied API key."""
-
-        def __init__(self, api_key: str) -> None:
-            """Capture the resolved API key and return one legal action payload."""
-
-            captured["api_key"] = api_key
-            self.responses = types.SimpleNamespace(
-                create=lambda **kwargs: types.SimpleNamespace(
-                    output_text='{"action":"end_turn","rationale_private":"done"}'
-                )
-            )
-
-    monkeypatch.setattr("clue_agents.llm.OpenAI", FakeClient)
     monkeypatch.setattr(
         "clue_agents.llm.resolve_openai_api_key",
         lambda *, api_key="": "secret-from-sm",
     )
 
     agent = LLMSeatAgent(api_key="")
-    decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
-    assert captured["api_key"] == "secret-from-sm"
+    assert agent._api_key == "secret-from-sm"
+
+
+def test_llm_agent_records_sdk_metadata_on_success(monkeypatch):
+    """Successful runs should surface model, trace, session, and tool metadata."""
+
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (
+            AgentTurnOutput(action="end_turn", rationale_private="done"),
+            _artifacts(
+                trace_id="trace_123",
+                session_id="game_test:seat_scarlet",
+                tool_calls=[
+                    {"name": "get_legal_action_envelope", "arguments": {}},
+                    {"name": "get_belief_summary", "arguments": {}},
+                ],
+            ),
+        ),
+    )
+
+    agent = LLMSeatAgent(api_key="test-key")
+    decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={"belief_summary": {"joint_case_entropy_bits": 1.2}})
     assert decision.action == "end_turn"
+    assert decision.agent_meta["backend"] == "openai_agents_sdk"
+    assert decision.agent_meta["trace_id"] == "trace_123"
+    assert decision.agent_meta["tool_call_count"] == 2
+    assert decision.debug_private["sdk_trace_id"] == "trace_123"
 
 
 def test_llm_agent_holds_early_accusation_and_uses_safe_fallback(monkeypatch):
     """Even legal model accusations should be deferred when the pacing gate is not ready."""
 
-    class FakeClient:
-        """Fake OpenAI client that emits one eager accusation payload."""
-
-        def __init__(self, api_key: str) -> None:
-            """Return one otherwise-legal accusation action."""
-
-            self.responses = types.SimpleNamespace(
-                create=lambda **kwargs: types.SimpleNamespace(
-                    output_text=(
-                        '{"action":"accuse","suspect":"Colonel Mustard","weapon":"Knife","room":"Hall",'
-                        '"rationale_private":"I am sure enough."}'
-                    )
-                )
-            )
-
-    monkeypatch.setattr("clue_agents.llm.OpenAI", FakeClient)
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (
+            AgentTurnOutput(
+                action="accuse",
+                suspect="Colonel Mustard",
+                weapon="Knife",
+                room="Hall",
+                rationale_private="I am sure enough.",
+            ),
+            _artifacts(),
+        ),
+    )
 
     agent = LLMSeatAgent(api_key="test-key")
     decision = agent.decide_turn(
@@ -217,3 +228,35 @@ def test_llm_agent_holds_early_accusation_and_uses_safe_fallback(monkeypatch):
 
     assert decision.action == "end_turn"
     assert decision.agent_meta["fallback_reason"] == "accusation_hold"
+
+
+def test_llm_agent_clear_session_uses_local_session_store(monkeypatch):
+    """Session cleanup should target the local encrypted session wrapper."""
+
+    called: dict[str, str] = {}
+
+    class FakeSession:
+        """Small async session stub that records the cleared session id."""
+
+        async def clear_session(self) -> None:
+            called["cleared"] = "yes"
+
+    def _fake_build_session(session_id: str, runtime_config):
+        """Capture the requested session id and return the fake session wrapper."""
+
+        called["session_id"] = session_id
+        return FakeSession()
+
+    monkeypatch.setattr(
+        "clue_agents.llm.build_session_for_id",
+        _fake_build_session,
+    )
+
+    agent = LLMSeatAgent(api_key="test-key")
+    monkeypatch.setattr(
+        "asyncio.run",
+        lambda coro: (coro.close(), called.setdefault("ran", "yes"))[-1],
+    )
+    agent.clear_session(game_id="game_test", seat_id="seat_scarlet")
+
+    assert called["session_id"] == "game_test:seat_scarlet"

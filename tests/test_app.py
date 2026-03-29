@@ -25,7 +25,7 @@ def test_home_page_renders(client):
     assert "Mrs. Peacock" in html
     assert "Professor Plum" in html
     assert "Set unused seats to NP." in html
-    assert "Clue runs as a standalone lab" in html
+    assert "Clue v1.5.0 runs as a standalone lab" in html
     assert "Seed" not in html
     assert 'fetch("api/v1/games"' in html
     assert 'fetch("/api/v1/games"' not in html
@@ -175,13 +175,20 @@ def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client):
         },
     )
     assert response.status_code == 201
-    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+    payload = response.get_json()
+    token = _token_from_join_url(payload["seat_links"][0]["url"])
+    other_token = _token_from_join_url(payload["seat_links"][1]["url"])
 
     snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+    other_snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": other_token}).get_json()
+    assert snapshot["analysis"]["run_context"]["release_label"] == "v1.5.0"
+    assert snapshot["analysis"]["agent_runtime"]["sdk_backend"] == "openai_agents_sdk"
+    assert snapshot["analysis"]["agent_runtime"]["default_model"] == "gpt-5.4-mini-2026-03-17"
     assert snapshot["analysis"]["game_metrics"]["autonomous_actions"] >= 1
     assert snapshot["analysis"]["recent_turn_metrics"]
     assert snapshot["analysis"]["seat_debug"]["decision"]["action"]
     assert snapshot["analysis"]["seat_debug"]["tool_snapshot"]["top_hypotheses"]
+    assert other_snapshot["analysis"]["seat_debug"] == {}
 
 
 def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypatch):
