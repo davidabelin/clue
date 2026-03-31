@@ -141,7 +141,7 @@
   - [x] /clue page: change text color, can't read "Create a game, open seat links in separate browser tabs, and ..."
   - [x] same footer all pages
   - See ![Game Page Layout](clue_layout.png)
-   - [] Make changes sketched onto screenshot of page
-     - [] Confirm understanding first by stating in words the changes to be made, with reference to Panel names _and_ the color-coded squares and arrows.
-     - [] Adjust rearrangement plan if desired after further discussion of it
+   - [failed] Make changes sketched onto screenshot of page
+     - [x] Confirm understanding first by stating in words the changes to be made, with reference to Panel names _and_ the color-coded squares and arrows.
+     - [failed] Adjust rearrangement plan if desired after further discussion of it
 

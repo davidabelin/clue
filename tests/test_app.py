@@ -77,23 +77,24 @@ def test_notebook_update_persists_per_seat(client):
 
 
 def test_game_page_renders_private_and_public_table_sections(client):
-    """The game page should render the core board, private intel, and table record sections."""
+    """The restored game page should render the older board, seat, and record sections."""
 
     response = client.post("/api/v1/games", json={})
     token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
     page = client.get(f"/game?token={token}")
     assert page.status_code == 200
     html = page.get_data(as_text=True)
+    assert "Board" in html
+    assert "Private Seat" in html
     assert "Private Intel" in html
-    assert "Players" in html
+    assert "Marker Grid" in html
     assert "Table Record" in html
     assert "Public Table Talk" in html
-    assert "Seat Intelligence" in html
     assert "Seat Debug" in html
     assert "How LLM Seats Work" in html
-    assert "Show Diagnostics" in html
+    assert "Table Seats" in html
     assert "Round Table" not in html
-    assert "Table Seats" not in html
+    assert "Players" not in html
 
 
 def test_create_game_supports_np_seats_and_all_six_characters(client):

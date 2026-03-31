@@ -8,8 +8,6 @@
     human input such as notebook text, chat text, and action dropdown choices.
   - Public/private visibility boundaries are enforced server-side, so the UI
     should treat returned snapshots as already filtered for the current seat.
-  - v1.5.0 adds richer autonomous-seat diagnostics so maintainers can inspect
-    the OpenAI SDK runtime without exposing other seats' hidden information.
 */
 const app = document.getElementById("game-app");
 
@@ -40,8 +38,6 @@ if (app) {
   const seatDebug = document.getElementById("seat-debug");
   const debugStatus = document.getElementById("debug-status");
   const aiExplainer = document.getElementById("ai-explainer");
-  const diagnosticsToggle = document.getElementById("diagnostics-toggle");
-  const diagnosticsStack = document.querySelector(".diagnostics-stack");
 
   const CHARACTER_COLORS = {
     "Miss Scarlet": "#c43c4d",
@@ -65,25 +61,12 @@ if (app) {
   const POLL_FAST_MS = 900;
   const POLL_NORMAL_MS = 2200;
   const POLL_IDLE_MS = 4200;
-  const DIAGNOSTICS_STORAGE_KEY = "clue-show-diagnostics";
-  const ROOM_NAME_TO_NODE = {
-    Study: "study",
-    Hall: "hall",
-    Lounge: "lounge",
-    Library: "library",
-    "Billiard Room": "billiard",
-    "Dining Room": "dining",
-    Conservatory: "conservatory",
-    Ballroom: "ballroom",
-    Kitchen: "kitchen",
-  };
 
   let currentSnapshot = null;
   let notebookDirty = false;
   let chatDirty = false;
   let refreshTimer = null;
   let refreshing = false;
-  let showDiagnostics = window.localStorage.getItem(DIAGNOSTICS_STORAGE_KEY) === "1";
   const actionDrafts = new Map();
 
   function escapeHtml(value) {
@@ -120,105 +103,6 @@ if (app) {
       map.set(node.id, node);
     });
     return map;
-  }
-
-  function hexChannels(hex) {
-    const normalized = String(hex || "").replace("#", "");
-    if (normalized.length !== 6) {
-      return { r: 125, g: 97, b: 70 };
-    }
-    const value = Number.parseInt(normalized, 16);
-    return {
-      r: (value >> 16) & 255,
-      g: (value >> 8) & 255,
-      b: value & 255,
-    };
-  }
-
-  function blendHexColors(a, b) {
-    const first = hexChannels(a);
-    const second = hexChannels(b);
-    return `rgb(${Math.round((first.r + second.r) / 2)}, ${Math.round((first.g + second.g) / 2)}, ${Math.round((first.b + second.b) / 2)})`;
-  }
-
-  function hallwayAccentColor(node) {
-    const roomNodeIds = String(node.label || "")
-      .split(" / ")
-      .map((part) => ROOM_NAME_TO_NODE[part])
-      .filter(Boolean);
-    const first = ROOM_COLORS[roomNodeIds[0]] || "#d9c4a0";
-    const second = ROOM_COLORS[roomNodeIds[1]] || first;
-    return blendHexColors(first, second);
-  }
-
-  function accentColorForNode(node) {
-    if (!node) {
-      return "#7d6146";
-    }
-    if (node.kind === "room") {
-      return ROOM_COLORS[node.id] || "#dcc6a3";
-    }
-    if (node.kind === "hallway") {
-      return hallwayAccentColor(node);
-    }
-    if (node.kind === "start") {
-      const markerName = Object.keys(CHARACTER_COLORS).find((name) => node.label.includes(name.split(" ").slice(-1)[0]));
-      return CHARACTER_COLORS[markerName] || "#e4cfaa";
-    }
-    return "#7d6146";
-  }
-
-  function anchorPoint(node, towardNode) {
-    const dx = towardNode.x - node.x;
-    const dy = towardNode.y - node.y;
-    const distance = Math.hypot(dx, dy) || 1;
-    if (node.kind === "room") {
-      const halfWidth = 76;
-      const halfHeight = 46;
-      const scale = 1 / Math.max(Math.abs(dx) / halfWidth || 0, Math.abs(dy) / halfHeight || 0, 1);
-      return {
-        x: node.x + (dx * scale),
-        y: node.y + (dy * scale),
-      };
-    }
-    const radius = node.kind === "hallway" ? 20 : 16;
-    return {
-      x: node.x + ((dx / distance) * radius),
-      y: node.y + ((dy / distance) * radius),
-    };
-  }
-
-  function edgePathData(from, to, edge) {
-    const start = anchorPoint(from, to);
-    const end = anchorPoint(to, from);
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const distance = Math.hypot(dx, dy) || 1;
-    const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-    const perpX = -dy / distance;
-    const perpY = dx / distance;
-    let bend = 0;
-    if (edge.kind === "passage") {
-      bend = 92 * ((from.x < to.x) === (from.y < to.y) ? -1 : 1);
-    } else if (from.kind === "start" || to.kind === "start") {
-      bend = 26 * (from.x < 360 ? -1 : 1);
-    } else if (from.kind === "hallway" && to.kind === "hallway") {
-      bend = 14 * ((from.x + from.y) <= (to.x + to.y) ? 1 : -1);
-    }
-    const control = {
-      x: midpoint.x + (perpX * bend),
-      y: midpoint.y + (perpY * bend),
-    };
-    return `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
-  }
-
-  function updateDiagnosticsVisibility() {
-    if (!diagnosticsToggle || !diagnosticsStack) {
-      return;
-    }
-    diagnosticsToggle.textContent = showDiagnostics ? "Hide Diagnostics" : "Show Diagnostics";
-    diagnosticsToggle.setAttribute("aria-pressed", String(showDiagnostics));
-    diagnosticsStack.classList.toggle("panel-collapsed", !showDiagnostics);
   }
 
   function setMoveDraft(nodeId) {
@@ -298,9 +182,8 @@ if (app) {
     const seatsById = seatMap(snapshot);
     const nodesById = boardNodeById(snapshot);
     const seatPositions = {};
-    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
     const surface = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    surface.setAttribute("transform", "translate(88 54) scale(0.69)");
+    surface.setAttribute("transform", "translate(58 42) scale(0.78)");
 
     snapshot.seats.forEach((seat) => {
       if (!seatPositions[seat.position]) {
@@ -310,47 +193,20 @@ if (app) {
     });
 
     board.innerHTML = "";
-    (snapshot.board_edges || []).forEach((edge, index) => {
+    (snapshot.board_edges || []).forEach((edge) => {
       const from = nodesById.get(edge.from);
       const to = nodesById.get(edge.to);
       if (!from || !to) {
         return;
       }
-      const gradientId = `board-edge-gradient-${index}`;
-      const gradient = document.createElementNS("http://www.w3.org/2000/svg", "linearGradient");
-      gradient.setAttribute("id", gradientId);
-      gradient.setAttribute("gradientUnits", "userSpaceOnUse");
-      gradient.setAttribute("x1", String(from.x));
-      gradient.setAttribute("y1", String(from.y));
-      gradient.setAttribute("x2", String(to.x));
-      gradient.setAttribute("y2", String(to.y));
-
-      const startStop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-      startStop.setAttribute("offset", "0%");
-      startStop.setAttribute("stop-color", accentColorForNode(from));
-      startStop.setAttribute("stop-opacity", edge.kind === "passage" ? "0.52" : "0.28");
-      gradient.appendChild(startStop);
-
-      const endStop = document.createElementNS("http://www.w3.org/2000/svg", "stop");
-      endStop.setAttribute("offset", "100%");
-      endStop.setAttribute("stop-color", accentColorForNode(to));
-      endStop.setAttribute("stop-opacity", edge.kind === "passage" ? "0.52" : "0.28");
-      gradient.appendChild(endStop);
-      defs.appendChild(gradient);
-
-      const glow = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      glow.setAttribute("class", `board-edge-glow board-edge-glow-${edge.kind || "walk"}`);
-      glow.setAttribute("d", edgePathData(from, to, edge));
-      glow.setAttribute("stroke", `url(#${gradientId})`);
-      surface.appendChild(glow);
-
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute("class", `board-edge board-edge-${edge.kind || "walk"}`);
-      path.setAttribute("d", edgePathData(from, to, edge));
-      path.setAttribute("stroke", `url(#${gradientId})`);
-      surface.appendChild(path);
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("class", `board-edge board-edge-${edge.kind || "walk"}`);
+      line.setAttribute("x1", from.x);
+      line.setAttribute("y1", from.y);
+      line.setAttribute("x2", to.x);
+      line.setAttribute("y2", to.y);
+      surface.appendChild(line);
     });
-    board.appendChild(defs);
     snapshot.board_nodes.forEach((node) => {
       const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
       const nodeClasses = [`node`, node.kind];
@@ -379,9 +235,6 @@ if (app) {
           const seatColor = CHARACTER_COLORS[Object.keys(CHARACTER_COLORS).find((name) => node.label.includes(name.split(" ").slice(-1)[0]))] || "#efe3c7";
           circle.setAttribute("fill", seatColor);
           circle.setAttribute("fill-opacity", "0.32");
-        } else if (node.kind === "hallway") {
-          circle.setAttribute("fill", hallwayAccentColor(node));
-          circle.setAttribute("fill-opacity", "0.62");
         }
         g.appendChild(circle);
       }
@@ -432,18 +285,11 @@ if (app) {
       }
       return `
         <article class="${classes.join(" ")}">
-          <div class="position-grid-card">
-            <div class="position-main">
-              <p class="card-kicker">${escapeHtml(seat.seat_kind)}</p>
-              <h4>${escapeHtml(seat.display_name)}</h4>
-              <p>${seat.display_name === seat.character ? "Character marker" : escapeHtml(seat.character)}</p>
-            </div>
-            <div class="position-meta-stack">
-              <p class="position-node">${escapeHtml(labels.get(seat.position) || seat.position)}</p>
-              <p>${seat.can_win ? "Still in the case." : "Eliminated from winning."}</p>
-              <p>${escapeHtml(seat.hand_count)} cards</p>
-            </div>
-          </div>
+          <p class="card-kicker">${escapeHtml(seat.seat_kind)}</p>
+          <h4>${escapeHtml(seat.display_name)}</h4>
+          <p>${seat.display_name === seat.character ? "Character marker" : escapeHtml(seat.character)}</p>
+          <p class="position-node">${escapeHtml(labels.get(seat.position) || seat.position)}</p>
+          <p>${seat.can_win ? "Still in the case." : "Eliminated from winning."}</p>
           <span class="seat-swatch" style="--seat-color: ${escapeHtml(decorated.color)}"></span>
         </article>
       `;
@@ -475,9 +321,6 @@ if (app) {
   }
 
   function renderSeatCards(snapshot) {
-    if (!seatList) {
-      return;
-    }
     const labels = boardLabelById(snapshot);
     const seatsById = seatMap(snapshot);
     seatList.innerHTML = snapshot.seats.map((seat) => {
@@ -569,8 +412,6 @@ if (app) {
 
   function renderSeatDebug(snapshot) {
     const debug = snapshot.analysis?.seat_debug || {};
-    const runtime = snapshot.analysis?.agent_runtime || {};
-    const runContext = snapshot.analysis?.run_context || {};
     const metric = debug.metric || null;
     const toolSnapshot = debug.tool_snapshot || {};
     const topHypotheses = toolSnapshot.top_hypotheses || [];
@@ -579,19 +420,7 @@ if (app) {
 
     if (!metric && !topHypotheses.length && !topSuggestions.length) {
       debugStatus.textContent = "Idle";
-      seatDebug.innerHTML = `
-        <div class="debug-grid">
-          <article class="summary-stat">
-            <span class="card-kicker">Release</span>
-            <strong>${escapeHtml(runContext.release_label || runtime.release_label || "--")}</strong>
-          </article>
-          <article class="summary-stat">
-            <span class="card-kicker">Seat Runtime</span>
-            <strong>${escapeHtml(runtime.sdk_backend || "--")}</strong>
-          </article>
-        </div>
-        <p class="empty-state">No private agent-debug payload has been recorded for this seat yet.</p>
-      `;
+      seatDebug.innerHTML = '<p class="empty-state">No private agent-debug payload has been recorded for this seat yet.</p>';
       return;
     }
 
@@ -614,22 +443,6 @@ if (app) {
           <span class="card-kicker">Latency</span>
           <strong>${escapeHtml(metric?.latency_ms ?? "--")} ms</strong>
         </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Model</span>
-          <strong>${escapeHtml(debug.decision?.agent_meta?.model || metric?.model || runtime.default_model || "--")}</strong>
-        </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Reasoning</span>
-          <strong>${escapeHtml(debug.decision?.agent_meta?.reasoning_effort || metric?.reasoning_effort || runtime.reasoning_effort || "--")}</strong>
-        </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Trace ID</span>
-          <strong>${escapeHtml(debug.decision?.agent_meta?.trace_id || metric?.trace_id || "--")}</strong>
-        </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Session ID</span>
-          <strong>${escapeHtml(debug.decision?.agent_meta?.session_id || metric?.session_id || "--")}</strong>
-        </article>
       </div>
       <div class="debug-block">
         <p class="card-kicker">Top Hypotheses</p>
@@ -641,37 +454,15 @@ if (app) {
         <p class="card-kicker">Top Suggestion</p>
         <p>${escapeHtml(topSuggestions[0]?.why || debug.decision_debug?.model_rationale || "No suggestion ranking yet.")}</p>
       </div>
-      <div class="debug-block">
-        <p class="card-kicker">Guardrails And Tools</p>
-        <ul class="debug-list">
-          <li>${escapeHtml(`Fallback reason: ${debug.decision?.agent_meta?.fallback_reason || metric?.fallback_reason || "none"}`)}</li>
-          <li>${escapeHtml(`Tool calls: ${debug.decision?.agent_meta?.tool_call_count ?? metric?.tool_call_count ?? 0}`)}</li>
-          <li>${escapeHtml(`Guardrail blocks: ${metric?.guardrail_blocks ?? 0}`)}</li>
-        </ul>
-      </div>
     `;
   }
 
   function renderAiExplainer(snapshot) {
     const metrics = snapshot.analysis?.game_metrics || {};
     const targets = snapshot.analysis?.latency_targets_ms || {};
-    const runtime = snapshot.analysis?.agent_runtime || {};
-    const runContext = snapshot.analysis?.run_context || {};
     aiExplainer.innerHTML = `
-      <p class="field-note">LLM seats in ${escapeHtml(runContext.release_label || runtime.release_label || "this release")} use the OpenAI Agents SDK with read-only Clue tools, structured output, local encrypted session memory, and deterministic fallback when the model path is blocked or fails.</p>
+      <p class="field-note">LLM seats get a private deduction snapshot, choose one legal action with structured output, and fall back to the deterministic heuristic policy if the model times out, emits malformed JSON, or proposes an illegal move.</p>
       <div class="debug-grid">
-        <article class="summary-stat">
-          <span class="card-kicker">Runtime</span>
-          <strong>${escapeHtml(runtime.sdk_backend || "--")}</strong>
-        </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Default Model</span>
-          <strong>${escapeHtml(runtime.default_model || "--")}</strong>
-        </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Reasoning</span>
-          <strong>${escapeHtml(runtime.reasoning_effort || "--")}</strong>
-        </article>
         <article class="summary-stat">
           <span class="card-kicker">Fallback Rate</span>
           <strong>${escapeHtml(metrics.fallback_rate ?? 0)}</strong>
@@ -679,22 +470,6 @@ if (app) {
         <article class="summary-stat">
           <span class="card-kicker">Guardrail Blocks</span>
           <strong>${escapeHtml(metrics.guardrail_blocks ?? 0)}</strong>
-        </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Tracing</span>
-          <strong>${runtime.tracing_enabled ? "Enabled" : "Local Only"}</strong>
-        </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Sensitive Trace Data</span>
-          <strong>${runtime.trace_include_sensitive_data ? "Included" : "Redacted"}</strong>
-        </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Session TTL</span>
-          <strong>${escapeHtml(runtime.session_ttl_seconds ?? "--")} s</strong>
-        </article>
-        <article class="summary-stat">
-          <span class="card-kicker">Max Tool Calls</span>
-          <strong>${escapeHtml(runtime.max_tool_calls ?? "--")}</strong>
         </article>
         <article class="summary-stat">
           <span class="card-kicker">Tool Budget</span>
@@ -743,24 +518,15 @@ if (app) {
       chatInput.value = previousChat;
     }
 
-    const publicEvents = snapshot.events.filter((event) => {
-      if (event.visibility !== "public") {
-        return false;
-      }
-      return showDiagnostics || !String(event.event_type || "").startsWith("trace_");
-    });
-    const privateEvents = snapshot.events.filter((event) => {
-      if (event.visibility === "public" || event.event_type === "trace_turn_metric") {
-        return false;
-      }
-      return showDiagnostics || !String(event.event_type || "").startsWith("trace_");
-    });
+    const publicEvents = snapshot.events.filter((event) => event.visibility === "public");
+    const privateEvents = snapshot.events.filter((event) => event.visibility !== "public");
 
     publicCount.textContent = String(publicEvents.length);
     privateCount.textContent = String(privateEvents.length);
 
     renderEventList(publicEventLog, publicEvents, "The public table record will appear here.");
     renderEventList(privateLog, privateEvents, "No private reveals or seat-only prompts yet.");
+    renderSeatCards(snapshot);
     renderBoard(snapshot);
     renderPositionGrid(snapshot);
     renderActions(snapshot);
@@ -768,7 +534,6 @@ if (app) {
     renderSeatDebug(snapshot);
     renderAiExplainer(snapshot);
     updateDraftControls();
-    updateDiagnosticsVisibility();
   }
 
   function buildSelect(id, options, labelText, valueField = "value", textField = "label") {
@@ -946,15 +711,5 @@ if (app) {
     updateDraftControls();
   });
 
-  diagnosticsToggle?.addEventListener("click", () => {
-    showDiagnostics = !showDiagnostics;
-    window.localStorage.setItem(DIAGNOSTICS_STORAGE_KEY, showDiagnostics ? "1" : "0");
-    updateDiagnosticsVisibility();
-    if (currentSnapshot) {
-      renderSummary(currentSnapshot);
-    }
-  });
-
-  updateDiagnosticsVisibility();
   refresh();
 }
