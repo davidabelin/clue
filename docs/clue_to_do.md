@@ -135,8 +135,13 @@
   - [x] remove "trace turn metric" notifications from private intel list
   - [x] implement intelligent heuristic gameplay
   - [x] give stock autonomous seats distinct in-character public table-talk lines for suggestions, accusations, and secret-passage moves
-  - [] combine heuristics into all-LLM (or human) players
+  - [] combine heuristics into all-LLM (or human) players (discuss for clarity)
 
 - Cosmetic
   - [x] /clue page: change text color, can't read "Create a game, open seat links in separate browser tabs, and ..."
   - [x] same footer all pages
+  - See ![Game Page Layout](clue_layout.png)
+   - [] Make changes sketched onto screenshot of page
+     - [] Confirm understanding first by stating in words the changes to be made, with reference to Panel names _and_ the color-coded squares and arrows.
+     - [] Adjust rearrangement plan if desired after further discussion of it
+

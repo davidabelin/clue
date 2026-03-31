@@ -41,7 +41,7 @@ if (app) {
   const debugStatus = document.getElementById("debug-status");
   const aiExplainer = document.getElementById("ai-explainer");
   const diagnosticsToggle = document.getElementById("diagnostics-toggle");
-  const insightPanel = document.querySelector(".insight-panel");
+  const diagnosticsStack = document.querySelector(".diagnostics-stack");
 
   const CHARACTER_COLORS = {
     "Miss Scarlet": "#c43c4d",
@@ -213,12 +213,12 @@ if (app) {
   }
 
   function updateDiagnosticsVisibility() {
-    if (!diagnosticsToggle || !insightPanel) {
+    if (!diagnosticsToggle || !diagnosticsStack) {
       return;
     }
     diagnosticsToggle.textContent = showDiagnostics ? "Hide Diagnostics" : "Show Diagnostics";
     diagnosticsToggle.setAttribute("aria-pressed", String(showDiagnostics));
-    insightPanel.classList.toggle("panel-collapsed", !showDiagnostics);
+    diagnosticsStack.classList.toggle("panel-collapsed", !showDiagnostics);
   }
 
   function setMoveDraft(nodeId) {

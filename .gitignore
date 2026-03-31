@@ -2,3 +2,5 @@ data/*.db
 __pycache__/
 .pytest_cache/
 .gcloudignore
+docs/clue_layout.png
+docs/ROLLING_COMMIT_LINE.md

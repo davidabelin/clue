@@ -85,7 +85,7 @@ def test_game_page_renders_private_and_public_table_sections(client):
     assert page.status_code == 200
     html = page.get_data(as_text=True)
     assert "Private Intel" in html
-    assert "Marker Grid" in html
+    assert "Players" in html
     assert "Table Record" in html
     assert "Public Table Talk" in html
     assert "Seat Intelligence" in html
