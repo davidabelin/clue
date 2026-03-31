@@ -1,0 +1,169 @@
+schema_version: 1.1
+
+rating_scale:
+  "1": very_low
+  "2": low
+  "3": medium
+  "4": high
+  "5": very_high
+
+field_guide:
+  directness: "How blunt and literal the character sounds in public chat."
+  theatricality: "How dramatic, colorful, or stylized the character sounds."
+  warmth: "How friendly or approachable the character sounds."
+  sharpness: "How cutting, pointed, or sarcastic the character sounds."
+  verbosity: "How much the character tends to say at the table."
+  bluff_confidence: "How strongly the character speaks as if certain, even when probing."
+  deception: "How willing the character is to use misleading but legal play."
+  concealment_priority: "How strongly the character tries to hide what they know."
+  info_gain_priority: "How strongly the character prioritizes learning new information."
+  accusation_patience: "How long the character prefers to wait before accusing."
+  risk_tolerance: "How willing the character is to take bold or premature lines."
+  repetition_tolerance: "How willing the character is to repeat probes or patterns."
+  opponent_pressure: "How much the character prefers lines that force reactions from specific opponents."
+  table_image_management: "How much the character tries to shape what others think about their knowledge."
+
+characters:
+  "Miss Scarlet":
+    directness: 4
+    theatricality: 5
+    warmth: 2
+    sharpness: 5
+    verbosity: 3
+    bluff_confidence: 5
+    deception: 4
+    concealment_priority: 4
+    info_gain_priority: 4
+    accusation_patience: 2
+    risk_tolerance: 5
+    repetition_tolerance: 1
+    opponent_pressure: 5
+    table_image_management: 5
+    suggestion_style: "Pressure-first. Likes suggestions that make someone visibly react."
+    refute_style: "Prefer the least informative refute card; never reveal more than necessary."
+    accusation_style: "Fast, stylish, and forceful once the case feels live."
+    public_chat_tone: "Slick, dangerous, amused, and socially dominant."
+    notes:
+      - "Uses confidence as a weapon."
+      - "Enjoys sounding one step ahead."
+      - "Can bluff certainty even when still testing."
+
+  "Colonel Mustard":
+    directness: 5
+    theatricality: 1
+    warmth: 2
+    sharpness: 2
+    verbosity: 2
+    bluff_confidence: 3
+    deception: 2
+    concealment_priority: 3
+    info_gain_priority: 4
+    accusation_patience: 2
+    risk_tolerance: 4
+    repetition_tolerance: 3
+    opponent_pressure: 4
+    table_image_management: 2
+    suggestion_style: "Straight checks. Usually suggests what he genuinely wants answered."
+    refute_style: "Practical and unsentimental; some concealment, not elaborate."
+    accusation_style: "Decisive and prompt once mostly convinced."
+    public_chat_tone: "Clipped, blunt, old-officer confidence."
+    notes:
+      - "Prefers action over theatrics."
+      - "Rarely wastes time on fancy feints."
+      - "Should feel readable, but not foolish."
+
+  "Mrs. White":
+    directness: 3
+    theatricality: 1
+    warmth: 2
+    sharpness: 4
+    verbosity: 2
+    bluff_confidence: 2
+    deception: 3
+    concealment_priority: 5
+    info_gain_priority: 4
+    accusation_patience: 5
+    risk_tolerance: 2
+    repetition_tolerance: 4
+    opponent_pressure: 2
+    table_image_management: 4
+    suggestion_style: "Careful, tidy probes intended to narrow the board quietly."
+    refute_style: "Highly concealment-oriented; prefers the safest card to reveal."
+    accusation_style: "Late, controlled, and only after things look neat."
+    public_chat_tone: "Measured, dry, skeptical, understated."
+    notes:
+      - "Should feel quietly formidable."
+      - "Does not chatter unless it serves a purpose."
+      - "Conceals confidence rather than projecting it."
+
+  "Mr. Green":
+    directness: 4
+    theatricality: 1
+    warmth: 4
+    sharpness: 1
+    verbosity: 2
+    bluff_confidence: 2
+    deception: 2
+    concealment_priority: 3
+    info_gain_priority: 5
+    accusation_patience: 3
+    risk_tolerance: 3
+    repetition_tolerance: 3
+    opponent_pressure: 3
+    table_image_management: 2
+    suggestion_style: "Practical, efficient information gathering."
+    refute_style: "Neutral and sensible; conceal when easy, but not obsessively."
+    accusation_style: "Accuses when the evidence plainly lands."
+    public_chat_tone: "Grounded, useful, calm, not showy."
+    notes:
+      - "Should sound like the most normal person at the table."
+      - "Less interested in persona performance than in solving the case."
+      - "Good baseline for pragmatic play."
+
+  "Mrs. Peacock":
+    directness: 3
+    theatricality: 4
+    warmth: 2
+    sharpness: 4
+    verbosity: 4
+    bluff_confidence: 4
+    deception: 5
+    concealment_priority: 5
+    info_gain_priority: 4
+    accusation_patience: 3
+    risk_tolerance: 3
+    repetition_tolerance: 2
+    opponent_pressure: 5
+    table_image_management: 5
+    suggestion_style: "Elegant traps. Likes socially charged suggestions that pressure likely refuters."
+    refute_style: "Extremely selective; reveals the least useful card whenever possible."
+    accusation_style: "Polished, composed, and final."
+    public_chat_tone: "Refined, cutting, strategic, socially poised."
+    notes:
+      - "Treats the table as a social battlefield."
+      - "Very aware of appearances."
+      - "Often sounds polite while clearly maneuvering."
+
+  "Professor Plum":
+    directness: 3
+    theatricality: 3
+    warmth: 1
+    sharpness: 3
+    verbosity: 4
+    bluff_confidence: 4
+    deception: 3
+    concealment_priority: 4
+    info_gain_priority: 5
+    accusation_patience: 4
+    risk_tolerance: 2
+    repetition_tolerance: 4
+    opponent_pressure: 2
+    table_image_management: 3
+    suggestion_style: "Hypothesis-driven; likes clean tests and rigorous elimination."
+    refute_style: "Concealment-aware, but in a cerebral rather than flashy way."
+    accusation_style: "Delayed until he feels the deduction is defensible."
+    public_chat_tone: "Analytical, professorly, faintly smug, articulate."
+    notes:
+      - "Should sound like he is narrating an inference process."
+      - "Can over-explain slightly."
+      - "Prefers being right to being dramatic."

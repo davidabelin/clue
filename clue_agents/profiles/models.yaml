@@ -1,0 +1,168 @@
+schema_version: 1.0
+provider_family: "openai_gpt"
+
+selection:
+  mode: "weighted_random"
+  scope: "per_nonhuman_seat_per_new_game"
+  seed_basis: "game_id_and_seat_id"
+  avoid_duplicate_profiles_within_table: true
+  allow_same_model_with_different_effort: true
+  apply_character_bias: true
+  character_bias_mode: "base_weight_multiplier"
+  fallback_profile: "gpt54_mini_balanced"
+
+runtime_defaults:
+  timeout_seconds: 12
+  max_tool_calls: 6
+  max_turns: 8
+  tracing_enabled: false
+  trace_include_sensitive_data: false
+
+profiles:
+  gpt54_mini_fast:
+    enabled: true
+    weight: 4
+    public_label: "GPT-5.4 Mini / Fast"
+    model: "gpt-5.4-mini-2026-03-17"
+    reasoning_effort: "low"
+    timeout_seconds: 10
+    max_tool_calls: 4
+    max_turns: 6
+    context_grasp_score: 2
+    latency_class: "fast"
+    cost_class: "low"
+    notes:
+      - "Good for brisk, decisive seats."
+      - "Leans strongly on deterministic tools rather than long reasoning."
+
+  gpt54_mini_balanced:
+    enabled: true
+    weight: 6
+    public_label: "GPT-5.4 Mini / Balanced"
+    model: "gpt-5.4-mini-2026-03-17"
+    reasoning_effort: "medium"
+    timeout_seconds: 12
+    max_tool_calls: 6
+    max_turns: 8
+    context_grasp_score: 3
+    latency_class: "fast"
+    cost_class: "low"
+    notes:
+      - "Best default all-purpose seat profile."
+      - "Cheap enough to use often, strong enough for most tables."
+
+  gpt54_mini_deliberate:
+    enabled: true
+    weight: 3
+    public_label: "GPT-5.4 Mini / Deliberate"
+    model: "gpt-5.4-mini-2026-03-17"
+    reasoning_effort: "high"
+    timeout_seconds: 14
+    max_tool_calls: 6
+    max_turns: 8
+    context_grasp_score: 3
+    latency_class: "medium"
+    cost_class: "low"
+    notes:
+      - "Mini model with more thought budget."
+      - "Useful when you want better follow-through without jumping to full-size."
+
+  gpt54_balanced:
+    enabled: true
+    weight: 3
+    public_label: "GPT-5.4 / Balanced"
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    timeout_seconds: 12
+    max_tool_calls: 6
+    max_turns: 8
+    context_grasp_score: 4
+    latency_class: "medium"
+    cost_class: "medium"
+    notes:
+      - "Stronger whole-turn grasp than mini."
+      - "Good for tables where personality and continuity matter more."
+
+  gpt54_deep:
+    enabled: true
+    weight: 2
+    public_label: "GPT-5.4 / Deep"
+    model: "gpt-5.4"
+    reasoning_effort: "high"
+    timeout_seconds: 16
+    max_tool_calls: 7
+    max_turns: 9
+    context_grasp_score: 5
+    latency_class: "slow"
+    cost_class: "medium"
+    notes:
+      - "Best for careful deduction-heavy seats."
+      - "Useful when you want stronger context retention and restraint."
+
+  gpt54_xdeep:
+    enabled: true
+    weight: 1
+    public_label: "GPT-5.4 / XDeep"
+    model: "gpt-5.4"
+    reasoning_effort: "xhigh"
+    timeout_seconds: 20
+    max_tool_calls: 7
+    max_turns: 9
+    context_grasp_score: 5
+    latency_class: "slow"
+    cost_class: "high"
+    notes:
+      - "Rare premium pick for the most thoughtful seat behavior."
+      - "Best reserved for occasional variety, not the common default."
+
+character_bias:
+  default_multiplier: 1.0
+  disabled_multiplier: 0.0
+  characters:
+    "Miss Scarlet":
+      gpt54_mini_fast: 1.6
+      gpt54_mini_balanced: 1.3
+      gpt54_mini_deliberate: 0.9
+      gpt54_balanced: 1.2
+      gpt54_deep: 0.8
+      gpt54_xdeep: 0.5
+
+    "Colonel Mustard":
+      gpt54_mini_fast: 1.5
+      gpt54_mini_balanced: 1.3
+      gpt54_mini_deliberate: 0.8
+      gpt54_balanced: 1.1
+      gpt54_deep: 0.7
+      gpt54_xdeep: 0.3
+
+    "Mrs. White":
+      gpt54_mini_fast: 0.5
+      gpt54_mini_balanced: 1.0
+      gpt54_mini_deliberate: 1.3
+      gpt54_balanced: 1.2
+      gpt54_deep: 1.5
+      gpt54_xdeep: 1.1
+
+    "Mr. Green":
+      gpt54_mini_fast: 1.1
+      gpt54_mini_balanced: 1.5
+      gpt54_mini_deliberate: 1.0
+      gpt54_balanced: 1.3
+      gpt54_deep: 0.9
+      gpt54_xdeep: 0.4
+
+    "Mrs. Peacock":
+      gpt54_mini_fast: 0.7
+      gpt54_mini_balanced: 1.2
+      gpt54_mini_deliberate: 1.1
+      gpt54_balanced: 1.5
+      gpt54_deep: 1.4
+      gpt54_xdeep: 0.8
+
+    "Professor Plum":
+      gpt54_mini_fast: 0.4
+      gpt54_mini_balanced: 1.0
+      gpt54_mini_deliberate: 1.5
+      gpt54_balanced: 1.3
+      gpt54_deep: 1.6
+      gpt54_xdeep: 1.2
