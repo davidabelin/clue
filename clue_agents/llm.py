@@ -15,6 +15,7 @@ from clue_agents.base import SeatAgent, TurnDecision
 from clue_agents.config import LLMRuntimeConfig, load_llm_runtime_config
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_agents.policy import accusation_window, stock_public_comment
+from clue_agents.profile_loader import model_profile
 from clue_agents.sdk_runtime import (
     AGENTS_SDK_AVAILABLE,
     AgentTurnOutput,
@@ -34,6 +35,53 @@ from clue_agents.secrets import resolve_openai_api_key
 from clue_agents.safety import sanitize_public_chat
 
 
+_VALID_REASONING_EFFORTS = {"none", "low", "medium", "high", "xhigh"}
+
+
+def _runtime_config_with_profile(
+    base_config: LLMRuntimeConfig,
+    *,
+    profile: dict[str, Any],
+    model_override: str = "",
+) -> LLMRuntimeConfig:
+    """Apply one selected model-profile block to the normalized runtime config."""
+
+    if not profile:
+        return base_config.with_model_override(model_override)
+
+    reasoning_effort = str(profile.get("reasoning_effort") or base_config.reasoning_effort).strip().lower()
+    if reasoning_effort not in _VALID_REASONING_EFFORTS:
+        reasoning_effort = base_config.reasoning_effort
+
+    try:
+        timeout_seconds = max(float(profile.get("timeout_seconds") or base_config.timeout_seconds), 1.0)
+    except (TypeError, ValueError):
+        timeout_seconds = base_config.timeout_seconds
+    try:
+        max_tool_calls = max(int(profile.get("max_tool_calls") or base_config.max_tool_calls), 1)
+    except (TypeError, ValueError):
+        max_tool_calls = base_config.max_tool_calls
+    try:
+        max_turns = max(int(profile.get("max_turns") or base_config.max_turns), max_tool_calls + 1)
+    except (TypeError, ValueError):
+        max_turns = max(base_config.max_turns, max_tool_calls + 1)
+
+    chosen_model = str(model_override or profile.get("model") or base_config.model).strip() or base_config.model
+    return LLMRuntimeConfig(
+        model=chosen_model,
+        reasoning_effort=reasoning_effort,
+        timeout_seconds=timeout_seconds,
+        max_tool_calls=max_tool_calls,
+        max_turns=max_turns,
+        tracing_enabled=base_config.tracing_enabled,
+        trace_include_sensitive_data=base_config.trace_include_sensitive_data,
+        session_ttl_seconds=base_config.session_ttl_seconds,
+        session_db_path=base_config.session_db_path,
+        session_encryption_key=base_config.session_encryption_key,
+        eval_export_enabled=base_config.eval_export_enabled,
+    )
+
+
 class LLMSeatAgent(SeatAgent):
     """OpenAI Agents SDK seat policy with a deterministic heuristic fallback.
 
@@ -48,13 +96,17 @@ class LLMSeatAgent(SeatAgent):
         self,
         *,
         model: str = "",
+        profile_id: str = "",
         api_key: str = "",
         runtime_config: LLMRuntimeConfig | None = None,
     ) -> None:
         """Resolve runtime configuration and the API key for future turn decisions."""
 
         base_config = runtime_config or load_llm_runtime_config()
-        self._runtime_config = base_config.with_model_override(model)
+        self._profile_id = str(profile_id or "").strip()
+        self._profile = model_profile(self._profile_id)
+        self._profile_label = str(self._profile.get("public_label") or self._profile_id)
+        self._runtime_config = _runtime_config_with_profile(base_config, profile=self._profile, model_override=model)
         self._model = self._runtime_config.model
         self._api_key = resolve_openai_api_key(api_key=api_key)
         self._fallback = HeuristicSeatAgent()
@@ -110,6 +162,8 @@ class LLMSeatAgent(SeatAgent):
                 "model": self._model,
                 "reasoning_effort": self._runtime_config.reasoning_effort,
                 "timeout_s": self._runtime_config.timeout_seconds,
+                "profile_id": self._profile_id,
+                "profile_label": self._profile_label,
                 "fallback_used": True,
                 "fallback_reason": reason,
                 "session_store": "local_encrypted_sqlalchemy_sqlite",
@@ -247,6 +301,8 @@ class LLMSeatAgent(SeatAgent):
                 "accusation_window": accusation_gate,
                 "model_rationale": raw_output.rationale_private,
                 "llm_runtime": self._runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE),
+                "selected_profile_id": self._profile_id,
+                "selected_profile_label": self._profile_label,
                 "sdk_trace_id": str(artifacts.get("trace_id") or ""),
                 "sdk_session_id": str(artifacts.get("session_id") or ""),
                 "sdk_last_response_id": str(artifacts.get("last_response_id") or ""),
@@ -261,6 +317,8 @@ class LLMSeatAgent(SeatAgent):
                 "model": self._model,
                 "reasoning_effort": self._runtime_config.reasoning_effort,
                 "timeout_s": self._runtime_config.timeout_seconds,
+                "profile_id": self._profile_id,
+                "profile_label": self._profile_label,
                 "fallback_used": False,
                 "guardrail_blocked": bool(original_text and original_text != sanitized_text),
                 "trace_id": str(artifacts.get("trace_id") or ""),

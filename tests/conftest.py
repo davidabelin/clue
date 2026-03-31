@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 
 from clue_web import create_app
 from clue_agents.config import load_llm_runtime_config
+from clue_agents.profile_loader import clear_profile_caches
 
 
 @pytest.fixture
@@ -37,6 +38,7 @@ def isolate_openai_env(monkeypatch):
     """Clear live OpenAI env vars so tests do not accidentally call the network."""
 
     load_llm_runtime_config.cache_clear()
+    clear_profile_caches()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY_SECRET_VERSION", raising=False)
     monkeypatch.delenv("CLUE_AGENT_SESSION_ENCRYPTION_KEY", raising=False)
@@ -45,6 +47,7 @@ def isolate_openai_env(monkeypatch):
     monkeypatch.delenv("CLUE_AGENT_TRACE_INCLUDE_SENSITIVE_DATA", raising=False)
     monkeypatch.delenv("CLUE_AGENT_EVAL_EXPORT_ENABLED", raising=False)
     yield
+    clear_profile_caches()
     load_llm_runtime_config.cache_clear()
 
 

@@ -12,6 +12,7 @@ from typing import Any
 from itsdangerous import BadSignature, URLSafeSerializer
 
 from clue_agents import AgentRuntime
+from clue_agents.profile_loader import assign_model_profiles
 from clue_agents.safety import sanitize_public_chat
 from clue_core.deduction import build_tool_snapshot
 from clue_core.engine import GameMaster, build_filtered_snapshot
@@ -130,6 +131,7 @@ class GameService:
                 "seat_id": seat_id,
                 "seat_kind": seat.get("seat_kind", ""),
                 "agent_model": seat.get("agent_model", ""),
+                "agent_profile": seat.get("agent_profile", ""),
             }
             for seat_id, seat in state.get("seats", {}).items()
         ]
@@ -217,6 +219,7 @@ class GameService:
         else:
             seat_configs = self._default_seats()
         game_id = f"clue_{_timestamp_slug()}"
+        self._apply_llm_profiles(game_id, seat_configs)
         seed = DEFAULT_GAME_SEED
         hidden_setup = build_hidden_setup(seat_configs, seed=seed)
         state = build_initial_state(game_id, title, seat_configs, hidden_setup)
@@ -238,6 +241,7 @@ class GameService:
                     "display_name": seat.display_name,
                     "character": seat.character,
                     "seat_kind": seat.seat_kind,
+                    "agent_profile": seat.agent_profile,
                     "url": f"join/{token}",
                 }
             )
@@ -436,6 +440,7 @@ class GameService:
             if seat_id is None:
                 return
             seat = next(item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id)
+            seat = dict(seat) | dict(state["seats"][seat_id]) | {"seat_id": seat_id, "notebook": seat["notebook"]}
             cycle_started = time.perf_counter()
             snapshot = self._build_internal_snapshot(game_id, seat_id)
             tool_snapshot = self._tool_snapshot_for(state, seat_id, snapshot["events"])
@@ -614,6 +619,19 @@ class GameService:
         seat_row = next(item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id)
         visible_events = self._repository.visible_events(game_id, seat_id=seat_id, since_event_index=0)
         return build_filtered_snapshot(state, seat_id=seat_id, visible_events=visible_events, notebook=seat_row["notebook"])
+
+    @staticmethod
+    def _apply_llm_profiles(game_id: str, seat_configs: list[SeatConfig]) -> None:
+        """Assign one deterministic model profile to each LLM seat when unspecified."""
+
+        assignments = assign_model_profiles(game_id=game_id, seats=seat_configs)
+        for seat in seat_configs:
+            selection = assignments.get(seat.seat_id)
+            if selection is None:
+                continue
+            seat.agent_profile = selection.profile_id
+            if not seat.agent_model:
+                seat.agent_model = selection.model
 
     @staticmethod
     def _autonomous_seat_to_act(state: dict[str, Any]) -> str | None:

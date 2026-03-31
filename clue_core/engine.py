@@ -503,6 +503,7 @@ def build_filtered_snapshot(
                 "character": seat["character"],
                 "seat_kind": seat["seat_kind"],
                 "agent_model": seat["agent_model"],
+                "agent_profile": seat.get("agent_profile", ""),
                 "position": seat["position"],
                 "can_win": bool(seat["can_win"]),
                 "hand_count": int(seat["hand_count"]),

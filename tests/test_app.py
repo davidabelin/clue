@@ -125,6 +125,33 @@ def test_create_game_supports_np_seats_and_all_six_characters(client):
     }
 
 
+def test_create_game_assigns_yaml_model_profile_to_llm_seats(client):
+    """LLM seats without explicit model settings should receive a selected profile."""
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Profiled LLM Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "llm"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    assert response.status_code == 201
+    payload = response.get_json()
+    llm_link = next(item for item in payload["seat_links"] if item["seat_id"] == "seat_scarlet")
+
+    assert llm_link["agent_profile"]
+
+    token = _token_from_join_url(llm_link["url"])
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+
+    assert snapshot["seat"]["agent_profile"] == llm_link["agent_profile"]
+    assert snapshot["seat"]["agent_model"]
+
+
 def test_create_game_requires_three_active_seats(client):
     """Game creation should reject tables with fewer than three active seats."""
 

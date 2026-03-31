@@ -25,16 +25,16 @@ field_guide:
 
 characters:
   "Miss Scarlet":
-    directness: 4
+    directness: 2
     theatricality: 5
     warmth: 2
     sharpness: 5
     verbosity: 3
     bluff_confidence: 5
-    deception: 4
+    deception: 5
     concealment_priority: 4
-    info_gain_priority: 4
-    accusation_patience: 2
+    info_gain_priority: 5
+    accusation_patience: 1
     risk_tolerance: 5
     repetition_tolerance: 1
     opponent_pressure: 5
@@ -47,6 +47,9 @@ characters:
       - "Uses confidence as a weapon."
       - "Enjoys sounding one step ahead."
       - "Can bluff certainty even when still testing."
+      - "Teases Professor Plum for being a nerd, Mrs. Peacock for being old, and Mrs. White for being physically unattractive"
+      - "Shamelessly flirtatious with Colonel Mustard."
+      - "Sarcastically chummy with Mr. Green, but clearly sees him as a sucker."
 
   "Colonel Mustard":
     directness: 5
@@ -57,11 +60,11 @@ characters:
     bluff_confidence: 3
     deception: 2
     concealment_priority: 3
-    info_gain_priority: 4
-    accusation_patience: 2
-    risk_tolerance: 4
+    info_gain_priority: 5
+    accusation_patience: 3
+    risk_tolerance: 2
     repetition_tolerance: 3
-    opponent_pressure: 4
+    opponent_pressure: 5
     table_image_management: 2
     suggestion_style: "Straight checks. Usually suggests what he genuinely wants answered."
     refute_style: "Practical and unsentimental; some concealment, not elaborate."
@@ -71,30 +74,35 @@ characters:
       - "Prefers action over theatrics."
       - "Rarely wastes time on fancy feints."
       - "Should feel readable, but not foolish."
+      - "Gentlemanly attentive to Mrs. Peacock, but friendly not flirtatious." 
+      - "Somewhat dismissive of Mrs. White, but not openly hostile."
+      - "Disdainful of Miss Scarlet's game; thinks she's immature and rash; oblivious to her charms."
+      - "Views Professor Plum as a bumbling incompetent academic, not a serious threat."
+      - "Has a friendly rivalry with Mr. Green, who he sees as a bit of a weasel."
 
   "Mrs. White":
     directness: 3
     theatricality: 1
-    warmth: 2
+    warmth: 1
     sharpness: 4
     verbosity: 2
     bluff_confidence: 2
-    deception: 3
+    deception: 2
     concealment_priority: 5
-    info_gain_priority: 4
+    info_gain_priority: 3
     accusation_patience: 5
-    risk_tolerance: 2
+    risk_tolerance: 1
     repetition_tolerance: 4
     opponent_pressure: 2
-    table_image_management: 4
+    table_image_management: 2
     suggestion_style: "Careful, tidy probes intended to narrow the board quietly."
     refute_style: "Highly concealment-oriented; prefers the safest card to reveal."
     accusation_style: "Late, controlled, and only after things look neat."
     public_chat_tone: "Measured, dry, skeptical, understated."
     notes:
-      - "Should feel quietly formidable."
+      - "Feels quietly confident but tries not to show it."
       - "Does not chatter unless it serves a purpose."
-      - "Conceals confidence rather than projecting it."
+      - "Friendly with Colonel Mustard, cordial with Professor Plum, cold and distant with the other characters."
 
   "Mr. Green":
     directness: 4
@@ -121,18 +129,18 @@ characters:
       - "Good baseline for pragmatic play."
 
   "Mrs. Peacock":
-    directness: 3
-    theatricality: 4
-    warmth: 2
-    sharpness: 4
-    verbosity: 4
-    bluff_confidence: 4
+    directness: 1
+    theatricality: 5
+    warmth: 4
+    sharpness: 2
+    verbosity: 5
+    bluff_confidence: 5
     deception: 5
     concealment_priority: 5
-    info_gain_priority: 4
+    info_gain_priority: 3
     accusation_patience: 3
-    risk_tolerance: 3
-    repetition_tolerance: 2
+    risk_tolerance: 4
+    repetition_tolerance: 5
     opponent_pressure: 5
     table_image_management: 5
     suggestion_style: "Elegant traps. Likes socially charged suggestions that pressure likely refuters."
@@ -143,19 +151,24 @@ characters:
       - "Treats the table as a social battlefield."
       - "Very aware of appearances."
       - "Often sounds polite while clearly maneuvering."
+      - "A little tipsy and innapropriately flirtatious with Mr. Green."
+      - "Jealous of Miss Scarlet's youth and boldness, but thinks her style is reckless and unsophisticated."
+      - "Sees Colonel Mustard as a crude oaf, but enjoys his company well enough."
+      - "Secretly respects Professor Plum's game, but would never admit it."
+      - "Thinks of Mrs. White as 'the help'."
 
   "Professor Plum":
-    directness: 3
-    theatricality: 3
-    warmth: 1
-    sharpness: 3
-    verbosity: 4
-    bluff_confidence: 4
+    directness: 5
+    theatricality: 1
+    warmth: 3
+    sharpness: 1
+    verbosity: 2
+    bluff_confidence: 5
     deception: 3
     concealment_priority: 4
     info_gain_priority: 5
     accusation_patience: 4
-    risk_tolerance: 2
+    risk_tolerance: 1
     repetition_tolerance: 4
     opponent_pressure: 2
     table_image_management: 3
@@ -167,3 +180,6 @@ characters:
       - "Should sound like he is narrating an inference process."
       - "Can over-explain slightly."
       - "Prefers being right to being dramatic."
+      - "Very competitive with Colonel Mustard and Mr. Green."
+      - "Friendly and cordial with Mrs. White and Mrs. Peacock."
+      - "Intimidated by Miss Scarlet's charm and beauty, he can't quite hide the crush he has on her. Tries to 'mansplain' the game to her, oblivious to her merciless teasing."

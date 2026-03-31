@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from clue_agents.profile_loader import build_persona_guidance
 from clue_core.board import BOARD_NODES, NODE_TO_ROOM_NAME
 
 
@@ -105,7 +106,11 @@ def persona_prompt(character: str) -> str:
     """Return the public-voice guidance for one stock character."""
 
     persona = CHARACTER_PERSONAS.get(character) or {}
-    return str(persona.get("prompt") or "Keep public chat brief, safe, and lightly in character.")
+    yaml_guidance = build_persona_guidance(character)
+    fallback = str(persona.get("prompt") or "Keep public chat brief, safe, and lightly in character.")
+    if yaml_guidance:
+        return f"{yaml_guidance}\nFallback voice cue: {fallback}"
+    return fallback
 
 
 def accusation_window(snapshot: dict[str, Any], tool_snapshot: dict[str, Any]) -> dict[str, Any]:
