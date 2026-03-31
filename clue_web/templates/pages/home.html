@@ -6,7 +6,7 @@
     <p class="eyebrow">Standalone Lab</p>
     <h1>Multi-seat Clue with private state, public table talk, and deterministic rules.</h1>
     <p class="lede">
-      Create a game, open seat links in separate browser tabs, and let human, heuristic, or LLM seats
+      Create a game, open seat links in separate browser tabs, and let human or LLM seats
       share the same event-sourced board state.
     </p>
   </div>
@@ -24,7 +24,7 @@
     <div class="seat-grid">
       {% set defaults = [
         ("seat_scarlet", "Miss Scarlet", "human"),
-        ("seat_mustard", "Colonel Mustard", "heuristic"),
+        ("seat_mustard", "Colonel Mustard", "llm"),
         ("seat_white", "Mrs. White", "np"),
         ("seat_green", "Mr. Green", "np"),
         ("seat_peacock", "Mrs. Peacock", "llm"),
@@ -43,7 +43,6 @@
           <select name="seat_kind_{{ loop.index0 }}">
             <option value="np" {% if seat_kind == "np" %}selected{% endif %}>NP</option>
             <option value="human" {% if seat_kind == "human" %}selected{% endif %}>Human</option>
-            <option value="heuristic" {% if seat_kind == "heuristic" %}selected{% endif %}>Heuristic</option>
             <option value="llm" {% if seat_kind == "llm" %}selected{% endif %}>LLM</option>
           </select>
         </label>
@@ -93,11 +92,24 @@
       `;
       return;
     }
+    const formatSeatKind = (seatKind) => {
+      const normalized = String(seatKind || "").trim().toLowerCase();
+      if (normalized === "llm" || normalized === "heuristic") {
+        return "LLM";
+      }
+      if (normalized === "human") {
+        return "Human";
+      }
+      if (normalized === "np") {
+        return "NP";
+      }
+      return normalized || "Unknown";
+    };
     result.innerHTML = `
       <h2>${payload.title}</h2>
       <p>Open each seat link in its own browser tab.</p>
       <ul class="seat-links">
-        ${payload.seat_links.map((item) => `<li><a href="${item.url}">${item.display_name} (${item.seat_kind})</a></li>`).join("")}
+        ${payload.seat_links.map((item) => `<li><a href="${item.url}">${item.display_name} (${formatSeatKind(item.seat_kind)})</a></li>`).join("")}
       </ul>
     `;
   });

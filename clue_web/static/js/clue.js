@@ -78,6 +78,20 @@ if (app) {
       .replaceAll("'", "&#39;");
   }
 
+  function displaySeatKind(seatKind) {
+    const normalized = String(seatKind ?? "").trim().toLowerCase();
+    if (normalized === "heuristic" || normalized === "llm") {
+      return "LLM";
+    }
+    if (normalized === "human") {
+      return "Human";
+    }
+    if (normalized === "np") {
+      return "NP";
+    }
+    return normalized || "Unknown";
+  }
+
   function seatMap(snapshot) {
     const map = new Map();
     snapshot.seats.forEach((seat) => {
@@ -285,7 +299,7 @@ if (app) {
       }
       return `
         <article class="${classes.join(" ")}">
-          <p class="card-kicker">${escapeHtml(seat.seat_kind)}</p>
+          <p class="card-kicker">${escapeHtml(displaySeatKind(seat.seat_kind))}</p>
           <h4>${escapeHtml(seat.display_name)}</h4>
           <p>${seat.display_name === seat.character ? "Character marker" : escapeHtml(seat.character)}</p>
           <p class="position-node">${escapeHtml(labels.get(seat.position) || seat.position)}</p>
@@ -341,11 +355,11 @@ if (app) {
             <span class="seat-swatch" style="--seat-color: ${escapeHtml(decorated.color)}"></span>
             <div>
               <h3>${escapeHtml(seat.display_name)}</h3>
-              <p>${seat.display_name === seat.character ? escapeHtml(seat.seat_kind) : escapeHtml(seat.character)}</p>
+              <p>${seat.display_name === seat.character ? escapeHtml(displaySeatKind(seat.seat_kind)) : escapeHtml(seat.character)}</p>
             </div>
           </div>
           <p>${escapeHtml(labels.get(seat.position) || seat.position)}</p>
-          <p>${escapeHtml(seat.seat_kind)} · ${seat.can_win ? "alive" : "eliminated"}</p>
+          <p>${escapeHtml(displaySeatKind(seat.seat_kind))} · ${seat.can_win ? "alive" : "eliminated"}</p>
         </article>
       `;
     }).join("");

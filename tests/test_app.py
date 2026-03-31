@@ -27,6 +27,7 @@ def test_home_page_renders(client):
     assert "Set unused seats to NP." in html
     assert "Clue v1.5.0 runs as a standalone lab" in html
     assert "Seed" not in html
+    assert ">Heuristic<" not in html
     assert 'fetch("api/v1/games"' in html
     assert 'fetch("/api/v1/games"' not in html
 
@@ -123,6 +124,33 @@ def test_create_game_supports_np_seats_and_all_six_characters(client):
         "Mrs. White",
         "Mr. Green",
     }
+    assert {item["seat_kind"] for item in payload["seat_links"]} <= {"human", "llm"}
+
+
+def test_create_game_normalizes_legacy_heuristic_seats_to_llm(client):
+    """Legacy heuristic payloads should still work while storing only human/llm seats."""
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Normalized Seats",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "heuristic"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    assert response.status_code == 201
+    payload = response.get_json()
+    seat_link = next(item for item in payload["seat_links"] if item["seat_id"] == "seat_scarlet")
+
+    assert seat_link["seat_kind"] == "llm"
+
+    token = _token_from_join_url(seat_link["url"])
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+
+    assert snapshot["seat"]["seat_kind"] == "llm"
 
 
 def test_create_game_assigns_yaml_model_profile_to_llm_seats(client):

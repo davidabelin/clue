@@ -414,13 +414,21 @@ class GameService:
 
     @staticmethod
     def _seat_configs_from_payload(requested_seats: list[dict[str, Any]]) -> list[SeatConfig]:
-        """Normalize create-game seat payloads and drop seats marked as not playing."""
+        """Normalize create-game seat payloads and drop seats marked as not playing.
+
+        ``heuristic`` remains a tolerated legacy alias in incoming payloads so old
+        clients or tests can keep working, but newly created seats are normalized
+        to ``llm`` at the config boundary. The deterministic heuristic policy still
+        exists internally as the LLM fallback/runtime baseline.
+        """
 
         seat_payloads = []
         for item in requested_seats:
             seat_kind = str(item.get("seat_kind", "human")).strip().lower()
             if seat_kind == "np":
                 continue
+            if seat_kind == "heuristic":
+                seat_kind = "llm"
             seat_payloads.append(item | {"seat_kind": seat_kind or "human"})
         if len(seat_payloads) < 3 or len(seat_payloads) > 6:
             raise ValueError("Clue requires between 3 and 6 active seats.")
@@ -654,9 +662,9 @@ class GameService:
 
         defaults = [
             ("seat_scarlet", "Miss Scarlet", "Miss Scarlet", "human"),
-            ("seat_mustard", "Colonel Mustard", "Colonel Mustard", "heuristic"),
+            ("seat_mustard", "Colonel Mustard", "Colonel Mustard", "llm"),
             ("seat_peacock", "Mrs. Peacock", "Mrs. Peacock", "llm"),
-            ("seat_plum", "Professor Plum", "Professor Plum", "heuristic"),
+            ("seat_plum", "Professor Plum", "Professor Plum", "human"),
         ]
         return [
             SeatConfig(seat_id=seat_id, display_name=display_name, character=character, seat_kind=seat_kind)
