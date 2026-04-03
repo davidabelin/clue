@@ -119,3 +119,20 @@ def test_refute_card_tool_guardrail_allows_current_private_card(monkeypatch, tmp
     result = refute_card_scope_guardrail.guardrail_function(data)
 
     assert result.behavior["type"] == "allow"
+
+
+def test_chat_context_uses_separate_session_id(monkeypatch, tmp_path):
+    """Chat-mode seat contexts should keep a separate local session namespace."""
+
+    monkeypatch.setenv("CLUE_AGENT_SESSION_DB_PATH", str(tmp_path / "agent_sessions.db"))
+    load_llm_runtime_config.cache_clear()
+    context = build_seat_context(
+        snapshot=_snapshot(),
+        tool_snapshot={},
+        accusation_gate={"ready": False},
+        runtime_config=load_llm_runtime_config(),
+        mode="chat",
+    )
+
+    assert context.mode == "chat"
+    assert context.session_id == "game_cfg:seat_scarlet:chat"

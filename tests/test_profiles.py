@@ -43,6 +43,39 @@ characters:
     assert "freeform note" not in guidance
 
 
+def test_build_social_guidance_includes_chattiness_and_top_notes(monkeypatch, tmp_path: Path):
+    """Chat-only persona guidance should include chattiness and a short note slice."""
+
+    personas_path = tmp_path / "personas.yaml"
+    personas_path.write_text(
+        """
+schema_version: 1
+characters:
+  "Mrs. Peacock":
+    public_chat_tone: "Refined and strategic."
+    chattiness: 5
+    notes:
+      - "Treats the table as a social battlefield."
+      - "Very aware of appearances."
+      - "Sounds polite while maneuvering."
+      - "This fourth note should be omitted."
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(profile_loader, "PERSONAS_PATH", personas_path)
+    profile_loader.clear_profile_caches()
+
+    guidance = profile_loader.build_social_guidance("Mrs. Peacock")
+
+    assert "Refined and strategic." in guidance
+    assert "Chattiness: 5/5." in guidance
+    assert "social battlefield" in guidance
+    assert "appearances" in guidance
+    assert "maneuvering" in guidance
+    assert "fourth note" not in guidance
+    assert profile_loader.persona_chattiness("Mrs. Peacock") == 5
+
+
 def test_assign_model_profiles_respects_character_bias(monkeypatch, tmp_path: Path):
     """Character-biased weights should be able to force a unique profile choice."""
 

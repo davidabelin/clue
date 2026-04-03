@@ -155,6 +155,34 @@ def build_persona_guidance(character: str) -> str:
     return "\n".join(lines)
 
 
+def persona_chattiness(character: str) -> int:
+    """Return the configured 1-5 chattiness slider for one character."""
+
+    profile = persona_profile(character)
+    return _int_scale(profile.get("chattiness"), default=3) if profile else 3
+
+
+def build_social_guidance(character: str) -> str:
+    """Build richer chat-only guidance from the YAML persona profile."""
+
+    profile = persona_profile(character)
+    if not profile:
+        return ""
+
+    lines: list[str] = []
+    public_tone = str(profile.get("public_chat_tone") or "").strip()
+    if public_tone:
+        lines.append(f"Public tone: {public_tone}")
+
+    lines.append(f"Chattiness: {persona_chattiness(character)}/5.")
+
+    notes = [str(item).strip() for item in list(profile.get("notes") or [])[:3] if str(item).strip()]
+    for note in notes:
+        lines.append(f"Social cue: {note}")
+
+    return "\n".join(lines)
+
+
 def model_profile(profile_id: str) -> dict[str, Any]:
     """Return one model-profile block by id from ``models.yaml``."""
 

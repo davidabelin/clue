@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from clue_agents.base import ChatDecision
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_core.deduction import ToolSnapshot
 from clue_web import create_app
@@ -13,6 +14,18 @@ def _token_from_join_url(url: str) -> str:
     """Extract the signed seat token from one relative join URL."""
 
     return str(url).split("join/", 1)[1]
+
+
+def _chat_events(snapshot: dict) -> list[dict]:
+    """Return the player-facing public chat events from one snapshot."""
+
+    return [
+        event
+        for event in snapshot.get("events", [])
+        if event.get("visibility") == "public"
+        and event.get("event_type") == "chat_posted"
+        and not str(event.get("event_type", "")).startswith("trace_")
+    ]
 
 
 def test_home_page_renders(client):
@@ -90,12 +103,180 @@ def test_game_page_renders_private_and_public_table_sections(client):
     assert "Private Intel" in html
     assert "Marker Grid" in html
     assert "Table Record" in html
+    assert "Narrative" in html
+    assert "Table Chat" in html
     assert "Public Table Talk" in html
     assert "Seat Debug" in html
     assert "How LLM Seats Work" in html
     assert "Table Seats" in html
     assert "Round Table" not in html
     assert "Players" not in html
+
+
+def test_idle_chat_limits_one_npc_message_per_sweep(client, monkeypatch):
+    """One snapshot refresh should append at most one NPC chat reply."""
+
+    monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
+    monkeypatch.setattr(
+        "clue_agents.llm.LLMSeatAgent.decide_chat",
+        lambda self, *, snapshot: ChatDecision(speak=True, text=f"{snapshot['seat']['display_name']} checks in.", rationale_private="chat"),
+    )
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Idle Chat Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "llm"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "llm"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+
+    assert len(_chat_events(snapshot)) == 1
+
+
+def test_idle_chat_does_not_repeat_for_same_public_event(client, monkeypatch):
+    """Repeated snapshot polls should not duplicate the same NPC reaction."""
+
+    monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
+    monkeypatch.setattr(
+        "clue_agents.llm.LLMSeatAgent.decide_chat",
+        lambda self, *, snapshot: ChatDecision(speak=True, text="Steady now.", rationale_private="chat"),
+    )
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Stable Poll Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "llm"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    first = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+    second = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+
+    assert len(_chat_events(first)) == 1
+    assert len(_chat_events(second)) == 1
+
+
+def test_human_chat_can_trigger_idle_npc_reply_without_advancing_turn(client, monkeypatch):
+    """Human off-turn chat should be able to provoke one NPC reply without changing turn control."""
+
+    monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
+
+    def _reply(self, *, snapshot):
+        seat = snapshot["seat"]
+        return ChatDecision(speak=True, text=f"{seat['display_name']} heard that.", rationale_private="chat")
+
+    monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.decide_chat", _reply)
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Reply Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "llm"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "llm"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    snapshot = client.post(
+        "/api/v1/games/current/actions",
+        headers={"X-Clue-Seat-Token": token},
+        json={"action": "send_chat", "text": "Mrs. Peacock, that sounded rehearsed."},
+    ).get_json()
+
+    chats = _chat_events(snapshot)
+    assert snapshot["active_seat_id"] == "seat_scarlet"
+    assert len(chats) >= 2
+    assert chats[-1]["payload"]["seat_id"] == "seat_peacock"
+
+
+def test_idle_chat_skips_while_nonhuman_turn_is_pending(client, monkeypatch):
+    """Snapshot polling should not run idle chatter while a non-human rules action is queued."""
+
+    monkeypatch.setattr("clue_web.runtime.GameService.maybe_run_agents", lambda self, game_id, max_cycles=32: None)
+    monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
+    monkeypatch.setattr(
+        "clue_agents.llm.LLMSeatAgent.decide_chat",
+        lambda self, *, snapshot: ChatDecision(speak=True, text="This should not post.", rationale_private="chat"),
+    )
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Pending Agent Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "llm"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][1]["url"])
+
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+
+    assert snapshot["active_seat_id"] == "seat_scarlet"
+    assert _chat_events(snapshot) == []
+
+
+def test_idle_chat_cooldown_requires_two_later_public_events(client, monkeypatch):
+    """An NPC should stay quiet for two later public events before chatting again."""
+
+    monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
+    monkeypatch.setattr(
+        "clue_agents.llm.LLMSeatAgent.decide_chat",
+        lambda self, *, snapshot: ChatDecision(speak=True, text="Noted.", rationale_private="chat"),
+    )
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Cooldown Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "llm"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    first = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+    second = client.post(
+        "/api/v1/games/current/actions",
+        headers={"X-Clue-Seat-Token": token},
+        json={"action": "send_chat", "text": "First follow-up."},
+    ).get_json()
+    third = client.post(
+        "/api/v1/games/current/actions",
+        headers={"X-Clue-Seat-Token": token},
+        json={"action": "send_chat", "text": "Second follow-up."},
+    ).get_json()
+    fourth = client.post(
+        "/api/v1/games/current/actions",
+        headers={"X-Clue-Seat-Token": token},
+        json={"action": "send_chat", "text": "Third follow-up."},
+    ).get_json()
+
+    assert len(_chat_events(first)) == 1
+    assert len(_chat_events(second)) == 2
+    assert len(_chat_events(third)) == 3
+    assert len(_chat_events(fourth)) == 5
 
 
 def test_create_game_supports_np_seats_and_all_six_characters(client):

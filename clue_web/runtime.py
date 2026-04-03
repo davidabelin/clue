@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import UTC, datetime
+import hashlib
 import os
 import secrets
 import time
@@ -12,7 +13,7 @@ from typing import Any
 from itsdangerous import BadSignature, URLSafeSerializer
 
 from clue_agents import AgentRuntime
-from clue_agents.profile_loader import assign_model_profiles
+from clue_agents.profile_loader import assign_model_profiles, persona_chattiness
 from clue_agents.safety import sanitize_public_chat
 from clue_core.deduction import build_tool_snapshot
 from clue_core.engine import GameMaster, build_filtered_snapshot
@@ -120,6 +121,38 @@ class GameService:
         analysis.setdefault("latest_private_debug_by_seat", {})
         state["analysis"] = analysis
         return analysis
+
+    @staticmethod
+    def _build_social_defaults(state: dict[str, Any]) -> dict[str, Any]:
+        """Create the persisted social-chat scheduler state for non-human seats."""
+
+        return {
+            "seats": {
+                seat_id: {
+                    "last_processed_public_event_index": 0,
+                    "cooldown_events_remaining": 0,
+                    "last_chat_event_index": 0,
+                }
+                for seat_id, seat in state.get("seats", {}).items()
+                if str(seat.get("seat_kind", "")).strip().lower() != "human"
+            }
+        }
+
+    def _ensure_social(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Backfill the per-game idle-chat scheduler state."""
+
+        defaults = self._build_social_defaults(state)
+        social = dict(state.get("social") or {})
+        seat_social = dict(social.get("seats") or {})
+        for seat_id, payload in defaults["seats"].items():
+            current = dict(seat_social.get(seat_id) or {})
+            current.setdefault("last_processed_public_event_index", payload["last_processed_public_event_index"])
+            current.setdefault("cooldown_events_remaining", payload["cooldown_events_remaining"])
+            current.setdefault("last_chat_event_index", payload["last_chat_event_index"])
+            seat_social[seat_id] = current
+        social["seats"] = seat_social
+        state["social"] = social
+        return social
 
     def _cleanup_llm_sessions_if_complete(self, state: dict[str, Any]) -> None:
         """Clear local LLM seat sessions after a game reaches a terminal state."""
@@ -305,7 +338,10 @@ class GameService:
         """Return the public/private snapshot visible to one seat token."""
 
         seat = self.resolve_token(token)
+        self.maybe_run_idle_chat(seat["game_id"])
         state = self._repository.get_state(seat["game_id"])
+        self._ensure_analysis(state)
+        self._ensure_social(state)
         visible_events = self._repository.visible_events(seat["game_id"], seat_id=seat["seat_id"], since_event_index=since_event_index)
         return build_filtered_snapshot(
             state,
@@ -320,6 +356,7 @@ class GameService:
         seat = self.resolve_token(token)
         state = self._repository.get_state(seat["game_id"])
         self._ensure_analysis(state)
+        self._ensure_social(state)
         started = time.perf_counter()
         game = GameMaster(state)
         try:
@@ -434,6 +471,132 @@ class GameService:
             raise ValueError("Clue requires between 3 and 6 active seats.")
         return [SeatConfig.from_dict(item) for item in seat_payloads]
 
+    def maybe_run_idle_chat(self, game_id: str) -> None:
+        """Run at most one non-human idle-chat reply for new player-facing public activity."""
+
+        state = self._repository.get_state(game_id)
+        self._ensure_analysis(state)
+        social = self._ensure_social(state)
+        if str(state.get("status") or "") != "active":
+            return
+        if self._autonomous_seat_to_act(state) is not None:
+            return
+
+        public_events = self._player_facing_public_events(game_id)
+        if not public_events:
+            return
+
+        social_seats = dict(social.get("seats") or {})
+        nonhuman_ids = [seat_id for seat_id in state.get("seat_order", []) if seat_id in social_seats]
+        if not nonhuman_ids:
+            return
+
+        latest_public_event = public_events[-1]
+        latest_public_event_index = int(latest_public_event["event_index"])
+        if all(
+            int(dict(social_seats.get(seat_id) or {}).get("last_processed_public_event_index", 0)) >= latest_public_event_index
+            for seat_id in nonhuman_ids
+        ):
+            return
+
+        latest_public_chat = next(
+            (event for event in reversed(public_events) if str(event.get("event_type") or "") == "chat_posted"),
+            {},
+        )
+        latest_narrative = next(
+            (event for event in reversed(public_events) if str(event.get("event_type") or "") != "chat_posted"),
+            {},
+        )
+        latest_event_actor = self._public_event_actor_seat_id(latest_public_event)
+        latest_narrative_actor = self._public_event_actor_seat_id(latest_narrative) if latest_narrative else ""
+        recent_chat_authors = [
+            self._public_event_actor_seat_id(event)
+            for event in public_events
+            if str(event.get("event_type") or "") == "chat_posted"
+        ][-2:]
+        state_changed = False
+        candidates: list[dict[str, Any]] = []
+
+        for seat_id in nonhuman_ids:
+            seat_social = dict(social_seats.get(seat_id) or {})
+            last_processed = int(seat_social.get("last_processed_public_event_index", 0) or 0)
+            unseen_events = [event for event in public_events if int(event.get("event_index") or 0) > last_processed]
+            if not unseen_events:
+                continue
+
+            state_changed = True
+            cooldown = max(int(seat_social.get("cooldown_events_remaining", 0) or 0), 0)
+            if cooldown > 0:
+                seat_social["cooldown_events_remaining"] = max(cooldown - len(unseen_events), 0)
+                seat_social["last_processed_public_event_index"] = latest_public_event_index
+                social_seats[seat_id] = seat_social
+                continue
+
+            seat = dict(state["seats"][seat_id])
+            addressed = bool(latest_public_chat and self._event_mentions_seat(latest_public_chat, seat))
+            chance = self._idle_chat_base_chance(str(seat.get("character") or ""))
+            if addressed:
+                chance += 0.22
+            if latest_narrative_actor == seat_id:
+                chance += 0.12
+            if (
+                str(latest_public_event.get("event_type") or "") == "chat_posted"
+                and latest_event_actor
+                and latest_event_actor != seat_id
+            ):
+                chance += 0.08
+            if seat_id in recent_chat_authors:
+                chance -= 0.30
+            chance = max(0.0, min(chance, 0.85))
+            roll = self._idle_chat_roll(game_id, seat_id, latest_public_event_index)
+            if roll < chance:
+                candidates.append(
+                    {
+                        "seat_id": seat_id,
+                        "addressed": addressed,
+                        "latest_event_actor": latest_event_actor == seat_id,
+                        "margin": round(chance - roll, 6),
+                    }
+                )
+            seat_social["last_processed_public_event_index"] = latest_public_event_index
+            social_seats[seat_id] = seat_social
+
+        social["seats"] = social_seats
+        state["social"] = social
+        events: list[dict[str, Any]] = []
+
+        if candidates:
+            chosen = sorted(
+                candidates,
+                key=lambda item: (
+                    not bool(item["addressed"]),
+                    not bool(item["latest_event_actor"]),
+                    -float(item["margin"]),
+                    state["seat_order"].index(str(item["seat_id"])),
+                ),
+            )[0]
+            seat_id = str(chosen["seat_id"])
+            seat_row = next(item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id)
+            seat = dict(seat_row) | dict(state["seats"][seat_id]) | {"seat_id": seat_id, "notebook": seat_row["notebook"]}
+            snapshot = self._build_internal_snapshot(game_id, seat_id)
+            decision = self._agents.decide_chat(seat=seat, snapshot=snapshot)
+            safe_text = sanitize_public_chat(str(decision.text or ""))
+            if decision.speak and safe_text:
+                next_public_index = self._repository.next_event_index(game_id) + 1
+                chat_game = GameMaster(state)
+                state, events = chat_game.apply_action(seat_id, {"action": "send_chat", "text": safe_text})
+                updated_social = self._ensure_social(state)
+                seat_social = dict((updated_social.get("seats") or {}).get(seat_id) or {})
+                seat_social["cooldown_events_remaining"] = 2
+                seat_social["last_processed_public_event_index"] = next_public_index
+                seat_social["last_chat_event_index"] = next_public_index
+                updated_social["seats"][seat_id] = seat_social
+                state["social"] = updated_social
+                state_changed = True
+
+        if state_changed:
+            self._repository.save_state_and_events(game_id, state=state, events=events)
+
     def maybe_run_agents(self, game_id: str, *, max_cycles: int = 32) -> None:
         """Advance queued heuristic/LLM turns until a human seat must respond."""
 
@@ -441,6 +604,7 @@ class GameService:
         while cycles < max_cycles:
             state = self._repository.get_state(game_id)
             self._ensure_analysis(state)
+            self._ensure_social(state)
             if state["status"] != "active":
                 self._cleanup_llm_sessions_if_complete(state)
                 return
@@ -600,6 +764,55 @@ class GameService:
             self._repository.save_state_and_events(game_id, state=new_state, events=events)
             self._cleanup_llm_sessions_if_complete(new_state)
             cycles += 1
+
+    def _player_facing_public_events(self, game_id: str, *, since_event_index: int = 0) -> list[dict[str, Any]]:
+        """Return public events intended for player-facing narrative or chat feeds."""
+
+        return [
+            dict(event)
+            for event in self._repository.public_events(game_id, since_event_index=since_event_index)
+            if not str(event.get("event_type") or "").startswith("trace_")
+        ]
+
+    @staticmethod
+    def _public_event_actor_seat_id(event: dict[str, Any]) -> str:
+        """Best-effort extraction of the acting seat id from one public event."""
+
+        payload = dict(event.get("payload") or {})
+        for key in ("seat_id", "from_seat_id", "winner_seat_id", "suggester"):
+            value = str(payload.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    @staticmethod
+    def _event_mentions_seat(event: dict[str, Any], seat: dict[str, Any]) -> bool:
+        """Report whether one public chat line names the provided seat."""
+
+        text = str((event.get("payload") or {}).get("text") or event.get("message") or "").lower()
+        display_name = str(seat.get("display_name") or "").lower()
+        character = str(seat.get("character") or "").lower()
+        return bool(text and ((display_name and display_name in text) or (character and character in text)))
+
+    @staticmethod
+    def _idle_chat_base_chance(character: str) -> float:
+        """Map the persona chattiness slider onto a base chat probability."""
+
+        return {
+            1: 0.08,
+            2: 0.18,
+            3: 0.32,
+            4: 0.50,
+            5: 0.68,
+        }.get(persona_chattiness(character), 0.32)
+
+    @staticmethod
+    def _idle_chat_roll(game_id: str, seat_id: str, latest_public_event_index: int) -> float:
+        """Return a deterministic 0..1 roll for one idle-chat evaluation."""
+
+        material = f"{str(game_id).strip()}|{str(seat_id).strip()}|{int(latest_public_event_index)}".encode("utf-8")
+        value = int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+        return value / float(2**64)
 
     def _tool_snapshot_for(self, state: dict[str, Any], seat_id: str, visible_events: list[dict[str, Any]]):
         """Build the deduction helper payload for one autonomous seat decision."""

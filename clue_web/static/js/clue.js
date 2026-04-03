@@ -13,7 +13,8 @@ const app = document.getElementById("game-app");
 
 if (app) {
   const seatToken = app.dataset.seatToken;
-  const publicEventLog = document.getElementById("public-event-log");
+  const narrativeLog = document.getElementById("narrative-log");
+  const chatLog = document.getElementById("chat-log");
   const privateLog = document.getElementById("private-log");
   const seatList = document.getElementById("seat-list");
   const handList = document.getElementById("hand-list");
@@ -33,7 +34,8 @@ if (app) {
   const paceNote = document.getElementById("pace-note");
   const requestError = document.getElementById("request-error");
   const notebookStatus = document.getElementById("notebook-status");
-  const publicCount = document.getElementById("public-count");
+  const narrativeCount = document.getElementById("narrative-count");
+  const chatCount = document.getElementById("chat-count");
   const privateCount = document.getElementById("private-count");
   const seatDebug = document.getElementById("seat-debug");
   const debugStatus = document.getElementById("debug-status");
@@ -382,6 +384,18 @@ if (app) {
     `).join("");
   }
 
+  function isTraceEvent(event) {
+    return String(event?.event_type || "").startsWith("trace_");
+  }
+
+  function publicNarrativeEvents(events) {
+    return events.filter((event) => event.visibility === "public" && !isTraceEvent(event) && event.event_type !== "chat_posted");
+  }
+
+  function publicChatEvents(events) {
+    return events.filter((event) => event.visibility === "public" && !isTraceEvent(event) && event.event_type === "chat_posted");
+  }
+
   function renderGuidance(snapshot) {
     const available = new Set(snapshot.legal_actions?.available || []);
     const activeSeat = seatMap(snapshot).get(snapshot.active_seat_id);
@@ -532,13 +546,16 @@ if (app) {
       chatInput.value = previousChat;
     }
 
-    const publicEvents = snapshot.events.filter((event) => event.visibility === "public");
+    const narrativeEvents = publicNarrativeEvents(snapshot.events);
+    const chatEvents = publicChatEvents(snapshot.events);
     const privateEvents = snapshot.events.filter((event) => event.visibility !== "public");
 
-    publicCount.textContent = String(publicEvents.length);
+    narrativeCount.textContent = String(narrativeEvents.length);
+    chatCount.textContent = String(chatEvents.length);
     privateCount.textContent = String(privateEvents.length);
 
-    renderEventList(publicEventLog, publicEvents, "The public table record will appear here.");
+    renderEventList(narrativeLog, narrativeEvents, "The public story of the game will appear here.");
+    renderEventList(chatLog, chatEvents, "The table chat stream will appear here.");
     renderEventList(privateLog, privateEvents, "No private reveals or seat-only prompts yet.");
     renderSeatCards(snapshot);
     renderBoard(snapshot);

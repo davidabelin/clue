@@ -478,3 +478,36 @@ class ClueRepository:
                 }
                 for row in rows
             ]
+
+    def public_events(self, game_id: str, *, since_event_index: int = 0) -> list[dict[str, Any]]:
+        """Return the public event stream for one game after a cursor."""
+
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, event_index, visibility, event_type, message, payload_json, created_at
+                    FROM events
+                    WHERE game_id = :game_id
+                      AND event_index > :since_event_index
+                      AND visibility = 'public'
+                    ORDER BY event_index
+                    """
+                ),
+                {
+                    "game_id": game_id,
+                    "since_event_index": since_event_index,
+                },
+            ).mappings()
+            return [
+                {
+                    "id": int(row["id"]),
+                    "event_index": int(row["event_index"]),
+                    "visibility": row["visibility"],
+                    "event_type": row["event_type"],
+                    "message": row["message"],
+                    "payload": json.loads(row["payload_json"] or "{}"),
+                    "created_at": row["created_at"],
+                }
+                for row in rows
+            ]

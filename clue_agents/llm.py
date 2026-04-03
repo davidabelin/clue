@@ -11,13 +11,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from clue_agents.base import SeatAgent, TurnDecision
+from clue_agents.base import ChatDecision, SeatAgent, TurnDecision
 from clue_agents.config import LLMRuntimeConfig, load_llm_runtime_config
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_agents.policy import accusation_window, stock_public_comment
 from clue_agents.profile_loader import model_profile
 from clue_agents.sdk_runtime import (
     AGENTS_SDK_AVAILABLE,
+    AgentChatOutput,
     AgentTurnOutput,
     InputGuardrailTripwireTriggered,
     MaxTurnsExceeded,
@@ -116,11 +117,12 @@ class LLMSeatAgent(SeatAgent):
 
         if not AGENTS_SDK_AVAILABLE:
             return
-        session = build_session_for_id(
-            f"{str(game_id)}:{str(seat_id)}",
-            runtime_config=self._runtime_config,
-        )
-        asyncio.run(session.clear_session())
+        for session_id in (f"{str(game_id)}:{str(seat_id)}", f"{str(game_id)}:{str(seat_id)}:chat"):
+            session = build_session_for_id(
+                session_id,
+                runtime_config=self._runtime_config,
+            )
+            asyncio.run(session.clear_session())
 
     def _fallback_decision(
         self,
@@ -171,6 +173,67 @@ class LLMSeatAgent(SeatAgent):
             },
         )
 
+    def _silent_chat_decision(self, *, reason: str, extra_meta: dict[str, Any] | None = None) -> ChatDecision:
+        """Return a deliberate no-post result for the chat path."""
+
+        return ChatDecision(
+            speak=False,
+            text="",
+            rationale_private="Silence was preferred over a risky or low-value chat line.",
+            debug_private={"llm_runtime": self._runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)},
+            agent_meta={
+                "policy": "llm",
+                "backend": "openai_agents_sdk",
+                "model": self._model,
+                "reasoning_effort": self._runtime_config.reasoning_effort,
+                "timeout_s": self._runtime_config.timeout_seconds,
+                "profile_id": self._profile_id,
+                "profile_label": self._profile_label,
+                "fallback_used": False,
+                "fallback_reason": reason,
+                "session_store": "local_encrypted_sqlalchemy_sqlite",
+                **dict(extra_meta or {}),
+            },
+        )
+
+    def _fallback_chat_decision(
+        self,
+        fallback: ChatDecision,
+        *,
+        reason: str,
+        error: Exception | None = None,
+        extra_debug: dict[str, Any] | None = None,
+        extra_meta: dict[str, Any] | None = None,
+    ) -> ChatDecision:
+        """Attach LLM-runtime diagnostics to the heuristic chat fallback."""
+
+        debug_private = dict(fallback.debug_private or {})
+        debug_private["llm_runtime"] = self._runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)
+        if extra_debug:
+            debug_private["llm_debug"] = dict(extra_debug)
+        if error is not None:
+            debug_private["fallback_error"] = str(error)
+        return ChatDecision(
+            speak=bool(fallback.speak),
+            text=str(fallback.text or ""),
+            rationale_private=str(fallback.rationale_private or ""),
+            debug_private=debug_private,
+            agent_meta={
+                **dict(fallback.agent_meta or {}),
+                "policy": "llm",
+                "backend": "openai_agents_sdk",
+                "model": self._model,
+                "reasoning_effort": self._runtime_config.reasoning_effort,
+                "timeout_s": self._runtime_config.timeout_seconds,
+                "profile_id": self._profile_id,
+                "profile_label": self._profile_label,
+                "fallback_used": True,
+                "fallback_reason": reason,
+                "session_store": "local_encrypted_sqlalchemy_sqlite",
+                **dict(extra_meta or {}),
+            },
+        )
+
     @staticmethod
     def _decision_is_legal(decision: TurnDecision, legal: dict[str, Any]) -> bool:
         """Validate the normalized decision against the current legal envelope."""
@@ -190,22 +253,28 @@ class LLMSeatAgent(SeatAgent):
             return bool(decision.suspect and decision.weapon and decision.room)
         return True
 
-    def _run_agent(self, context) -> tuple[AgentTurnOutput, dict[str, Any]]:
+    def _run_agent(self, context) -> tuple[Any, dict[str, Any]]:
         """Execute one Agents SDK run and return the structured output plus artifacts."""
 
         if Runner is None:
             raise RuntimeError("OpenAI Agents SDK runner is unavailable.")
-        agent = build_agent(self._runtime_config)
+        is_chat = str(getattr(context, "mode", "turn")) == "chat"
+        agent = build_agent(self._runtime_config, mode=("chat" if is_chat else "turn"))
         session = build_session(context)
         result = Runner.run_sync(
             agent,
-            "Inspect the current seat-local state and return the single best next Clue action.",
+            (
+                "Decide whether this autonomous seat should post one public chat line right now."
+                if is_chat
+                else "Inspect the current seat-local state and return the single best next Clue action."
+            ),
             context=context,
             max_turns=self._runtime_config.max_turns,
             run_config=build_run_config(context, self._api_key),
             session=session,
         )
-        output = result.final_output_as(AgentTurnOutput, raise_if_incorrect_type=True)
+        output_type = AgentChatOutput if is_chat else AgentTurnOutput
+        output = result.final_output_as(output_type, raise_if_incorrect_type=True)
         artifacts = build_artifacts(result, context)
         return output, {
             "trace_id": artifacts.trace_id,
@@ -235,6 +304,7 @@ class LLMSeatAgent(SeatAgent):
             tool_snapshot=tool_snapshot,
             accusation_gate=accusation_gate,
             runtime_config=self._runtime_config,
+            mode="turn",
         )
         try:
             raw_output, artifacts = self._run_agent(context)
@@ -370,3 +440,84 @@ class LLMSeatAgent(SeatAgent):
                 tool_snapshot=tool_snapshot,
                 error=exc,
             )
+
+    def decide_chat(self, *, snapshot: dict[str, Any]) -> ChatDecision:
+        """Ask the Agents SDK seat policy for one idle-chat decision or fall back safely."""
+
+        fallback = self._fallback.decide_chat(snapshot=snapshot)
+        if not AGENTS_SDK_AVAILABLE or not self._api_key:
+            return self._fallback_chat_decision(
+                fallback,
+                reason=("missing_agents_sdk" if not AGENTS_SDK_AVAILABLE else "missing_api_key"),
+            )
+
+        context = build_seat_context(
+            snapshot=snapshot,
+            tool_snapshot={},
+            accusation_gate={"ready": False},
+            runtime_config=self._runtime_config,
+            mode="chat",
+        )
+        try:
+            raw_output, artifacts = self._run_agent(context)
+            decision = ChatDecision.from_dict(raw_output.model_dump())
+            sanitized_text = sanitize_public_chat(decision.text or "")
+            shared_meta = {
+                "trace_id": str(artifacts.get("trace_id") or ""),
+                "session_id": str(artifacts.get("session_id") or ""),
+                "last_response_id": str(artifacts.get("last_response_id") or ""),
+                "tool_call_count": len(list(artifacts.get("tool_calls") or [])),
+                "tool_calls": list(artifacts.get("tool_calls") or []),
+            }
+
+            if not decision.speak:
+                silent = self._silent_chat_decision(reason="model_chose_silence", extra_meta=shared_meta)
+                silent.debug_private["model_rationale"] = raw_output.rationale_private
+                silent.debug_private["sdk_output_guardrails"] = list(artifacts.get("output_guardrails") or [])
+                return silent
+            if not sanitized_text:
+                silent = self._silent_chat_decision(reason="unsafe_public_chat", extra_meta=shared_meta)
+                silent.debug_private["model_rationale"] = raw_output.rationale_private
+                silent.debug_private["sdk_output_guardrails"] = list(artifacts.get("output_guardrails") or [])
+                return silent
+
+            return ChatDecision(
+                speak=True,
+                text=sanitized_text,
+                rationale_private=raw_output.rationale_private,
+                debug_private={
+                    "mode": "llm_idle_chat",
+                    "llm_runtime": self._runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE),
+                    "selected_profile_id": self._profile_id,
+                    "selected_profile_label": self._profile_label,
+                    "sdk_trace_id": str(artifacts.get("trace_id") or ""),
+                    "sdk_session_id": str(artifacts.get("session_id") or ""),
+                    "sdk_last_response_id": str(artifacts.get("last_response_id") or ""),
+                    "sdk_tool_calls": list(artifacts.get("tool_calls") or []),
+                    "sdk_output_guardrails": list(artifacts.get("output_guardrails") or []),
+                    "sdk_tool_input_guardrails": list(artifacts.get("tool_input_guardrails") or []),
+                    "model_debug_private": dict(raw_output.debug_private or {}),
+                },
+                agent_meta={
+                    "policy": "llm",
+                    "backend": "openai_agents_sdk",
+                    "model": self._model,
+                    "reasoning_effort": self._runtime_config.reasoning_effort,
+                    "timeout_s": self._runtime_config.timeout_seconds,
+                    "profile_id": self._profile_id,
+                    "profile_label": self._profile_label,
+                    "fallback_used": False,
+                    "guardrail_blocked": bool(decision.text and decision.text != sanitized_text),
+                    **shared_meta,
+                },
+            )
+        except OutputGuardrailTripwireTriggered:
+            return self._silent_chat_decision(reason="output_guardrail_blocked")
+        except InputGuardrailTripwireTriggered:
+            return self._silent_chat_decision(reason="input_guardrail_blocked")
+        except MaxTurnsExceeded as exc:
+            return self._fallback_chat_decision(fallback, reason="max_turns_exceeded", error=exc)
+        except TimeoutError as exc:
+            return self._fallback_chat_decision(fallback, reason="timeout", error=exc)
+        except Exception as exc:
+            return self._fallback_chat_decision(fallback, reason="model_error", error=exc)

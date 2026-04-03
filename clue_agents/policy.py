@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from clue_agents.profile_loader import build_persona_guidance
+from clue_agents.profile_loader import build_persona_guidance, build_social_guidance
 from clue_core.board import BOARD_NODES, NODE_TO_ROOM_NAME
 
 
@@ -101,6 +101,45 @@ CHARACTER_PERSONAS = {
     },
 }
 
+IDLE_CHAT_LINES = {
+    "Miss Scarlet": {
+        "reply": ("If you're calling on me, {speaker}, at least make it entertaining.",),
+        "chat": ("Keep talking, {speaker}. Someone will slip.",),
+        "narrative": ("That little flourish from {actor} told me plenty.",),
+        "generic": ("This table is trying far too hard to look innocent.",),
+    },
+    "Colonel Mustard": {
+        "reply": ("Make your point plainly, {speaker}.",),
+        "chat": ("Noted, {speaker}. Keep it sharp.",),
+        "narrative": ("{actor} just changed the field a bit.",),
+        "generic": ("Enough posing. The room is giving something away.",),
+    },
+    "Mrs. White": {
+        "reply": ("If you mean to involve me, {speaker}, do be tidy about it.",),
+        "chat": ("How revealing, {speaker}.",),
+        "narrative": ("{actor} managed to stir up quite a bit with that.",),
+        "generic": ("A little less noise would help, though the noise is useful.",),
+    },
+    "Mr. Green": {
+        "reply": ("If you're asking me, {speaker}, be direct.",),
+        "chat": ("Fair enough, {speaker}. That gives us something to work with.",),
+        "narrative": ("{actor} just gave the table something concrete to think about.",),
+        "generic": ("The reactions matter more than the posture right now.",),
+    },
+    "Mrs. Peacock": {
+        "reply": ("If we are invoking me, {speaker}, do try to be graceful about it.",),
+        "chat": ("Please continue, {speaker}. The table is practically gossiping for us.",),
+        "narrative": ("{actor} has made things ever so much more interesting.",),
+        "generic": ("How charming. Everyone is pretending not to flinch.",),
+    },
+    "Professor Plum": {
+        "reply": ("If you require my attention, {speaker}, do try to be precise.",),
+        "chat": ("Interesting, {speaker}. The pattern is becoming less subtle.",),
+        "narrative": ("{actor} just added a useful wrinkle to the evidence.",),
+        "generic": ("The social theater is noisy, but the information leakage is excellent.",),
+    },
+}
+
 
 def persona_prompt(character: str) -> str:
     """Return the public-voice guidance for one stock character."""
@@ -108,6 +147,17 @@ def persona_prompt(character: str) -> str:
     persona = CHARACTER_PERSONAS.get(character) or {}
     yaml_guidance = build_persona_guidance(character)
     fallback = str(persona.get("prompt") or "Keep public chat brief, safe, and lightly in character.")
+    if yaml_guidance:
+        return f"{yaml_guidance}\nFallback voice cue: {fallback}"
+    return fallback
+
+
+def social_prompt(character: str) -> str:
+    """Return the chat-only persona guidance block for one stock character."""
+
+    persona = CHARACTER_PERSONAS.get(character) or {}
+    yaml_guidance = build_social_guidance(character)
+    fallback = str(persona.get("prompt") or "Stay in character, concise, and socially reactive.")
     if yaml_guidance:
         return f"{yaml_guidance}\nFallback voice cue: {fallback}"
     return fallback
@@ -192,6 +242,70 @@ def stock_public_comment(snapshot: dict[str, Any], decision: dict[str, Any]) -> 
     return ""
 
 
+def player_facing_public_events(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the public event stream visible to players, excluding trace rows."""
+
+    return [
+        dict(event)
+        for event in snapshot.get("events") or []
+        if str(event.get("visibility") or "") == "public" and not str(event.get("event_type") or "").startswith("trace_")
+    ]
+
+
+def public_chat_events(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the visible public chat events for the current snapshot."""
+
+    return [event for event in player_facing_public_events(snapshot) if str(event.get("event_type") or "") == "chat_posted"]
+
+
+def public_narrative_events(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the visible non-chat public narrative events for the current snapshot."""
+
+    return [event for event in player_facing_public_events(snapshot) if str(event.get("event_type") or "") != "chat_posted"]
+
+
+def event_actor_seat_id(event: dict[str, Any]) -> str:
+    """Best-effort extraction of the acting seat id from one event payload."""
+
+    payload = dict(event.get("payload") or {})
+    for key in ("seat_id", "from_seat_id", "winner_seat_id", "suggester"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def stock_idle_chat(snapshot: dict[str, Any]) -> str:
+    """Compose one short in-character idle table-talk line from public context."""
+
+    seat = dict(snapshot.get("seat") or {})
+    character = str(seat.get("character") or "")
+    persona = IDLE_CHAT_LINES.get(character)
+    if not persona:
+        return ""
+
+    turn_index = int(snapshot.get("turn_index") or 0)
+    public_events = player_facing_public_events(snapshot)
+    if not public_events:
+        return _choose_template(persona["generic"], turn_index)
+
+    latest_event = public_events[-1]
+    chats = public_chat_events(snapshot)
+    narratives = public_narrative_events(snapshot)
+    latest_chat = chats[-1] if chats else {}
+    latest_narrative = narratives[-1] if narratives else {}
+    speaker_name = _seat_display_name(snapshot, event_actor_seat_id(latest_chat)) or "someone"
+    actor_name = _seat_display_name(snapshot, event_actor_seat_id(latest_narrative)) or "someone"
+
+    if latest_chat and _event_mentions_current_seat(latest_chat, snapshot):
+        return _choose_template(persona["reply"], turn_index).format(speaker=speaker_name)
+    if str(latest_event.get("event_type") or "") == "chat_posted" and speaker_name != (seat.get("display_name") or ""):
+        return _choose_template(persona["chat"], turn_index).format(speaker=speaker_name)
+    if latest_narrative:
+        return _choose_template(persona["narrative"], turn_index).format(actor=actor_name)
+    return _choose_template(persona["generic"], turn_index)
+
+
 def _visible_evidence_score(snapshot: dict[str, Any], belief_summary: dict[str, Any]) -> int:
     """Estimate how much concrete evidence the current seat has actually seen."""
 
@@ -239,6 +353,30 @@ def _choose_template(templates: tuple[str, ...], turn_index: int) -> str:
     if not templates:
         return ""
     return templates[turn_index % len(templates)]
+
+
+def _event_mentions_current_seat(event: dict[str, Any], snapshot: dict[str, Any]) -> bool:
+    """Report whether one public chat event names the current seat in plain text."""
+
+    seat = dict(snapshot.get("seat") or {})
+    text = str((event.get("payload") or {}).get("text") or event.get("message") or "").lower()
+    display_name = str(seat.get("display_name") or "").lower()
+    character = str(seat.get("character") or "").lower()
+    return bool(text and ((display_name and display_name in text) or (character and character in text)))
+
+
+def _seat_display_name(snapshot: dict[str, Any], seat_id: str) -> str:
+    """Resolve one seat id to its display name in the current snapshot."""
+
+    if not seat_id:
+        return ""
+    current = dict(snapshot.get("seat") or {})
+    if str(current.get("seat_id") or "") == seat_id:
+        return str(current.get("display_name") or "")
+    for seat in snapshot.get("seats") or []:
+        if str(seat.get("seat_id") or "") == seat_id:
+            return str(seat.get("display_name") or "")
+    return ""
 
 
 def _is_secret_passage_move(snapshot: dict[str, Any], decision: dict[str, Any]) -> bool:

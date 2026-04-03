@@ -43,6 +43,7 @@ def build_initial_state(game_id: str, title: str, seats: list[SeatConfig], hidde
 
     ordered_seat_ids = [seat.seat_id for seat in seats]
     seat_state = {}
+    social_state = {"seats": {}}
     for seat in seats:
         seat_state[seat.seat_id] = {
             "seat_id": seat.seat_id,
@@ -55,6 +56,12 @@ def build_initial_state(game_id: str, title: str, seats: list[SeatConfig], hidde
             "hand_count": len(hidden_setup["hands"][seat.seat_id]),
             "can_win": True,
         }
+        if seat.seat_kind != "human":
+            social_state["seats"][seat.seat_id] = {
+                "last_processed_public_event_index": 0,
+                "cooldown_events_remaining": 0,
+                "last_chat_event_index": 0,
+            }
     return {
         "game_id": game_id,
         "title": title,
@@ -69,5 +76,6 @@ def build_initial_state(game_id: str, title: str, seats: list[SeatConfig], hidde
         "pending_refute": None,
         "seat_order": ordered_seat_ids,
         "seats": seat_state,
+        "social": social_state,
         "hidden": hidden_setup,
     }

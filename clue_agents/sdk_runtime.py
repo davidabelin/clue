@@ -16,7 +16,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from clue_agents.config import LLMRuntimeConfig
-from clue_agents.policy import persona_prompt
+from clue_agents.policy import persona_prompt, public_chat_events, public_narrative_events, social_prompt
 from clue_agents.safety import sanitize_public_chat
 
 try:
@@ -77,6 +77,17 @@ class AgentTurnOutput(BaseModel):
     debug_private: dict[str, Any] = Field(default_factory=dict)
 
 
+class AgentChatOutput(BaseModel):
+    """Structured output contract returned by the Agents SDK chat agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    speak: bool
+    text: str = Field(default="")
+    rationale_private: str = Field(default="")
+    debug_private: dict[str, Any] = Field(default_factory=dict)
+
+
 @dataclass(slots=True)
 class SeatAgentContext:
     """Code-owned per-turn context passed into the Agents SDK run.
@@ -92,6 +103,7 @@ class SeatAgentContext:
     accusation_gate: dict[str, Any]
     trace_id: str
     session_id: str
+    mode: str = "turn"
     tool_access_log: list[dict[str, Any]] = field(default_factory=list)
 
     @property
@@ -117,6 +129,18 @@ class SeatAgentContext:
         """Return the current private notebook text visible to this seat."""
 
         return str((self.snapshot.get("notebook") or {}).get("text") or "")
+
+    @property
+    def public_chat_history(self) -> list[dict[str, Any]]:
+        """Return the most recent public chat events visible to the seat."""
+
+        return list(public_chat_events(self.snapshot))[-8:]
+
+    @property
+    def public_narrative_history(self) -> list[dict[str, Any]]:
+        """Return the most recent player-facing public narrative events."""
+
+        return list(public_narrative_events(self.snapshot))[-6:]
 
     def record_tool_call(self, name: str, *, arguments: dict[str, Any] | None = None) -> None:
         """Append one tool invocation summary for diagnostics and test assertions."""
@@ -161,6 +185,7 @@ def build_seat_context(
     tool_snapshot: dict[str, Any],
     accusation_gate: dict[str, Any],
     runtime_config: LLMRuntimeConfig,
+    mode: str = "turn",
 ) -> SeatAgentContext:
     """Build the private context object for one seat-agent run."""
 
@@ -168,8 +193,9 @@ def build_seat_context(
     game_id = str(snapshot.get("game_id") or "test_game")
     seat_id = str(seat.get("seat_id") or "unknown_seat")
     turn_index = int(snapshot.get("turn_index") or 0)
-    trace_id = f"clue-{game_id}-{seat_id}-{turn_index}-{uuid.uuid4().hex[:10]}"
-    session_id = f"{game_id}:{seat_id}"
+    mode_label = "chat" if str(mode).strip().lower() == "chat" else "turn"
+    trace_id = f"clue-{game_id}-{seat_id}-{mode_label}-{turn_index}-{uuid.uuid4().hex[:10]}"
+    session_id = f"{game_id}:{seat_id}:chat" if mode_label == "chat" else f"{game_id}:{seat_id}"
     return SeatAgentContext(
         runtime_config=runtime_config,
         snapshot=snapshot,
@@ -177,6 +203,7 @@ def build_seat_context(
         accusation_gate=accusation_gate,
         trace_id=trace_id,
         session_id=session_id,
+        mode=mode_label,
     )
 
 
@@ -356,11 +383,57 @@ if AGENTS_SDK_AVAILABLE:
         )
 
 
-def build_agent(runtime_config: LLMRuntimeConfig) -> Agent[SeatAgentContext]:
-    """Construct the single-turn Clue seat agent definition for one run."""
+    @output_guardrail(name="clue_chat_output_guardrail")
+    def clue_chat_output_guardrail(
+        context: RunContextWrapper[SeatAgentContext],
+        _agent: Agent[SeatAgentContext],
+        agent_output: AgentChatOutput,
+    ) -> GuardrailFunctionOutput:
+        """Block unsafe public chat outputs before they are posted."""
+
+        issues: list[str] = []
+        sanitized_text = sanitize_public_chat(agent_output.text or "")
+        if agent_output.speak and not sanitized_text:
+            issues.append("unsafe_or_empty_public_chat")
+
+        return GuardrailFunctionOutput(
+            output_info={
+                "issues": issues,
+                "speak": bool(agent_output.speak),
+                "sanitized_text": sanitized_text,
+            },
+            tripwire_triggered=bool(issues),
+        )
+
+
+def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agent[SeatAgentContext]:
+    """Construct the Clue seat agent definition for one turn or chat run."""
 
     if not AGENTS_SDK_AVAILABLE:
         raise RuntimeError("OpenAI Agents SDK is not available in this environment.")
+    if str(mode).strip().lower() == "chat":
+        return Agent(
+            name="Clue Seat Chat Agent",
+            instructions=_chat_agent_instructions,
+            tools=[],
+            model=runtime_config.model,
+            model_settings=ModelSettings(
+                tool_choice="none",
+                parallel_tool_calls=False,
+                max_tokens=220,
+                reasoning={"effort": runtime_config.reasoning_effort},
+                verbosity="low",
+                store=False,
+                extra_args={"timeout": runtime_config.timeout_seconds},
+                metadata={
+                    "app": "clue",
+                    "mode": "chat",
+                    "release": runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
+                },
+            ),
+            output_type=AgentChatOutput,
+            output_guardrails=[clue_chat_output_guardrail],
+        )
     return Agent(
         name="Clue Seat Agent",
         instructions=_agent_instructions,
@@ -416,6 +489,34 @@ def _agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Ag
     )
 
 
+def _chat_agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Agent[SeatAgentContext]) -> str:
+    """Build the seat-specific instruction block for one chat-only agent run."""
+
+    seat = dict(context.context.snapshot.get("seat") or {})
+    return (
+        "You are the public table-chat voice for one autonomous Clue player.\n"
+        "You are not deciding a rules action. Decide only whether this seat should speak right now.\n"
+        "Stay concise, in character, and grounded in the public table context below.\n"
+        "You may banter, tease, disagree, or carry a side discussion, but never reveal private card knowledge, invent public facts, or claim hidden certainty.\n"
+        f"Seat: {seat.get('display_name', 'Unknown')} ({seat.get('character', 'Unknown')}).\n"
+        f"Chat persona guidance:\n{social_prompt(str(seat.get('character') or ''))}\n"
+        f"Recent public chat:\n{_history_block(context.context.public_chat_history, empty='- No recent table chat.')}\n"
+        f"Recent public narrative:\n{_history_block(context.context.public_narrative_history, empty='- No recent narrative events.')}\n"
+        "Return `speak=false` if silence is better than adding noise. Keep rationale_private short and useful for maintainers."
+    )
+
+
+def _history_block(events: list[dict[str, Any]], *, empty: str) -> str:
+    """Render a compact prompt block from recent public events."""
+
+    if not events:
+        return empty
+    lines = []
+    for event in events:
+        lines.append(f"- {str(event.get('message') or '').strip()}")
+    return "\n".join(lines)
+
+
 def build_run_config(context: SeatAgentContext, api_key: str) -> RunConfig:
     """Build the run configuration for one local-first Clue seat-agent turn."""
 
@@ -425,13 +526,14 @@ def build_run_config(context: SeatAgentContext, api_key: str) -> RunConfig:
         model_provider=OpenAIProvider(api_key=api_key, use_responses=True),
         tracing_disabled=not context.runtime_config.tracing_enabled,
         trace_include_sensitive_data=context.runtime_config.trace_include_sensitive_data,
-        workflow_name="Clue Seat Decision",
+        workflow_name=("Clue Seat Chat" if context.mode == "chat" else "Clue Seat Decision"),
         trace_id=context.trace_id,
         group_id=context.game_id,
         trace_metadata={
             "app": "clue",
             "game_id": context.game_id,
             "seat_id": context.seat_id,
+            "mode": context.mode,
             "release": context.runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
         },
     )

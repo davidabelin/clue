@@ -5,7 +5,7 @@ from __future__ import annotations
 import types
 
 from clue_agents.llm import LLMSeatAgent
-from clue_agents.sdk_runtime import AgentTurnOutput
+from clue_agents.sdk_runtime import AgentChatOutput, AgentTurnOutput
 from clue_agents.secrets import _access_secret_version, resolve_openai_api_key
 
 
@@ -233,7 +233,7 @@ def test_llm_agent_holds_early_accusation_and_uses_safe_fallback(monkeypatch):
 def test_llm_agent_clear_session_uses_local_session_store(monkeypatch):
     """Session cleanup should target the local encrypted session wrapper."""
 
-    called: dict[str, str] = {}
+    called: dict[str, list[str] | str] = {"session_ids": []}
 
     class FakeSession:
         """Small async session stub that records the cleared session id."""
@@ -244,7 +244,7 @@ def test_llm_agent_clear_session_uses_local_session_store(monkeypatch):
     def _fake_build_session(session_id: str, runtime_config):
         """Capture the requested session id and return the fake session wrapper."""
 
-        called["session_id"] = session_id
+        called["session_ids"].append(session_id)
         return FakeSession()
 
     monkeypatch.setattr(
@@ -259,4 +259,45 @@ def test_llm_agent_clear_session_uses_local_session_store(monkeypatch):
     )
     agent.clear_session(game_id="game_test", seat_id="seat_scarlet")
 
-    assert called["session_id"] == "game_test:seat_scarlet"
+    assert called["session_ids"] == ["game_test:seat_scarlet", "game_test:seat_scarlet:chat"]
+
+
+def test_llm_agent_chat_uses_separate_session_metadata(monkeypatch):
+    """Idle-chat runs should surface the dedicated chat session id."""
+
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (
+            AgentChatOutput(speak=True, text="We are all showing far too much.", rationale_private="chat"),
+            _artifacts(session_id="game_test:seat_scarlet:chat", trace_id="trace_chat"),
+        ),
+    )
+
+    agent = LLMSeatAgent(api_key="test-key")
+    decision = agent.decide_chat(snapshot=_snapshot())
+
+    assert decision.speak is True
+    assert decision.text == "We are all showing far too much."
+    assert decision.agent_meta["session_id"] == "game_test:seat_scarlet:chat"
+    assert decision.debug_private["sdk_session_id"] == "game_test:seat_scarlet:chat"
+
+
+def test_llm_agent_chat_drops_unsafe_public_leak(monkeypatch):
+    """Unsafe chat-only outputs should be suppressed instead of posted."""
+
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (
+            AgentChatOutput(speak=True, text="Colonel Mustard has the Rope.", rationale_private="chat"),
+            _artifacts(),
+        ),
+    )
+
+    agent = LLMSeatAgent(api_key="test-key")
+    decision = agent.decide_chat(snapshot=_snapshot())
+
+    assert decision.speak is False
+    assert decision.text == ""
+    assert decision.agent_meta["fallback_reason"] == "unsafe_public_chat"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from clue_agents.base import SeatAgent, TurnDecision
+from clue_agents.base import ChatDecision, SeatAgent, TurnDecision
 from clue_agents.config import load_llm_runtime_config
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_agents.llm import LLMSeatAgent
@@ -44,6 +44,12 @@ class AgentRuntime:
 
         agent = self.agent_for_seat(seat)
         return agent.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
+
+    def decide_chat(self, *, seat: dict[str, Any], snapshot: dict[str, Any]) -> ChatDecision:
+        """Delegate one idle-chat decision to the appropriate autonomous seat policy."""
+
+        agent = self.agent_for_seat(seat)
+        return agent.decide_chat(snapshot=snapshot)
 
     def runtime_summary(self) -> dict[str, object]:
         """Return the public-safe autonomous-seat runtime summary for diagnostics."""

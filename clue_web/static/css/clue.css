@@ -375,6 +375,7 @@ button:disabled {
 .hand-panel,
 .action-controls,
 .ai-panel,
+.stream-panel,
 .table-seats-panel,
 .chat-box {
   background: var(--panel-strong);
@@ -512,6 +513,11 @@ button:disabled {
   gap: 0.55rem;
 }
 
+.stream-panel {
+  display: grid;
+  gap: 0.7rem;
+}
+
 .debug-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -534,6 +540,11 @@ button:disabled {
   padding: 0 0.25rem 0 0;
   max-height: 26rem;
   overflow-y: auto;
+}
+
+.narrative-log,
+.chat-log {
+  max-height: 14rem;
 }
 
 .log-item {

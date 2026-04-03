@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from clue_agents.base import SeatAgent, TurnDecision
-from clue_agents.policy import accusation_window, stock_public_comment
+from clue_agents.base import ChatDecision, SeatAgent, TurnDecision
+from clue_agents.policy import accusation_window, stock_idle_chat, stock_public_comment
 from clue_core.board import NODE_TO_ROOM_NAME, ROOM_NAME_TO_NODE, shortest_paths
 
 
@@ -217,3 +217,15 @@ class HeuristicSeatAgent(SeatAgent):
                 agent_meta=agent_meta,
             )
         return TurnDecision(action="end_turn", rationale_private="No stronger legal action remained.", debug_private=debug, agent_meta=agent_meta)
+
+    def decide_chat(self, *, snapshot: dict[str, Any]) -> ChatDecision:
+        """Compose one short deterministic public chat line from visible table context."""
+
+        text = stock_idle_chat(snapshot)
+        return ChatDecision(
+            speak=bool(text),
+            text=text,
+            rationale_private="Responded with a deterministic in-character table-talk line.",
+            debug_private={"mode": "heuristic_idle_chat"},
+            agent_meta={"policy": "heuristic", "fallback_used": False, "persona": str(snapshot["seat"].get("character") or "")},
+        )

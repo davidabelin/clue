@@ -49,11 +49,40 @@ class TurnDecision:
         )
 
 
+@dataclass(slots=True)
+class ChatDecision:
+    """Normalized public-chat payload returned by autonomous seat agents."""
+
+    speak: bool
+    text: str = ""
+    rationale_private: str = ""
+    debug_private: dict[str, Any] = field(default_factory=dict)
+    agent_meta: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "ChatDecision":
+        """Build one chat decision from a structured JSON-like payload."""
+
+        return cls(
+            speak=bool(payload.get("speak")),
+            text=str(payload.get("text", "") or ""),
+            rationale_private=str(payload.get("rationale_private", "") or ""),
+            debug_private=dict(payload.get("debug_private") or {}),
+            agent_meta=dict(payload.get("agent_meta") or {}),
+        )
+
+
 class SeatAgent(ABC):
     """Common interface for any non-human Clue seat policy."""
 
     @abstractmethod
     def decide_turn(self, *, snapshot: dict[str, Any], tool_snapshot: dict[str, Any]) -> TurnDecision:
         """Choose one legal next action from the current seat-local snapshot."""
+
+        raise NotImplementedError
+
+    @abstractmethod
+    def decide_chat(self, *, snapshot: dict[str, Any]) -> ChatDecision:
+        """Choose whether to post one public chat line from the current seat-local snapshot."""
 
         raise NotImplementedError

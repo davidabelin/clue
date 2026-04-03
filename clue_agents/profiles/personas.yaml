@@ -30,6 +30,7 @@ characters:
     warmth: 2
     sharpness: 5
     verbosity: 3
+    chattiness: 4
     bluff_confidence: 5
     deception: 5
     concealment_priority: 4
@@ -57,6 +58,7 @@ characters:
     warmth: 2
     sharpness: 2
     verbosity: 2
+    chattiness: 2
     bluff_confidence: 3
     deception: 2
     concealment_priority: 3
@@ -86,6 +88,7 @@ characters:
     warmth: 1
     sharpness: 4
     verbosity: 2
+    chattiness: 1
     bluff_confidence: 2
     deception: 2
     concealment_priority: 5
@@ -110,6 +113,7 @@ characters:
     warmth: 4
     sharpness: 1
     verbosity: 2
+    chattiness: 2
     bluff_confidence: 2
     deception: 2
     concealment_priority: 3
@@ -134,6 +138,7 @@ characters:
     warmth: 4
     sharpness: 2
     verbosity: 5
+    chattiness: 5
     bluff_confidence: 5
     deception: 5
     concealment_priority: 5
@@ -163,6 +168,7 @@ characters:
     warmth: 3
     sharpness: 1
     verbosity: 2
+    chattiness: 3
     bluff_confidence: 5
     deception: 3
     concealment_priority: 4

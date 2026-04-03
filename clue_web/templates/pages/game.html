@@ -81,13 +81,6 @@
     <section class="panel event-panel">
       <div class="panel-head">
         <h2>Table Record</h2>
-        <span id="public-count" class="status-chip">0</span>
-      </div>
-      <div class="chat-box">
-        <label for="chat-input">Public Table Talk</label>
-        <p class="field-note">Speak only in public-game terms here. Hidden card ownership never belongs in table chat.</p>
-        <textarea id="chat-input" rows="3" placeholder="Public round-table discussion"></textarea>
-        <button id="send-chat" type="button">Send Chat</button>
       </div>
       <section class="table-seats-panel">
         <div class="panel-head compact">
@@ -95,7 +88,26 @@
         </div>
         <div id="seat-list" class="seat-list"></div>
       </section>
-      <ul id="public-event-log" class="event-log public-log"></ul>
+      <section class="stream-panel">
+        <div class="panel-head compact">
+          <h3>Narrative</h3>
+          <span id="narrative-count" class="status-chip">0</span>
+        </div>
+        <ul id="narrative-log" class="event-log public-log narrative-log"></ul>
+      </section>
+      <section class="stream-panel">
+        <div class="panel-head compact">
+          <h3>Table Chat</h3>
+          <span id="chat-count" class="status-chip">0</span>
+        </div>
+        <div class="chat-box">
+          <label for="chat-input">Public Table Talk</label>
+          <p class="field-note">Speak only in public-game terms here. Hidden card ownership never belongs in table chat.</p>
+          <textarea id="chat-input" rows="3" placeholder="Public round-table discussion"></textarea>
+          <button id="send-chat" type="button">Send Chat</button>
+        </div>
+        <ul id="chat-log" class="event-log public-log chat-log"></ul>
+      </section>
     </section>
   </div>
 </section>
