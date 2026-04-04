@@ -1,15 +1,15 @@
 # clue
 
-Standalone Clue lab for AIX, currently labeled **v1.5.0**.
+Standalone Clue lab for AIX, currently labeled **v1.6.0**.
 
 ## Summary
 - Deterministic, event-sourced classic Clue rules engine
 - Seat-token multiplayer web UI with polling-based synchronization
 - Human, heuristic, and OpenAI-backed autonomous seats under one rules authority
 - Flask app that runs standalone and also mounts under AIX at `/clue`
-- Local-first OpenAI integration: the model path is tool-augmented and stateful, but the rules engine, private seat data, notebooks, diagnostics, and session memory remain code-owned by Clue
+- Local-first OpenAI integration: the model path is tool-augmented and stateful, but the rules engine, private seat data, notebooks, diagnostics, session memory, and social-memory graph remain code-owned by Clue
 
-## v1.5.0 Architecture
+## v1.6.0 Architecture
 
 ### Core invariant
 The **Game Master** remains authoritative. No model, prompt, tool, or session store is allowed to mutate gameplay state directly. Autonomous seats can only return a normalized `TurnDecision`, which is then validated and applied by the deterministic rules engine.
@@ -18,6 +18,9 @@ The **Game Master** remains authoritative. No model, prompt, tool, or session st
 - `heuristic` seats remain the baseline nonhuman policy and the universal fallback
 - `llm` seats now run through the **OpenAI Agents SDK**
 - LLM seats use **read-only function tools** to inspect the legal envelope, belief summary, ranked suggestions, accusation recommendation, notebook excerpt, and selected move/refute details
+- Chat runs through a **two-stage intent-plus-utterance pipeline** using the same encrypted `game_id:seat_id:chat` session namespace
+- Separate YAML-selected **turn profiles** and **chat profiles** let one seat reason conservatively while still sounding socially vivid
+- Code-owned **social memory** tracks mood, relationship posture, active side threads, cooldowns, and bounded burst chatter
 - LLM outputs are validated by **output guardrails** before any decision reaches the rules engine
 - Tool argument scope is constrained by **tool guardrails**
 - Seat-private short-term memory uses an **EncryptedSession** over a local SQLAlchemy-backed SQLite store
@@ -80,6 +83,6 @@ pytest -q
 ```
 
 ## Maintainer Notes
-- Start with [`docs/ClueMLRuntime.md`](./docs/ClueMLRuntime.md) for the v1.5.0 OpenAI runtime design.
+- Start with [`docs/ClueMLRuntime.md`](./docs/ClueMLRuntime.md) for the v1.6.0 OpenAI runtime design.
 - Historical design and roadmap material remains in `docs/ClueDeepDive.md`, `docs/CLUE_PLAN_alpha.md`, and `docs/clue_to_do.md`.
 - The standalone `clue` repo currently contains **no `.bat` files**. Batch helper documentation therefore remains N/A here unless such scripts are added later.

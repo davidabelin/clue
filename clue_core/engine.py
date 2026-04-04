@@ -493,6 +493,7 @@ def build_filtered_snapshot(
     game = GameMaster(state)
     hidden = state["hidden"]
     analysis = dict(state.get("analysis") or {})
+    social = dict(state.get("social") or {})
     public_seats = []
     for other_seat_id in state["seat_order"]:
         seat = state["seats"][other_seat_id]
@@ -504,6 +505,8 @@ def build_filtered_snapshot(
                 "seat_kind": seat["seat_kind"],
                 "agent_model": seat["agent_model"],
                 "agent_profile": seat.get("agent_profile", ""),
+                "agent_chat_model": seat.get("agent_chat_model", ""),
+                "agent_chat_profile": seat.get("agent_chat_profile", ""),
                 "position": seat["position"],
                 "can_win": bool(seat["can_win"]),
                 "hand_count": int(seat["hand_count"]),
@@ -536,6 +539,7 @@ def build_filtered_snapshot(
         "legal_actions": game.legal_actions(seat_id),
         "events": visible_events,
         "notebook": notebook or {},
+        "social": _filtered_social_snapshot(state, social, seat_id),
         "analysis": {
             "run_context": dict(analysis.get("run_context") or {}),
             "agent_runtime": dict(analysis.get("agent_runtime") or {}),
@@ -545,4 +549,45 @@ def build_filtered_snapshot(
             "seat_debug": dict((analysis.get("latest_private_debug_by_seat") or {}).get(seat_id) or {}),
         },
         "case_file_categories": deepcopy(CARD_CATEGORIES),
+    }
+
+
+def _filtered_social_snapshot(state: dict[str, Any], social: dict[str, Any], seat_id: str) -> dict[str, Any]:
+    """Return the seat-safe social memory slice used by chat and action runtimes."""
+
+    seat_social = dict((social.get("seats") or {}).get(seat_id) or {})
+    visible_threads = []
+    for thread in list(social.get("threads") or []):
+        thread_map = dict(thread or {})
+        participants = [str(item) for item in list(thread_map.get("participants") or []) if str(item)]
+        if seat_id not in participants:
+            continue
+        visible_threads.append(
+            {
+                "thread_id": str(thread_map.get("thread_id") or ""),
+                "kind": str(thread_map.get("kind") or ""),
+                "topic": str(thread_map.get("topic") or ""),
+                "participants": participants,
+                "heat": int(thread_map.get("heat") or 0),
+                "status": str(thread_map.get("status") or ""),
+                "burst_count": int(thread_map.get("burst_count") or 0),
+                "last_event_index": int(thread_map.get("last_event_index") or 0),
+            }
+        )
+    hottest_thread = max(
+        visible_threads,
+        key=lambda item: (int(item.get("heat") or 0), -int(item.get("last_event_index") or 0), str(item.get("thread_id") or "")),
+        default={},
+    )
+    return {
+        "seat_state": {
+            "mood": str(seat_social.get("mood") or "calm"),
+            "focus_seat_id": str(seat_social.get("focus_seat_id") or ""),
+            "speaking_streak": int(seat_social.get("speaking_streak") or 0),
+            "recent_intents": list(seat_social.get("recent_intents") or [])[-4:],
+            "relationships": deepcopy(dict(seat_social.get("relationships") or {})),
+            "last_chat_event_index": int(seat_social.get("last_chat_event_index") or 0),
+        },
+        "active_threads": visible_threads[-6:],
+        "hottest_thread": hottest_thread,
     }

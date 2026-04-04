@@ -86,6 +86,37 @@ def persona_profile(character: str) -> dict[str, Any]:
     return dict(profile) if isinstance(profile, dict) else {}
 
 
+def persona_metric(character: str, field_name: str, *, default: int = 3) -> int:
+    """Return one normalized 1-5 persona slider from the YAML profile."""
+
+    profile = persona_profile(character)
+    return _int_scale(profile.get(field_name), default=default) if profile else default
+
+
+def persona_relationship_map(character: str) -> dict[str, dict[str, Any]]:
+    """Return the normalized relationship hints for one character."""
+
+    profile = persona_profile(character)
+    relationships = dict(profile.get("relationships") or {}) if profile else {}
+    normalized: dict[str, dict[str, Any]] = {}
+    for other_name, payload in relationships.items():
+        if not isinstance(payload, dict):
+            continue
+        normalized[str(other_name)] = dict(payload)
+    return normalized
+
+
+def persona_chat_examples(character: str) -> dict[str, list[str]]:
+    """Return the normalized per-intent chat examples for one character."""
+
+    profile = persona_profile(character)
+    examples = dict(profile.get("chat_examples") or {}) if profile else {}
+    normalized: dict[str, list[str]] = {}
+    for intent_name, items in examples.items():
+        normalized[str(intent_name)] = _string_list(items)
+    return normalized
+
+
 def build_persona_guidance(character: str) -> str:
     """Turn one YAML persona block into short LLM-facing guidance text.
 
@@ -117,12 +148,12 @@ def build_persona_guidance(character: str) -> str:
     if accusation_style:
         lines.append(f"Accusation style: {accusation_style}")
 
-    directness = _int_scale(profile.get("directness"), default=3)
-    verbosity = _int_scale(profile.get("verbosity"), default=3)
-    deception = _int_scale(profile.get("deception"), default=3)
-    concealment = _int_scale(profile.get("concealment_priority"), default=3)
-    patience = _int_scale(profile.get("accusation_patience"), default=3)
-    risk = _int_scale(profile.get("risk_tolerance"), default=3)
+    directness = persona_metric(character, "directness", default=3)
+    verbosity = persona_metric(character, "verbosity", default=3)
+    deception = persona_metric(character, "deception", default=3)
+    concealment = persona_metric(character, "concealment_priority", default=3)
+    patience = persona_metric(character, "accusation_patience", default=3)
+    risk = persona_metric(character, "risk_tolerance", default=3)
 
     if directness >= 4:
         lines.append("Speak directly rather than hedging.")
@@ -158,8 +189,7 @@ def build_persona_guidance(character: str) -> str:
 def persona_chattiness(character: str) -> int:
     """Return the configured 1-5 chattiness slider for one character."""
 
-    profile = persona_profile(character)
-    return _int_scale(profile.get("chattiness"), default=3) if profile else 3
+    return persona_metric(character, "chattiness", default=3)
 
 
 def build_social_guidance(character: str) -> str:
@@ -174,45 +204,103 @@ def build_social_guidance(character: str) -> str:
     if public_tone:
         lines.append(f"Public tone: {public_tone}")
 
+    social_style = str(profile.get("social_style") or "").strip()
+    if social_style:
+        lines.append(f"Social style: {social_style}")
+
     lines.append(f"Chattiness: {persona_chattiness(character)}/5.")
 
-    notes = [str(item).strip() for item in list(profile.get("notes") or [])[:3] if str(item).strip()]
+    for move in _string_list(profile.get("signature_moves"))[:3]:
+        lines.append(f"Signature move: {move}")
+
+    for insecurity in _string_list(profile.get("insecurities"))[:2]:
+        lines.append(f"Soft spot: {insecurity}")
+
+    for taboo in _string_list(profile.get("taboos"))[:2]:
+        lines.append(f"Avoid: {taboo}")
+
+    notes = _string_list(profile.get("notes"))[:3]
     for note in notes:
         lines.append(f"Social cue: {note}")
+
+    relationships = persona_relationship_map(character)
+    for other_name, payload in list(sorted(relationships.items()))[:3]:
+        stance = str(payload.get("stance") or "").strip()
+        pressure_points = ", ".join(_string_list(payload.get("pressure_points"))[:2])
+        if stance:
+            lines.append(f"Toward {other_name}: {stance}.")
+        if pressure_points:
+            lines.append(f"Buttons with {other_name}: {pressure_points}.")
+
+    examples = persona_chat_examples(character)
+    for intent_name in ("tease", "deflect", "challenge", "ally", "reconcile", "meta_observe"):
+        sample = next(iter(examples.get(intent_name) or []), "")
+        if sample:
+            lines.append(f"{intent_name.replace('_', ' ').title()} example: {sample}")
 
     return "\n".join(lines)
 
 
 def model_profile(profile_id: str) -> dict[str, Any]:
-    """Return one model-profile block by id from ``models.yaml``."""
+    """Return one turn-decision model profile by id from ``models.yaml``."""
+
+    return _catalog_profile(profile_id, kind="turn")
+
+
+def chat_model_profile(profile_id: str) -> dict[str, Any]:
+    """Return one chat-runtime model profile by id from ``models.yaml``."""
+
+    return _catalog_profile(profile_id, kind="chat")
+
+
+def model_runtime_defaults(*, kind: str = "turn") -> dict[str, Any]:
+    """Return the maintainer-authored runtime defaults for turn or chat profiles."""
+
+    section_name = "chat_runtime_defaults" if str(kind) == "chat" else "runtime_defaults"
+    defaults = dict(load_model_catalog().get(section_name) or {})
+    return defaults if isinstance(defaults, dict) else {}
+
+
+def _catalog_profile(profile_id: str, *, kind: str) -> dict[str, Any]:
+    """Read one named profile block from the turn or chat catalog section."""
 
     if not profile_id:
         return {}
-    profiles = dict(load_model_catalog().get("profiles") or {})
+    section_name = "chat_profiles" if str(kind) == "chat" else "profiles"
+    profiles = dict(load_model_catalog().get(section_name) or {})
     profile = profiles.get(str(profile_id), {})
     return dict(profile) if isinstance(profile, dict) else {}
 
 
 def assign_model_profiles(*, game_id: str, seats: list[Any]) -> dict[str, ModelProfileSelection]:
-    """Choose deterministic LLM profiles for seats that did not specify one.
+    """Choose deterministic turn-decision LLM profiles for eligible seats."""
 
-    The assignment remains intentionally conservative:
-    - only LLM seats participate
-    - explicit ``agent_profile`` wins
-    - explicit ``agent_model`` skips auto-assignment and preserves legacy behavior
-    - duplicate avoidance is best-effort within one table
-    """
+    return _assign_profiles(game_id=game_id, seats=seats, kind="turn")
+
+
+def assign_chat_model_profiles(*, game_id: str, seats: list[Any]) -> dict[str, ModelProfileSelection]:
+    """Choose deterministic chat-runtime LLM profiles for eligible seats."""
+
+    return _assign_profiles(game_id=game_id, seats=seats, kind="chat")
+
+
+def _assign_profiles(*, game_id: str, seats: list[Any], kind: str) -> dict[str, ModelProfileSelection]:
+    """Choose deterministic turn or chat profiles for LLM seats that need one."""
 
     catalog = load_model_catalog()
+    section_name = "chat_profiles" if str(kind) == "chat" else "profiles"
+    selection_name = "chat_selection" if str(kind) == "chat" else "selection"
+    model_field = "agent_chat_model" if str(kind) == "chat" else "agent_model"
+    profile_field = "agent_chat_profile" if str(kind) == "chat" else "agent_profile"
     profiles = {
         profile_id: dict(profile)
-        for profile_id, profile in dict(catalog.get("profiles") or {}).items()
+        for profile_id, profile in dict(catalog.get(section_name) or {}).items()
         if isinstance(profile, dict) and bool(profile.get("enabled", True))
     }
     if not profiles:
         return {}
 
-    selection_cfg = dict(catalog.get("selection") or {})
+    selection_cfg = dict(catalog.get(selection_name) or {})
     avoid_duplicates = bool(selection_cfg.get("avoid_duplicate_profiles_within_table", False))
     fallback_profile_id = str(selection_cfg.get("fallback_profile") or "")
     claimed: set[str] = set()
@@ -225,8 +313,8 @@ def assign_model_profiles(*, game_id: str, seats: list[Any]) -> dict[str, ModelP
 
         seat_id = str(_seat_attr(seat, "seat_id", "")).strip()
         character = str(_seat_attr(seat, "character", "")).strip()
-        explicit_profile = str(_seat_attr(seat, "agent_profile", "")).strip()
-        explicit_model = str(_seat_attr(seat, "agent_model", "")).strip()
+        explicit_profile = str(_seat_attr(seat, profile_field, "")).strip()
+        explicit_model = str(_seat_attr(seat, model_field, "")).strip()
 
         if explicit_profile:
             profile = profiles.get(explicit_profile) or profiles.get(fallback_profile_id)
@@ -246,6 +334,7 @@ def assign_model_profiles(*, game_id: str, seats: list[Any]) -> dict[str, ModelP
             profiles=profiles,
             catalog=catalog,
             claimed_profiles=claimed if avoid_duplicates else set(),
+            kind=kind,
         )
         if selected is None:
             continue
@@ -263,10 +352,11 @@ def _select_profile_for_seat(
     profiles: dict[str, dict[str, Any]],
     catalog: dict[str, Any],
     claimed_profiles: set[str],
+    kind: str,
 ) -> ModelProfileSelection | None:
     """Choose one profile via deterministic weighted random selection."""
 
-    candidates = _weighted_candidates(character=character, profiles=profiles, catalog=catalog)
+    candidates = _weighted_candidates(character=character, profiles=profiles, catalog=catalog, kind=kind)
     if claimed_profiles:
         unique_candidates = [item for item in candidates if item[0] not in claimed_profiles]
         if unique_candidates:
@@ -274,7 +364,7 @@ def _select_profile_for_seat(
     if not candidates:
         return None
 
-    selection_cfg = dict(catalog.get("selection") or {})
+    selection_cfg = dict(catalog.get("chat_selection" if str(kind) == "chat" else "selection") or {})
     seed_basis = str(selection_cfg.get("seed_basis") or "game_id_and_seat_id")
     seed_material = f"{seed_basis}|{game_id}|{seat_id}|{character}"
     seed = int.from_bytes(hashlib.sha256(seed_material.encode("utf-8")).digest()[:8], "big")
@@ -296,11 +386,12 @@ def _weighted_candidates(
     character: str,
     profiles: dict[str, dict[str, Any]],
     catalog: dict[str, Any],
+    kind: str,
 ) -> list[tuple[str, dict[str, Any], float]]:
     """Return the enabled profile candidates with character-biased weights."""
 
-    selection_cfg = dict(catalog.get("selection") or {})
-    bias_cfg = dict(catalog.get("character_bias") or {})
+    selection_cfg = dict(catalog.get("chat_selection" if str(kind) == "chat" else "selection") or {})
+    bias_cfg = dict(catalog.get("chat_character_bias" if str(kind) == "chat" else "character_bias") or {})
     default_multiplier = _float_value(bias_cfg.get("default_multiplier"), default=1.0, minimum=0.0)
     apply_bias = bool(selection_cfg.get("apply_character_bias", False))
     character_biases = dict((bias_cfg.get("characters") or {}).get(str(character)) or {})
@@ -342,3 +433,9 @@ def _float_value(value: Any, *, default: float, minimum: float) -> float:
         return max(float(value), minimum)
     except (TypeError, ValueError):
         return default
+
+
+def _string_list(value: Any) -> list[str]:
+    """Normalize one YAML list-ish field into a trimmed string list."""
+
+    return [str(item).strip() for item in list(value or []) if str(item).strip()]

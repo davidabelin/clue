@@ -18,6 +18,8 @@ class SeatConfig:
     seat_kind: str = "human"
     agent_model: str = ""
     agent_profile: str = ""
+    agent_chat_model: str = ""
+    agent_chat_profile: str = ""
     notebook: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -46,5 +48,7 @@ class SeatConfig:
             seat_kind=str(payload.get("seat_kind", "human")),
             agent_model=str(payload.get("agent_model", "")),
             agent_profile=str(payload.get("agent_profile", "")),
+            agent_chat_model=str(payload.get("agent_chat_model", "")),
+            agent_chat_profile=str(payload.get("agent_chat_profile", "")),
             notebook=dict(payload.get("notebook") or {}),
         )

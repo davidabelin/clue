@@ -35,6 +35,8 @@ class AgentRuntime:
             return LLMSeatAgent(
                 model=str(seat.get("agent_model", "")),
                 profile_id=str(seat.get("agent_profile", "")),
+                chat_model=str(seat.get("agent_chat_model", "")),
+                chat_profile_id=str(seat.get("agent_chat_profile", "")),
                 runtime_config=self._llm_runtime_config,
             )
         raise ValueError("Human seats do not have an autonomous agent runtime.")
@@ -70,5 +72,7 @@ class AgentRuntime:
             LLMSeatAgent(
                 model=str(seat.get("agent_model", "")),
                 profile_id=str(seat.get("agent_profile", "")),
+                chat_model=str(seat.get("agent_chat_model", "")),
+                chat_profile_id=str(seat.get("agent_chat_profile", "")),
                 runtime_config=self._llm_runtime_config,
             ).clear_session(game_id=game_id, seat_id=str(seat.get("seat_id", "")))

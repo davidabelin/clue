@@ -1,4 +1,4 @@
-"""Configuration and guardrail tests for the v1.5.0 seat runtime."""
+"""Configuration and guardrail tests for the v1.6.0 seat runtime."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import types
 
 from clue_agents.config import load_llm_runtime_config
 from clue_agents.sdk_runtime import (
+    ChatIntentOutput,
     build_seat_context,
+    clue_chat_intent_output_guardrail,
     move_target_scope_guardrail,
     refute_card_scope_guardrail,
 )
@@ -27,6 +29,14 @@ def _snapshot(*, legal_actions: dict | None = None) -> dict:
         },
         "phase": "move",
         "notebook": {"text": "Private note"},
+        "seats": [
+            {
+                "seat_id": "seat_mustard",
+                "display_name": "Colonel Mustard",
+                "character": "Colonel Mustard",
+                "seat_kind": "llm",
+            }
+        ],
         "legal_actions": legal_actions
         or {
             "available": ["move", "show_refute_card", "end_turn"],
@@ -136,3 +146,33 @@ def test_chat_context_uses_separate_session_id(monkeypatch, tmp_path):
 
     assert context.mode == "chat"
     assert context.session_id == "game_cfg:seat_scarlet:chat"
+
+
+def test_chat_intent_guardrail_rejects_unknown_target_seat(monkeypatch, tmp_path):
+    """Chat-intent guardrails should block target seat ids outside the visible seat map."""
+
+    monkeypatch.setenv("CLUE_AGENT_SESSION_DB_PATH", str(tmp_path / "agent_sessions.db"))
+    load_llm_runtime_config.cache_clear()
+    context = build_seat_context(
+        snapshot=_snapshot(),
+        tool_snapshot={},
+        accusation_gate={"ready": False},
+        runtime_config=load_llm_runtime_config(),
+        mode="chat_intent",
+    )
+
+    result = clue_chat_intent_output_guardrail.guardrail_function(
+        types.SimpleNamespace(context=context),
+        None,
+        ChatIntentOutput(
+            speak=True,
+            intent="challenge",
+            target_seat_id="seat_not_real",
+            topic="phantom",
+            tone="cutting",
+            thread_action="open",
+        ),
+    )
+
+    assert result.tripwire_triggered is True
+    assert "invalid_target_seat_id" in result.output_info["issues"]

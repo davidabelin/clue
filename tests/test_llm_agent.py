@@ -1,11 +1,11 @@
-"""LLM-seat tests for the v1.5.0 Agents SDK runtime wrapper."""
+"""LLM-seat tests for the v1.6.0 Agents SDK runtime wrapper."""
 
 from __future__ import annotations
 
 import types
 
 from clue_agents.llm import LLMSeatAgent
-from clue_agents.sdk_runtime import AgentChatOutput, AgentTurnOutput
+from clue_agents.sdk_runtime import AgentChatOutput, AgentTurnOutput, ChatIntentOutput, ChatUtteranceOutput
 from clue_agents.secrets import _access_secret_version, resolve_openai_api_key
 
 
@@ -263,14 +263,29 @@ def test_llm_agent_clear_session_uses_local_session_store(monkeypatch):
 
 
 def test_llm_agent_chat_uses_separate_session_metadata(monkeypatch):
-    """Idle-chat runs should surface the dedicated chat session id."""
+    """Idle-chat runs should surface the dedicated chat session id and intent metadata."""
 
     monkeypatch.setattr(
         LLMSeatAgent,
         "_run_agent",
         lambda self, context: (
-            AgentChatOutput(speak=True, text="We are all showing far too much.", rationale_private="chat"),
-            _artifacts(session_id="game_test:seat_scarlet:chat", trace_id="trace_chat"),
+            (
+                ChatIntentOutput(
+                    speak=True,
+                    intent="challenge",
+                    target_seat_id="seat_mustard",
+                    topic="mustard_reaction",
+                    tone="cutting",
+                    thread_action="continue",
+                    rationale_private="Press the colonel.",
+                ),
+                _artifacts(session_id="game_test:seat_scarlet:chat", trace_id="trace_chat_intent"),
+            )
+            if context.mode == "chat_intent"
+            else (
+                ChatUtteranceOutput(text="We are all showing far too much.", rationale_private="chat"),
+                _artifacts(session_id="game_test:seat_scarlet:chat", trace_id="trace_chat_utterance"),
+            )
         ),
     )
 
@@ -279,6 +294,8 @@ def test_llm_agent_chat_uses_separate_session_metadata(monkeypatch):
 
     assert decision.speak is True
     assert decision.text == "We are all showing far too much."
+    assert decision.intent == "challenge"
+    assert decision.target_seat_id == "seat_mustard"
     assert decision.agent_meta["session_id"] == "game_test:seat_scarlet:chat"
     assert decision.debug_private["sdk_session_id"] == "game_test:seat_scarlet:chat"
 
@@ -290,8 +307,23 @@ def test_llm_agent_chat_drops_unsafe_public_leak(monkeypatch):
         LLMSeatAgent,
         "_run_agent",
         lambda self, context: (
-            AgentChatOutput(speak=True, text="Colonel Mustard has the Rope.", rationale_private="chat"),
-            _artifacts(),
+            (
+                ChatIntentOutput(
+                    speak=True,
+                    intent="challenge",
+                    target_seat_id="seat_mustard",
+                    topic="mustard_cards",
+                    tone="cutting",
+                    thread_action="open",
+                    rationale_private="push him",
+                ),
+                _artifacts(),
+            )
+            if context.mode == "chat_intent"
+            else (
+                ChatUtteranceOutput(text="Colonel Mustard has the Rope.", rationale_private="chat"),
+                _artifacts(),
+            )
         ),
     )
 

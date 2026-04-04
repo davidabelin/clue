@@ -38,7 +38,7 @@ def test_home_page_renders(client):
     assert "Mrs. Peacock" in html
     assert "Professor Plum" in html
     assert "Set unused seats to NP." in html
-    assert "Clue v1.5.0 runs as a standalone lab" in html
+    assert "Clue v1.6.0 runs as a standalone lab" in html
     assert "Seed" not in html
     assert ">Heuristic<" not in html
     assert 'fetch("api/v1/games"' in html
@@ -335,7 +335,7 @@ def test_create_game_normalizes_legacy_heuristic_seats_to_llm(client):
 
 
 def test_create_game_assigns_yaml_model_profile_to_llm_seats(client):
-    """LLM seats without explicit model settings should receive a selected profile."""
+    """LLM seats without explicit model settings should receive turn and chat profiles."""
 
     response = client.post(
         "/api/v1/games",
@@ -353,12 +353,16 @@ def test_create_game_assigns_yaml_model_profile_to_llm_seats(client):
     llm_link = next(item for item in payload["seat_links"] if item["seat_id"] == "seat_scarlet")
 
     assert llm_link["agent_profile"]
+    assert llm_link["agent_chat_profile"]
 
     token = _token_from_join_url(llm_link["url"])
     snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
 
     assert snapshot["seat"]["agent_profile"] == llm_link["agent_profile"]
+    assert snapshot["seat"]["agent_chat_profile"] == llm_link["agent_chat_profile"]
     assert snapshot["seat"]["agent_model"]
+    assert snapshot["seat"]["agent_chat_model"]
+    assert snapshot["social"]["seat_state"]["relationships"]
 
 
 def test_create_game_requires_three_active_seats(client):
@@ -418,7 +422,7 @@ def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client):
 
     snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
     other_snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": other_token}).get_json()
-    assert snapshot["analysis"]["run_context"]["release_label"] == "v1.5.0"
+    assert snapshot["analysis"]["run_context"]["release_label"] == "v1.6.0"
     assert snapshot["analysis"]["agent_runtime"]["sdk_backend"] == "openai_agents_sdk"
     assert snapshot["analysis"]["agent_runtime"]["default_model"] == "gpt-5.4-mini-2026-03-17"
     assert snapshot["analysis"]["game_metrics"]["autonomous_actions"] >= 1

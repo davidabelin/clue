@@ -58,7 +58,7 @@ def _aix_page_url(base_url: str, path: str) -> str:
 def create_app(config: dict | None = None) -> Flask:
     """Create the standalone Clue Flask app and wire storage, routes, and chrome links.
 
-    The app factory is also the central configuration bridge for v1.5.0. It
+    The app factory is also the central configuration bridge for v1.6.0. It
     keeps deployment defaults explicit so future maintainers can see which knobs
     belong to the OpenAI seat runtime versus the core Flask or storage layers.
     """

@@ -13,7 +13,12 @@ from typing import Any
 from itsdangerous import BadSignature, URLSafeSerializer
 
 from clue_agents import AgentRuntime
-from clue_agents.profile_loader import assign_model_profiles, persona_chattiness
+from clue_agents.profile_loader import (
+    assign_chat_model_profiles,
+    assign_model_profiles,
+    persona_chattiness,
+    persona_relationship_map,
+)
 from clue_agents.safety import sanitize_public_chat
 from clue_core.deduction import build_tool_snapshot
 from clue_core.engine import GameMaster, build_filtered_snapshot
@@ -27,6 +32,9 @@ from clue_storage import ClueRepository
 DEFAULT_GAME_SEED = 17
 DEFAULT_TOOL_SNAPSHOT_BUDGET_MS = 250
 TURN_METRIC_LIMIT = 256
+SOCIAL_MOODS = {"calm", "amused", "annoyed", "guarded", "confident", "wounded"}
+SOCIAL_THREAD_KINDS = {"banter", "dispute", "alliance", "flirtation", "meta"}
+SOCIAL_THREAD_STATUSES = {"active", "cooling", "resolved"}
 
 
 def _timestamp_slug() -> str:
@@ -124,35 +132,155 @@ class GameService:
 
     @staticmethod
     def _build_social_defaults(state: dict[str, Any]) -> dict[str, Any]:
-        """Create the persisted social-chat scheduler state for non-human seats."""
+        """Create the persisted canonical social-memory state for non-human seats."""
 
         return {
+            "last_public_event_index": 0,
+            "threads": [],
             "seats": {
-                seat_id: {
-                    "last_processed_public_event_index": 0,
-                    "cooldown_events_remaining": 0,
-                    "last_chat_event_index": 0,
-                }
+                seat_id: GameService._blank_social_seat_state(state, seat_id)
                 for seat_id, seat in state.get("seats", {}).items()
                 if str(seat.get("seat_kind", "")).strip().lower() != "human"
             }
         }
 
     def _ensure_social(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Backfill the per-game idle-chat scheduler state."""
+        """Backfill the canonical social-memory state onto one persisted game snapshot."""
 
         defaults = self._build_social_defaults(state)
         social = dict(state.get("social") or {})
+        social.setdefault("last_public_event_index", defaults["last_public_event_index"])
+        social["threads"] = [self._normalize_social_thread(item) for item in list(social.get("threads") or [])]
         seat_social = dict(social.get("seats") or {})
         for seat_id, payload in defaults["seats"].items():
             current = dict(seat_social.get(seat_id) or {})
             current.setdefault("last_processed_public_event_index", payload["last_processed_public_event_index"])
             current.setdefault("cooldown_events_remaining", payload["cooldown_events_remaining"])
             current.setdefault("last_chat_event_index", payload["last_chat_event_index"])
+            current.setdefault("mood", payload["mood"])
+            current.setdefault("focus_seat_id", payload["focus_seat_id"])
+            current.setdefault("speaking_streak", payload["speaking_streak"])
+            current["recent_intents"] = list(current.get("recent_intents") or payload["recent_intents"])[-4:]
+            relationships = dict(current.get("relationships") or {})
+            for other_seat_id, relationship in payload["relationships"].items():
+                current_relationship = dict(relationships.get(other_seat_id) or {})
+                current_relationship.setdefault("affinity", int(relationship.get("affinity") or 0))
+                current_relationship.setdefault("trust", int(relationship.get("trust") or 0))
+                current_relationship.setdefault("friction", int(relationship.get("friction") or 0))
+                relationships[other_seat_id] = self._normalize_relationship_state(current_relationship)
+            current["relationships"] = relationships
+            current = self._normalize_social_seat_state(current)
             seat_social[seat_id] = current
         social["seats"] = seat_social
         state["social"] = social
         return social
+
+    @staticmethod
+    def _blank_social_seat_state(state: dict[str, Any], seat_id: str) -> dict[str, Any]:
+        """Build the default per-seat social-memory state for one non-human seat."""
+
+        return {
+            "last_processed_public_event_index": 0,
+            "cooldown_events_remaining": 0,
+            "last_chat_event_index": 0,
+            "mood": "calm",
+            "focus_seat_id": "",
+            "speaking_streak": 0,
+            "recent_intents": [],
+            "relationships": {
+                other_seat_id: GameService._seed_relationship_state(state, seat_id, other_seat_id)
+                for other_seat_id in state.get("seat_order", [])
+                if other_seat_id != seat_id
+            },
+        }
+
+    @staticmethod
+    def _seed_relationship_state(state: dict[str, Any], seat_id: str, other_seat_id: str) -> dict[str, int]:
+        """Seed one relationship state from the richer YAML persona hints."""
+
+        seat = dict((state.get("seats") or {}).get(seat_id) or {})
+        other = dict((state.get("seats") or {}).get(other_seat_id) or {})
+        relationship_hint = persona_relationship_map(str(seat.get("character") or "")).get(str(other.get("character") or ""), {})
+        stance = str(relationship_hint.get("stance") or "").strip().lower()
+        try:
+            chemistry = min(max(int(relationship_hint.get("chemistry") or 3), 1), 5)
+        except (TypeError, ValueError):
+            chemistry = 3
+        affinity = chemistry - 3
+        trust = 0
+        friction = 0 if chemistry >= 4 else (1 if chemistry == 3 else 2)
+        if any(word in stance for word in ("ally", "fond", "respect", "warm", "protect")):
+            trust += 1
+            affinity += 1
+        if any(word in stance for word in ("flirt", "charm")):
+            affinity += 1
+        if any(word in stance for word in ("wary", "skept", "dismiss", "jealous", "rival", "hostile", "resent", "cold")):
+            trust -= 1
+            friction += 1
+        return {
+            "affinity": GameService._clamp_value(affinity, minimum=-2, maximum=2),
+            "trust": GameService._clamp_value(trust, minimum=-2, maximum=2),
+            "friction": GameService._clamp_value(friction, minimum=0, maximum=3),
+        }
+
+    @staticmethod
+    def _normalize_relationship_state(relationship: dict[str, Any]) -> dict[str, int]:
+        """Clamp one persisted relationship row into the supported numeric ranges."""
+
+        return {
+            "affinity": GameService._clamp_value(relationship.get("affinity", 0), minimum=-2, maximum=2),
+            "trust": GameService._clamp_value(relationship.get("trust", 0), minimum=-2, maximum=2),
+            "friction": GameService._clamp_value(relationship.get("friction", 0), minimum=0, maximum=3),
+        }
+
+    @staticmethod
+    def _normalize_social_seat_state(seat_social: dict[str, Any]) -> dict[str, Any]:
+        """Clamp and normalize one persisted per-seat social-memory record."""
+
+        mood = str(seat_social.get("mood") or "calm")
+        if mood not in SOCIAL_MOODS:
+            mood = "calm"
+        return {
+            "last_processed_public_event_index": max(int(seat_social.get("last_processed_public_event_index", 0) or 0), 0),
+            "cooldown_events_remaining": max(int(seat_social.get("cooldown_events_remaining", 0) or 0), 0),
+            "last_chat_event_index": max(int(seat_social.get("last_chat_event_index", 0) or 0), 0),
+            "mood": mood,
+            "focus_seat_id": str(seat_social.get("focus_seat_id") or ""),
+            "speaking_streak": max(int(seat_social.get("speaking_streak", 0) or 0), 0),
+            "recent_intents": [str(item) for item in list(seat_social.get("recent_intents") or []) if str(item).strip()][-4:],
+            "relationships": {
+                str(other_seat_id): GameService._normalize_relationship_state(dict(payload or {}))
+                for other_seat_id, payload in dict(seat_social.get("relationships") or {}).items()
+                if str(other_seat_id).strip()
+            },
+        }
+
+    @staticmethod
+    def _normalize_social_thread(thread: dict[str, Any]) -> dict[str, Any]:
+        """Clamp and normalize one persisted social thread record."""
+
+        kind = str(thread.get("kind") or "meta")
+        status = str(thread.get("status") or "active")
+        heat_minimum = 0 if status == "resolved" else 1
+        return {
+            "thread_id": str(thread.get("thread_id") or ""),
+            "kind": kind if kind in SOCIAL_THREAD_KINDS else "meta",
+            "topic": str(thread.get("topic") or ""),
+            "participants": [str(item) for item in list(thread.get("participants") or []) if str(item).strip()],
+            "heat": GameService._clamp_value(thread.get("heat", 1), minimum=heat_minimum, maximum=3),
+            "status": status if status in SOCIAL_THREAD_STATUSES else "active",
+            "burst_count": GameService._clamp_value(thread.get("burst_count", 0), minimum=0, maximum=2),
+            "last_event_index": max(int(thread.get("last_event_index", 0) or 0), 0),
+        }
+
+    @staticmethod
+    def _clamp_value(value: Any, *, minimum: int, maximum: int) -> int:
+        """Clamp one integer-like value into the requested inclusive range."""
+
+        try:
+            return min(max(int(value), minimum), maximum)
+        except (TypeError, ValueError):
+            return minimum
 
     def _cleanup_llm_sessions_if_complete(self, state: dict[str, Any]) -> None:
         """Clear local LLM seat sessions after a game reaches a terminal state."""
@@ -165,6 +293,8 @@ class GameService:
                 "seat_kind": seat.get("seat_kind", ""),
                 "agent_model": seat.get("agent_model", ""),
                 "agent_profile": seat.get("agent_profile", ""),
+                "agent_chat_model": seat.get("agent_chat_model", ""),
+                "agent_chat_profile": seat.get("agent_chat_profile", ""),
             }
             for seat_id, seat in state.get("seats", {}).items()
         ]
@@ -275,6 +405,7 @@ class GameService:
                     "character": seat.character,
                     "seat_kind": seat.seat_kind,
                     "agent_profile": seat.agent_profile,
+                    "agent_chat_profile": seat.agent_chat_profile,
                     "url": f"join/{token}",
                 }
             )
@@ -471,6 +602,313 @@ class GameService:
             raise ValueError("Clue requires between 3 and 6 active seats.")
         return [SeatConfig.from_dict(item) for item in seat_payloads]
 
+    @staticmethod
+    def _mentioned_public_seat_ids(state: dict[str, Any], event: dict[str, Any]) -> list[str]:
+        """Return the seat ids explicitly named in one public event's visible text."""
+
+        text = str((event.get("payload") or {}).get("text") or event.get("message") or "").lower()
+        mentions = []
+        for seat_id, seat in state.get("seats", {}).items():
+            display_name = str(seat.get("display_name") or "").lower()
+            character = str(seat.get("character") or "").lower()
+            if (display_name and display_name in text) or (character and character in text):
+                mentions.append(str(seat_id))
+        return mentions
+
+    def _public_event_involves_seat(self, state: dict[str, Any], event: dict[str, Any], seat_id: str) -> bool:
+        """Report whether one public event directly involves the provided seat."""
+
+        return (
+            self._public_event_actor_seat_id(event) == str(seat_id)
+            or str(seat_id) in self._mentioned_public_seat_ids(state, event)
+        )
+
+    @staticmethod
+    def _mood_from_tone(tone: str) -> str:
+        """Map one chat tone into the bounded social mood enum."""
+
+        normalized = str(tone or "").strip().lower()
+        if normalized in {"playful", "wry", "flirtatious"}:
+            return "amused"
+        if normalized in {"cutting"}:
+            return "annoyed"
+        if normalized in {"guarded"}:
+            return "guarded"
+        if normalized in {"confident"}:
+            return "confident"
+        if normalized in {"warm"}:
+            return "calm"
+        if normalized in {"measured", "dry"}:
+            return "calm"
+        return "calm"
+
+    @staticmethod
+    def _thread_kind_from_decision(decision: Any) -> str:
+        """Map one chat decision intent/tone onto a bounded thread kind."""
+
+        intent = str(getattr(decision, "intent", "") or "").strip().lower()
+        tone = str(getattr(decision, "tone", "") or "").strip().lower()
+        if tone == "flirtatious":
+            return "flirtation"
+        return {
+            "challenge": "dispute",
+            "reconcile": "alliance",
+            "ally": "alliance",
+            "tease": "banter",
+            "deflect": "meta",
+            "meta_observe": "meta",
+        }.get(intent, "meta")
+
+    @staticmethod
+    def _social_relationship_entry(social: dict[str, Any], seat_id: str, target_seat_id: str) -> dict[str, Any]:
+        """Return one mutable relationship entry, creating a neutral one if absent."""
+
+        seat_social = dict((social.get("seats") or {}).get(seat_id) or {})
+        relationships = dict(seat_social.get("relationships") or {})
+        relationship = dict(relationships.get(target_seat_id) or {"affinity": 0, "trust": 0, "friction": 0})
+        relationships[target_seat_id] = relationship
+        seat_social["relationships"] = relationships
+        social.setdefault("seats", {})[seat_id] = GameService._normalize_social_seat_state(seat_social)
+        return dict((social.get("seats") or {}).get(seat_id, {}).get("relationships", {}).get(target_seat_id) or relationship)
+
+    def _apply_relationship_deltas(
+        self,
+        social: dict[str, Any],
+        *,
+        speaker_seat_id: str,
+        relationship_deltas: list[dict[str, Any]],
+    ) -> None:
+        """Apply bounded relationship deltas to the canonical social graph."""
+
+        social_seats = dict(social.get("seats") or {})
+        for delta in relationship_deltas:
+            target_seat_id = str(delta.get("seat_id") or "").strip()
+            if not target_seat_id or target_seat_id not in social_seats:
+                continue
+            speaker_social = dict(social_seats.get(speaker_seat_id) or {})
+            speaker_relationships = dict(speaker_social.get("relationships") or {})
+            speaker_relationship = dict(speaker_relationships.get(target_seat_id) or {"affinity": 0, "trust": 0, "friction": 0})
+            speaker_relationship["affinity"] = self._clamp_value(
+                int(speaker_relationship.get("affinity", 0)) + int(delta.get("affinity_delta") or 0),
+                minimum=-2,
+                maximum=2,
+            )
+            speaker_relationship["trust"] = self._clamp_value(
+                int(speaker_relationship.get("trust", 0)) + int(delta.get("trust_delta") or 0),
+                minimum=-2,
+                maximum=2,
+            )
+            speaker_relationship["friction"] = self._clamp_value(
+                int(speaker_relationship.get("friction", 0)) + int(delta.get("friction_delta") or 0),
+                minimum=0,
+                maximum=3,
+            )
+            speaker_relationships[target_seat_id] = speaker_relationship
+            speaker_social["relationships"] = speaker_relationships
+            social_seats[speaker_seat_id] = self._normalize_social_seat_state(speaker_social)
+
+            target_social = dict(social_seats.get(target_seat_id) or {})
+            target_relationships = dict(target_social.get("relationships") or {})
+            target_relationship = dict(target_relationships.get(speaker_seat_id) or {"affinity": 0, "trust": 0, "friction": 0})
+            target_relationship["affinity"] = self._clamp_value(
+                int(target_relationship.get("affinity", 0)) + (1 if int(delta.get("affinity_delta") or 0) > 0 else (-1 if int(delta.get("affinity_delta") or 0) < 0 else 0)),
+                minimum=-2,
+                maximum=2,
+            )
+            target_relationship["trust"] = self._clamp_value(
+                int(target_relationship.get("trust", 0)) + (1 if int(delta.get("trust_delta") or 0) > 0 else (-1 if int(delta.get("trust_delta") or 0) < 0 else 0)),
+                minimum=-2,
+                maximum=2,
+            )
+            target_relationship["friction"] = self._clamp_value(
+                int(target_relationship.get("friction", 0)) + (1 if int(delta.get("friction_delta") or 0) > 0 else (-1 if int(delta.get("friction_delta") or 0) < 0 else 0)),
+                minimum=0,
+                maximum=3,
+            )
+            target_relationships[speaker_seat_id] = target_relationship
+            target_social["relationships"] = target_relationships
+            social_seats[target_seat_id] = self._normalize_social_seat_state(target_social)
+        social["seats"] = social_seats
+
+    @staticmethod
+    def _find_social_thread(social: dict[str, Any], *, participants: set[str], topic: str) -> dict[str, Any] | None:
+        """Find the current active/cooling thread for the same topic and participants."""
+
+        normalized_topic = str(topic or "").strip().lower()
+        participant_set = {str(item) for item in participants if str(item)}
+        for thread in list(social.get("threads") or []):
+            thread_map = dict(thread or {})
+            if str(thread_map.get("status") or "") == "resolved":
+                continue
+            if str(thread_map.get("topic") or "").strip().lower() != normalized_topic:
+                continue
+            if {str(item) for item in list(thread_map.get("participants") or []) if str(item)} == participant_set:
+                return thread_map
+        return None
+
+    @staticmethod
+    def _hottest_social_thread(social: dict[str, Any], *, seat_id: str = "") -> dict[str, Any]:
+        """Return the hottest active or cooling thread, optionally limited to one seat."""
+
+        threads = []
+        for thread in list(social.get("threads") or []):
+            thread_map = dict(thread or {})
+            if str(thread_map.get("status") or "") == "resolved":
+                continue
+            participants = [str(item) for item in list(thread_map.get("participants") or []) if str(item)]
+            if seat_id and str(seat_id) not in participants:
+                continue
+            threads.append(thread_map)
+        return max(
+            threads,
+            key=lambda item: (
+                int(item.get("heat") or 0),
+                -int(item.get("burst_count") or 0),
+                int(item.get("last_event_index") or 0),
+                str(item.get("thread_id") or ""),
+            ),
+            default={},
+        )
+
+    @staticmethod
+    def _has_unresolved_friction_thread(social: dict[str, Any], seat_id: str) -> bool:
+        """Report whether a seat is currently in an active or cooling dispute thread."""
+
+        return any(
+            str(thread.get("kind") or "") == "dispute"
+            and str(thread.get("status") or "") != "resolved"
+            and str(seat_id) in {str(item) for item in list(thread.get("participants") or [])}
+            for thread in list(social.get("threads") or [])
+        )
+
+    def _apply_social_public_events(
+        self,
+        state: dict[str, Any],
+        social: dict[str, Any],
+        public_events: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Advance thread heat and speaking streaks from new public activity."""
+
+        threads = [self._normalize_social_thread(item) for item in list(social.get("threads") or [])]
+        social_seats = dict(social.get("seats") or {})
+        for event in public_events:
+            event_index = int(event.get("event_index") or 0)
+            event_type = str(event.get("event_type") or "")
+            actor_seat_id = self._public_event_actor_seat_id(event)
+            involved = {actor_seat_id, *self._mentioned_public_seat_ids(state, event)} - {""}
+            event_text = str((event.get("payload") or {}).get("text") or event.get("message") or "").lower()
+            if event_type == "chat_posted":
+                for seat_id, seat_social in list(social_seats.items()):
+                    current = dict(seat_social or {})
+                    current["speaking_streak"] = (
+                        max(int(current.get("speaking_streak", 0) or 0) + 1, 1) if seat_id == actor_seat_id else 0
+                    )
+                    social_seats[seat_id] = self._normalize_social_seat_state(current)
+            for thread in threads:
+                if str(thread.get("status") or "") == "resolved":
+                    continue
+                participants = {str(item) for item in list(thread.get("participants") or []) if str(item)}
+                topic = str(thread.get("topic") or "").strip().lower()
+                related = bool(participants & involved) or bool(topic and topic in event_text)
+                if related:
+                    thread["last_event_index"] = max(int(thread.get("last_event_index") or 0), event_index)
+                    continue
+                next_heat = int(thread.get("heat") or 0) - 1
+                if next_heat <= 0:
+                    thread["heat"] = 0
+                    thread["status"] = "resolved"
+                else:
+                    thread["heat"] = next_heat
+            social["last_public_event_index"] = max(int(social.get("last_public_event_index") or 0), event_index)
+        social["threads"] = [self._normalize_social_thread(item) for item in threads]
+        social["seats"] = social_seats
+        return social
+
+    def _apply_chat_decision_to_social(
+        self,
+        state: dict[str, Any],
+        social: dict[str, Any],
+        *,
+        speaker_seat_id: str,
+        decision: Any,
+        public_event_index: int,
+        prior_public_event_index: int,
+    ) -> dict[str, Any]:
+        """Apply one structured chat decision to the canonical social-memory state."""
+
+        social_seats = dict(social.get("seats") or {})
+        seat_social = dict(social_seats.get(speaker_seat_id) or {})
+        seat_social["last_processed_public_event_index"] = max(int(seat_social.get("last_processed_public_event_index", 0) or 0), public_event_index)
+        seat_social["cooldown_events_remaining"] = 2
+        seat_social["last_chat_event_index"] = public_event_index
+        seat_social["mood"] = self._mood_from_tone(str(getattr(decision, "tone", "") or ""))
+        seat_social["focus_seat_id"] = str(getattr(decision, "target_seat_id", "") or "")
+        seat_social["speaking_streak"] = max(int(seat_social.get("speaking_streak", 0) or 0) + 1, 1)
+        seat_social["recent_intents"] = [*list(seat_social.get("recent_intents") or []), str(getattr(decision, "intent", "") or "")][-4:]
+        social_seats[speaker_seat_id] = self._normalize_social_seat_state(seat_social)
+        social["seats"] = social_seats
+        self._apply_relationship_deltas(
+            social,
+            speaker_seat_id=speaker_seat_id,
+            relationship_deltas=[dict(item) for item in list(getattr(decision, "relationship_deltas", []) or [])],
+        )
+
+        target_seat_id = str(getattr(decision, "target_seat_id", "") or "")
+        topic = str(getattr(decision, "topic", "") or "").strip()
+        thread_action = str(getattr(decision, "thread_action", "") or "observe").strip().lower()
+        if target_seat_id and topic and thread_action in {"open", "continue", "resolve"}:
+            participants = {speaker_seat_id, target_seat_id}
+            existing_thread = self._find_social_thread(social, participants=participants, topic=topic)
+            thread_kind = self._thread_kind_from_decision(decision)
+            thread = dict(existing_thread or {})
+            if not thread:
+                thread = {
+                    "thread_id": str(getattr(decision, "thread_id", "") or f"thread_{speaker_seat_id}_{public_event_index}"),
+                    "kind": thread_kind,
+                    "topic": topic,
+                    "participants": sorted(participants),
+                    "heat": 1,
+                    "status": "active",
+                    "burst_count": 0,
+                    "last_event_index": prior_public_event_index,
+                }
+            consecutive = int(thread.get("last_event_index") or 0) == int(prior_public_event_index)
+            if thread_action == "resolve":
+                thread["status"] = "cooling"
+                thread["heat"] = max(int(thread.get("heat") or 1) - 1, 1)
+            else:
+                thread["status"] = "active"
+                thread["heat"] = self._clamp_value(
+                    int(thread.get("heat") or 1) + (1 if consecutive else 0),
+                    minimum=1,
+                    maximum=3,
+                )
+            thread["kind"] = thread_kind
+            thread["topic"] = topic
+            thread["participants"] = sorted(participants)
+            thread["last_event_index"] = public_event_index
+            thread["burst_count"] = self._clamp_value(
+                (int(thread.get("burst_count") or 0) + 1) if consecutive and thread_action == "continue" else 0,
+                minimum=0,
+                maximum=2,
+            )
+            if int(thread.get("burst_count") or 0) >= 2:
+                thread["status"] = "cooling"
+            replaced = False
+            threads = []
+            for existing in list(social.get("threads") or []):
+                existing_map = dict(existing or {})
+                if str(existing_map.get("thread_id") or "") == str(thread.get("thread_id") or ""):
+                    threads.append(self._normalize_social_thread(thread))
+                    replaced = True
+                else:
+                    threads.append(self._normalize_social_thread(existing_map))
+            if not replaced:
+                threads.append(self._normalize_social_thread(thread))
+            social["threads"] = threads
+        social["last_public_event_index"] = max(int(social.get("last_public_event_index") or 0), public_event_index)
+        return social
+
     def maybe_run_idle_chat(self, game_id: str) -> None:
         """Run at most one non-human idle-chat reply for new player-facing public activity."""
 
@@ -499,6 +937,13 @@ class GameService:
         ):
             return
 
+        prior_social_index = int(social.get("last_public_event_index") or 0)
+        new_public_events = [event for event in public_events if int(event.get("event_index") or 0) > prior_social_index]
+        state_changed = bool(new_public_events)
+        if new_public_events:
+            social = self._apply_social_public_events(state, social, new_public_events)
+
+        social_seats = dict(social.get("seats") or {})
         latest_public_chat = next(
             (event for event in reversed(public_events) if str(event.get("event_type") or "") == "chat_posted"),
             {},
@@ -508,13 +953,12 @@ class GameService:
             {},
         )
         latest_event_actor = self._public_event_actor_seat_id(latest_public_event)
-        latest_narrative_actor = self._public_event_actor_seat_id(latest_narrative) if latest_narrative else ""
         recent_chat_authors = [
             self._public_event_actor_seat_id(event)
             for event in public_events
             if str(event.get("event_type") or "") == "chat_posted"
         ][-2:]
-        state_changed = False
+        hottest_thread = self._hottest_social_thread(social)
         candidates: list[dict[str, Any]] = []
 
         for seat_id in nonhuman_ids:
@@ -524,30 +968,41 @@ class GameService:
             if not unseen_events:
                 continue
 
-            state_changed = True
             cooldown = max(int(seat_social.get("cooldown_events_remaining", 0) or 0), 0)
             if cooldown > 0:
                 seat_social["cooldown_events_remaining"] = max(cooldown - len(unseen_events), 0)
                 seat_social["last_processed_public_event_index"] = latest_public_event_index
-                social_seats[seat_id] = seat_social
+                social_seats[seat_id] = self._normalize_social_seat_state(seat_social)
+                state_changed = True
                 continue
 
             seat = dict(state["seats"][seat_id])
             addressed = bool(latest_public_chat and self._event_mentions_seat(latest_public_chat, seat))
+            participates_in_hot_thread = bool(
+                hottest_thread
+                and str(hottest_thread.get("status") or "") == "active"
+                and seat_id in {str(item) for item in list(hottest_thread.get("participants") or [])}
+                and int(hottest_thread.get("burst_count") or 0) < 2
+            )
+            focus_seat_id = str(seat_social.get("focus_seat_id") or "")
+            focus_involved = bool(
+                focus_seat_id
+                and latest_public_event
+                and self._public_event_involves_seat(state, latest_public_event, focus_seat_id)
+            )
+            unresolved_friction = self._has_unresolved_friction_thread(social, seat_id)
             chance = self._idle_chat_base_chance(str(seat.get("character") or ""))
             if addressed:
-                chance += 0.22
-            if latest_narrative_actor == seat_id:
-                chance += 0.12
-            if (
-                str(latest_public_event.get("event_type") or "") == "chat_posted"
-                and latest_event_actor
-                and latest_event_actor != seat_id
-            ):
-                chance += 0.08
-            if seat_id in recent_chat_authors:
-                chance -= 0.30
-            chance = max(0.0, min(chance, 0.85))
+                chance += 0.20
+            if participates_in_hot_thread:
+                chance += 0.15
+            if focus_involved:
+                chance += 0.10
+            if unresolved_friction:
+                chance += 0.10
+            if seat_id in recent_chat_authors and not participates_in_hot_thread:
+                chance -= 0.25
+            chance = max(0.0, min(chance, 0.90))
             roll = self._idle_chat_roll(game_id, seat_id, latest_public_event_index)
             if roll < chance:
                 candidates.append(
@@ -559,7 +1014,8 @@ class GameService:
                     }
                 )
             seat_social["last_processed_public_event_index"] = latest_public_event_index
-            social_seats[seat_id] = seat_social
+            social_seats[seat_id] = self._normalize_social_seat_state(seat_social)
+            state_changed = True
 
         social["seats"] = social_seats
         state["social"] = social
@@ -586,12 +1042,14 @@ class GameService:
                 chat_game = GameMaster(state)
                 state, events = chat_game.apply_action(seat_id, {"action": "send_chat", "text": safe_text})
                 updated_social = self._ensure_social(state)
-                seat_social = dict((updated_social.get("seats") or {}).get(seat_id) or {})
-                seat_social["cooldown_events_remaining"] = 2
-                seat_social["last_processed_public_event_index"] = next_public_index
-                seat_social["last_chat_event_index"] = next_public_index
-                updated_social["seats"][seat_id] = seat_social
-                state["social"] = updated_social
+                state["social"] = self._apply_chat_decision_to_social(
+                    state,
+                    updated_social,
+                    speaker_seat_id=seat_id,
+                    decision=decision,
+                    public_event_index=next_public_index,
+                    prior_public_event_index=latest_public_event_index,
+                )
                 state_changed = True
 
         if state_changed:
@@ -843,16 +1301,24 @@ class GameService:
 
     @staticmethod
     def _apply_llm_profiles(game_id: str, seat_configs: list[SeatConfig]) -> None:
-        """Assign one deterministic model profile to each LLM seat when unspecified."""
+        """Assign deterministic turn and chat profiles to each LLM seat when unspecified."""
 
         assignments = assign_model_profiles(game_id=game_id, seats=seat_configs)
+        chat_assignments = assign_chat_model_profiles(game_id=game_id, seats=seat_configs)
         for seat in seat_configs:
             selection = assignments.get(seat.seat_id)
             if selection is None:
+                pass
+            else:
+                seat.agent_profile = selection.profile_id
+                if not seat.agent_model:
+                    seat.agent_model = selection.model
+            chat_selection = chat_assignments.get(seat.seat_id)
+            if chat_selection is None:
                 continue
-            seat.agent_profile = selection.profile_id
-            if not seat.agent_model:
-                seat.agent_model = selection.model
+            seat.agent_chat_profile = chat_selection.profile_id
+            if not seat.agent_chat_model:
+                seat.agent_chat_model = chat_selection.model
 
     @staticmethod
     def _autonomous_seat_to_act(state: dict[str, Any]) -> str | None:

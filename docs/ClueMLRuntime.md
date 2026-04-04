@@ -1,7 +1,7 @@
 # Clue ML Runtime Guide
 
 ## Purpose
-This document explains the **v1.5.0** OpenAI runtime inside the standalone `clue` repo. It is aimed at the maintainer who needs to change prompts, models, tools, tracing, or diagnostics without breaking Clue’s deterministic gameplay guarantees.
+This document explains the **v1.6.0** OpenAI runtime inside the standalone `clue` repo. It is aimed at the maintainer who needs to change prompts, models, tools, tracing, diagnostics, or social-memory behavior without breaking Clue’s deterministic gameplay guarantees.
 
 ## Architectural Boundaries
 - `clue_core` owns rules, legality, hidden state, turn progression, refutation flow, accusations, and filtered snapshots.
@@ -22,12 +22,18 @@ This document explains the **v1.5.0** OpenAI runtime inside the standalone `clue
 - Current default reasoning effort: `medium`
 - Current default tool-call cap: `6`
 - Current default max turns: `8`
+- Turn decisions and idle table-chat use **separate YAML-selected profiles**
+- Idle chat runs in two SDK stages:
+  1. `ChatIntentOutput`
+  2. `ChatUtteranceOutput`
 
 ## Context Model
 Each LLM turn builds one code-owned `SeatAgentContext` object containing:
 - seat-local filtered snapshot
 - tool snapshot from the deduction engine
 - accusation pacing gate
+- seat-local social state
+- active threads and relationship posture
 - local notebook excerpt
 - trace id
 - session id
@@ -46,6 +52,11 @@ The live seat agent exposes a bounded, read-only tool surface:
 - `read_private_notebook`
 - `inspect_move_target`
 - `inspect_refute_card`
+- `get_social_state_summary`
+- `get_active_chat_threads`
+- `get_relationship_posture`
+- `get_recent_public_chat_turns`
+- `get_recent_public_narrative_turns`
 
 Rules for adding tools:
 - Tools must be read-only.
@@ -64,6 +75,8 @@ The seat output guardrail blocks:
 - missing required accusation or suggestion fields
 - accusations before the pacing gate is ready
 - unsafe public chat that looks like hidden-ownership leakage
+- invalid chat intent targets or enum fields
+- obvious fabricated public-fact references that contradict the recent visible event window
 
 When the output guardrail trips, the LLM decision is discarded and Clue falls back to the deterministic heuristic seat.
 
@@ -76,7 +89,8 @@ These guardrails reject out-of-scope arguments before the tool result is returne
 
 ## Session Memory
 - LLM seats use `EncryptedSession` over `SQLAlchemySession`
-- Session key: `game_id:seat_id`
+- Turn session key: `game_id:seat_id`
+- Chat session key: `game_id:seat_id:chat`
 - Backend: local SQLite via `CLUE_AGENT_SESSION_DB_PATH`
 - TTL: controlled by `CLUE_AGENT_SESSION_TTL_SECONDS`
 - Encryption key: `CLUE_AGENT_SESSION_ENCRYPTION_KEY`, falling back to `CLUE_SECRET_KEY`
@@ -98,6 +112,12 @@ What to inspect first when the LLM path misbehaves:
 2. `analysis.seat_debug.metric`
 3. `analysis.seat_debug.decision_debug`
 4. `analysis.seat_debug.tool_snapshot`
+
+## Social Memory Model
+- `state["social"]["seats"]` stores per-seat mood, focus, recent intents, cooldowns, speaking streaks, and bounded relationship scores
+- `state["social"]["threads"]` stores active side-discussion state with topic, participants, heat, status, and burst count
+- Public chat may continue a hot thread across successive refreshes, but the scheduler still emits at most one NPC line per refresh and forces cooling after a short burst
+- LLM text does not mutate social state directly; only structured chat intent output and public events do
 
 ## Prompt And Model Changes
 When changing the LLM runtime:

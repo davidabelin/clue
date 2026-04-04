@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -61,6 +61,11 @@ except Exception:  # pragma: no cover - import guard for local or CI environment
     AGENTS_SDK_AVAILABLE = False
 
 
+CHAT_INTENTS = {"tease", "deflect", "challenge", "ally", "reconcile", "meta_observe"}
+CHAT_TONES = {"playful", "warm", "cutting", "guarded", "measured", "dry", "flirtatious", "confident", "wry"}
+CHAT_THREAD_ACTIONS = {"open", "continue", "resolve", "observe"}
+
+
 class AgentTurnOutput(BaseModel):
     """Structured output contract returned by the Agents SDK seat agent."""
 
@@ -88,6 +93,45 @@ class AgentChatOutput(BaseModel):
     debug_private: dict[str, Any] = Field(default_factory=dict)
 
 
+class RelationshipDeltaOutput(BaseModel):
+    """One bounded relationship adjustment emitted by the chat-intent planner."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    seat_id: str
+    affinity_delta: int = Field(default=0, ge=-2, le=2)
+    trust_delta: int = Field(default=0, ge=-2, le=2)
+    friction_delta: int = Field(default=0, ge=-2, le=2)
+
+
+class ChatIntentOutput(BaseModel):
+    """Structured social intent emitted before the public chat line is written."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    speak: bool
+    intent: Literal["tease", "deflect", "challenge", "ally", "reconcile", "meta_observe"] = "meta_observe"
+    target_seat_id: str = ""
+    topic: str = ""
+    tone: Literal["playful", "warm", "cutting", "guarded", "measured", "dry", "flirtatious", "confident", "wry"] = (
+        "dry"
+    )
+    thread_action: Literal["open", "continue", "resolve", "observe"] = "observe"
+    relationship_deltas: list[RelationshipDeltaOutput] = Field(default_factory=list)
+    action_pressure_hint: str = Field(default="")
+    rationale_private: str = Field(default="")
+
+
+class ChatUtteranceOutput(BaseModel):
+    """Structured public line emitted after the chat intent has been chosen."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(default="")
+    rationale_private: str = Field(default="")
+    debug_private: dict[str, Any] = Field(default_factory=dict)
+
+
 @dataclass(slots=True)
 class SeatAgentContext:
     """Code-owned per-turn context passed into the Agents SDK run.
@@ -104,6 +148,7 @@ class SeatAgentContext:
     trace_id: str
     session_id: str
     mode: str = "turn"
+    chat_plan: dict[str, Any] = field(default_factory=dict)
     tool_access_log: list[dict[str, Any]] = field(default_factory=list)
 
     @property
@@ -141,6 +186,32 @@ class SeatAgentContext:
         """Return the most recent player-facing public narrative events."""
 
         return list(public_narrative_events(self.snapshot))[-6:]
+
+    @property
+    def social_state(self) -> dict[str, Any]:
+        """Return the current seat's social-memory summary."""
+
+        return dict((self.snapshot.get("social") or {}).get("seat_state") or {})
+
+    @property
+    def active_threads(self) -> list[dict[str, Any]]:
+        """Return the currently visible social threads involving this seat."""
+
+        return list((self.snapshot.get("social") or {}).get("active_threads") or [])[-6:]
+
+    @property
+    def public_seat_map(self) -> dict[str, dict[str, Any]]:
+        """Index public seat records by seat id for chat validation and prompts."""
+
+        seats = {
+            str(item.get("seat_id") or ""): dict(item)
+            for item in self.snapshot.get("seats") or []
+            if str(item.get("seat_id") or "")
+        }
+        current = dict(self.snapshot.get("seat") or {})
+        if str(current.get("seat_id") or ""):
+            seats[str(current["seat_id"])] = current
+        return seats
 
     def record_tool_call(self, name: str, *, arguments: dict[str, Any] | None = None) -> None:
         """Append one tool invocation summary for diagnostics and test assertions."""
@@ -186,6 +257,7 @@ def build_seat_context(
     accusation_gate: dict[str, Any],
     runtime_config: LLMRuntimeConfig,
     mode: str = "turn",
+    chat_plan: dict[str, Any] | None = None,
 ) -> SeatAgentContext:
     """Build the private context object for one seat-agent run."""
 
@@ -193,9 +265,10 @@ def build_seat_context(
     game_id = str(snapshot.get("game_id") or "test_game")
     seat_id = str(seat.get("seat_id") or "unknown_seat")
     turn_index = int(snapshot.get("turn_index") or 0)
-    mode_label = "chat" if str(mode).strip().lower() == "chat" else "turn"
+    requested_mode = str(mode).strip().lower()
+    mode_label = requested_mode if requested_mode in {"chat", "chat_intent", "chat_utterance"} else "turn"
     trace_id = f"clue-{game_id}-{seat_id}-{mode_label}-{turn_index}-{uuid.uuid4().hex[:10]}"
-    session_id = f"{game_id}:{seat_id}:chat" if mode_label == "chat" else f"{game_id}:{seat_id}"
+    session_id = f"{game_id}:{seat_id}:chat" if mode_label.startswith("chat") else f"{game_id}:{seat_id}"
     return SeatAgentContext(
         runtime_config=runtime_config,
         snapshot=snapshot,
@@ -204,6 +277,7 @@ def build_seat_context(
         trace_id=trace_id,
         session_id=session_id,
         mode=mode_label,
+        chat_plan=dict(chat_plan or {}),
     )
 
 
@@ -218,6 +292,47 @@ def _tool_guardrail_payload(data: ToolInputGuardrailData) -> dict[str, Any]:
 
 
 if AGENTS_SDK_AVAILABLE:
+
+    def _chat_target_known(context: SeatAgentContext, seat_id: str) -> bool:
+        """Report whether one seat id is visible in the current public seat map."""
+
+        return str(seat_id).strip() in context.public_seat_map
+
+
+    def _fabricated_public_fact_issue(context: SeatAgentContext, text: str) -> str:
+        """Detect obvious public-history claims unsupported by the recent visible window."""
+
+        normalized = str(text or "").strip().lower()
+        if not normalized:
+            return ""
+        fact_keywords = (
+            "rolled",
+            "moved",
+            "suggested",
+            "accused",
+            "refuted",
+            "could not refute",
+            "couldn't refute",
+            "used a secret passage",
+        )
+        if not any(keyword in normalized for keyword in fact_keywords):
+            return ""
+        recent_messages = " ".join(
+            str(event.get("message") or "").strip().lower()
+            for event in [*context.public_chat_history, *context.public_narrative_history]
+        )
+        named_seats = [
+            str(seat.get("display_name") or "").strip().lower()
+            for seat in context.public_seat_map.values()
+            if str(seat.get("display_name") or "").strip()
+        ]
+        names_in_text = [name for name in named_seats if name in normalized]
+        keyword_hits = [keyword for keyword in fact_keywords if keyword in normalized]
+        if names_in_text and not any(name in recent_messages for name in names_in_text):
+            return "fabricated_public_fact_reference"
+        if keyword_hits and not any(keyword in recent_messages for keyword in keyword_hits):
+            return "fabricated_public_fact_reference"
+        return ""
 
     @tool_input_guardrail(name="clue_move_target_scope_guardrail")
     def move_target_scope_guardrail(data: ToolInputGuardrailData) -> ToolGuardrailFunctionOutput:
@@ -341,6 +456,67 @@ if AGENTS_SDK_AVAILABLE:
         return {"card": str(card), "allowed": str(card) in context.context.refute_card_set()}
 
 
+    @function_tool
+    def get_social_state_summary(context: RunContextWrapper[SeatAgentContext]) -> dict[str, Any]:
+        """Return the current seat's code-owned social-memory summary."""
+
+        context.context.record_tool_call("get_social_state_summary")
+        return dict(context.context.social_state)
+
+
+    @function_tool
+    def get_active_chat_threads(context: RunContextWrapper[SeatAgentContext]) -> list[dict[str, Any]]:
+        """Return the visible active chat threads involving this seat."""
+
+        context.context.record_tool_call("get_active_chat_threads")
+        return list(context.context.active_threads)
+
+
+    @function_tool
+    def get_relationship_posture(
+        context: RunContextWrapper[SeatAgentContext],
+        target_seat_id: str = "",
+    ) -> dict[str, Any]:
+        """Return the current seat's relationship posture toward one public seat."""
+
+        context.context.record_tool_call("get_relationship_posture", arguments={"target_seat_id": target_seat_id})
+        relationships = dict(context.context.social_state.get("relationships") or {})
+        target_id = str(target_seat_id or "").strip()
+        if not target_id:
+            return {"relationships": relationships}
+        target = dict(context.context.public_seat_map.get(target_id) or {})
+        return {
+            "target_seat_id": target_id,
+            "target_display_name": str(target.get("display_name") or ""),
+            "target_character": str(target.get("character") or ""),
+            "posture": dict(relationships.get(target_id) or {}),
+        }
+
+
+    @function_tool
+    def get_recent_public_chat_turns(
+        context: RunContextWrapper[SeatAgentContext],
+        limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Return the latest visible public chat turns up to the requested limit."""
+
+        context.context.record_tool_call("get_recent_public_chat_turns", arguments={"limit": limit})
+        safe_limit = min(max(int(limit), 1), 12)
+        return list(context.context.public_chat_history)[-safe_limit:]
+
+
+    @function_tool
+    def get_recent_public_narrative_turns(
+        context: RunContextWrapper[SeatAgentContext],
+        limit: int = 6,
+    ) -> list[dict[str, Any]]:
+        """Return the latest visible player-facing narrative turns."""
+
+        context.context.record_tool_call("get_recent_public_narrative_turns", arguments={"limit": limit})
+        safe_limit = min(max(int(limit), 1), 12)
+        return list(context.context.public_narrative_history)[-safe_limit:]
+
+
     @output_guardrail(name="clue_turn_output_guardrail")
     def clue_turn_output_guardrail(
         context: RunContextWrapper[SeatAgentContext],
@@ -406,19 +582,109 @@ if AGENTS_SDK_AVAILABLE:
         )
 
 
+    @output_guardrail(name="clue_chat_intent_output_guardrail")
+    def clue_chat_intent_output_guardrail(
+        context: RunContextWrapper[SeatAgentContext],
+        _agent: Agent[SeatAgentContext],
+        agent_output: ChatIntentOutput,
+    ) -> GuardrailFunctionOutput:
+        """Reject invalid or out-of-scope chat intent plans."""
+
+        issues: list[str] = []
+        if agent_output.target_seat_id and not _chat_target_known(context.context, agent_output.target_seat_id):
+            issues.append("invalid_target_seat_id")
+        if str(agent_output.intent) not in CHAT_INTENTS:
+            issues.append("invalid_intent")
+        if str(agent_output.tone) not in CHAT_TONES:
+            issues.append("invalid_tone")
+        if str(agent_output.thread_action) not in CHAT_THREAD_ACTIONS:
+            issues.append("invalid_thread_action")
+        for delta in list(agent_output.relationship_deltas or []):
+            if delta.seat_id and not _chat_target_known(context.context, delta.seat_id):
+                issues.append("invalid_relationship_target")
+                break
+        return GuardrailFunctionOutput(
+            output_info={
+                "issues": issues,
+                "target_seat_id": agent_output.target_seat_id,
+                "intent": agent_output.intent,
+                "tone": agent_output.tone,
+                "thread_action": agent_output.thread_action,
+            },
+            tripwire_triggered=bool(issues),
+        )
+
+
+    @output_guardrail(name="clue_chat_utterance_output_guardrail")
+    def clue_chat_utterance_output_guardrail(
+        context: RunContextWrapper[SeatAgentContext],
+        _agent: Agent[SeatAgentContext],
+        agent_output: ChatUtteranceOutput,
+    ) -> GuardrailFunctionOutput:
+        """Reject unsafe or obviously fabricated public chat utterances."""
+
+        issues: list[str] = []
+        sanitized_text = sanitize_public_chat(agent_output.text or "")
+        if not sanitized_text:
+            issues.append("unsafe_or_empty_public_chat")
+        fabricated_issue = _fabricated_public_fact_issue(context.context, agent_output.text or "")
+        if fabricated_issue:
+            issues.append(fabricated_issue)
+        return GuardrailFunctionOutput(
+            output_info={
+                "issues": issues,
+                "sanitized_text": sanitized_text,
+            },
+            tripwire_triggered=bool(issues),
+        )
+
+
 def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agent[SeatAgentContext]:
     """Construct the Clue seat agent definition for one turn or chat run."""
 
     if not AGENTS_SDK_AVAILABLE:
         raise RuntimeError("OpenAI Agents SDK is not available in this environment.")
-    if str(mode).strip().lower() == "chat":
+    mode_label = str(mode).strip().lower()
+    social_tools = [
+        get_social_state_summary,
+        get_active_chat_threads,
+        get_relationship_posture,
+        get_recent_public_chat_turns,
+        get_recent_public_narrative_turns,
+    ]
+    if mode_label == "chat":
+        mode_label = "chat_intent"
+    if mode_label == "chat_intent":
         return Agent(
-            name="Clue Seat Chat Agent",
-            instructions=_chat_agent_instructions,
-            tools=[],
+            name="Clue Seat Chat Intent Agent",
+            instructions=_chat_intent_agent_instructions,
+            tools=social_tools,
             model=runtime_config.model,
             model_settings=ModelSettings(
-                tool_choice="none",
+                tool_choice="required",
+                parallel_tool_calls=False,
+                max_tokens=280,
+                reasoning={"effort": runtime_config.reasoning_effort},
+                verbosity="low",
+                store=False,
+                extra_args={"timeout": runtime_config.timeout_seconds},
+                metadata={
+                    "app": "clue",
+                    "mode": "chat_intent",
+                    "release": runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
+                },
+            ),
+            output_type=ChatIntentOutput,
+            output_guardrails=[clue_chat_intent_output_guardrail],
+        )
+    if mode_label == "chat_utterance":
+        return Agent(
+            name="Clue Seat Chat Utterance Agent",
+            instructions=_chat_utterance_agent_instructions,
+            tools=social_tools,
+            model=runtime_config.model,
+            model_settings=ModelSettings(
+                tool_choice="auto",
                 parallel_tool_calls=False,
                 max_tokens=220,
                 reasoning={"effort": runtime_config.reasoning_effort},
@@ -427,12 +693,12 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
                 extra_args={"timeout": runtime_config.timeout_seconds},
                 metadata={
                     "app": "clue",
-                    "mode": "chat",
+                    "mode": "chat_utterance",
                     "release": runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
                 },
             ),
-            output_type=AgentChatOutput,
-            output_guardrails=[clue_chat_output_guardrail],
+            output_type=ChatUtteranceOutput,
+            output_guardrails=[clue_chat_utterance_output_guardrail],
         )
     return Agent(
         name="Clue Seat Agent",
@@ -447,6 +713,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
             read_private_notebook,
             inspect_move_target,
             inspect_refute_card,
+            *social_tools,
         ],
         model=runtime_config.model,
         model_settings=ModelSettings(
@@ -485,24 +752,46 @@ def _agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Ag
         f"Available actions: {available}.\n"
         f"Notebook has content: {bool(context.context.notebook_text.strip())}.\n"
         f"Accusation gate ready: {bool(context.context.accusation_gate.get('ready'))}.\n"
+        "Use the social-state tools when they help break ties, pressure a specific opponent, or shape safe public text.\n"
         "Call at least one relevant tool before returning. Keep rationale_private short and useful for maintainers."
     )
 
 
-def _chat_agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Agent[SeatAgentContext]) -> str:
-    """Build the seat-specific instruction block for one chat-only agent run."""
+def _chat_intent_agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Agent[SeatAgentContext]) -> str:
+    """Build the chat-intent planning instructions for one autonomous seat."""
 
     seat = dict(context.context.snapshot.get("seat") or {})
     return (
-        "You are the public table-chat voice for one autonomous Clue player.\n"
-        "You are not deciding a rules action. Decide only whether this seat should speak right now.\n"
-        "Stay concise, in character, and grounded in the public table context below.\n"
-        "You may banter, tease, disagree, or carry a side discussion, but never reveal private card knowledge, invent public facts, or claim hidden certainty.\n"
+        "You are the social-intent planner for one autonomous Clue seat.\n"
+        "You are not choosing a rules action. Decide only whether the seat should speak right now and, if so, what social move it is making.\n"
+        "Use the read-only social tools to inspect current mood, relationships, active threads, recent public chat, and recent narrative.\n"
+        "You may banter, tease, challenge, ally with, reconcile with, or meta-observe the table, but never reveal private card knowledge, invent public facts, or claim hidden certainty.\n"
         f"Seat: {seat.get('display_name', 'Unknown')} ({seat.get('character', 'Unknown')}).\n"
         f"Chat persona guidance:\n{social_prompt(str(seat.get('character') or ''))}\n"
-        f"Recent public chat:\n{_history_block(context.context.public_chat_history, empty='- No recent table chat.')}\n"
-        f"Recent public narrative:\n{_history_block(context.context.public_narrative_history, empty='- No recent narrative events.')}\n"
-        "Return `speak=false` if silence is better than adding noise. Keep rationale_private short and useful for maintainers."
+        "If silence is better than adding noise, return `speak=false`.\n"
+        "When speaking, choose a clear target seat when one fits, a short thread topic, a grounded tone, and small bounded relationship deltas.\n"
+        "Keep rationale_private short and useful for maintainers."
+    )
+
+
+def _chat_utterance_agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Agent[SeatAgentContext]) -> str:
+    """Build the public-utterance instructions after chat intent has been chosen."""
+
+    seat = dict(context.context.snapshot.get("seat") or {})
+    plan = dict(context.context.chat_plan or {})
+    target = dict(context.context.public_seat_map.get(str(plan.get("target_seat_id") or "")) or {})
+    return (
+        "You are writing one public table-chat line for an autonomous Clue seat.\n"
+        "The social intent is already chosen. Your job is to phrase it naturally, concisely, and in character.\n"
+        "You may continue a side discussion, tease, disagree, reconcile, or observe, but never reveal private card knowledge, invent public facts, or claim certainty that the public table has not earned.\n"
+        f"Seat: {seat.get('display_name', 'Unknown')} ({seat.get('character', 'Unknown')}).\n"
+        f"Chat persona guidance:\n{social_prompt(str(seat.get('character') or ''))}\n"
+        f"Chosen intent: {plan.get('intent', '') or 'meta_observe'}.\n"
+        f"Target seat: {target.get('display_name', '') or plan.get('target_seat_id', '') or 'none'}.\n"
+        f"Topic: {plan.get('topic', '') or 'general table mood'}.\n"
+        f"Tone: {plan.get('tone', '') or 'dry'}.\n"
+        f"Thread action: {plan.get('thread_action', '') or 'observe'}.\n"
+        "Return only the public line plus a short rationale_private/debug_private payload."
     )
 
 
@@ -522,11 +811,12 @@ def build_run_config(context: SeatAgentContext, api_key: str) -> RunConfig:
 
     if not AGENTS_SDK_AVAILABLE:
         raise RuntimeError("OpenAI Agents SDK is not available in this environment.")
+    is_chat = str(context.mode).startswith("chat")
     return RunConfig(
         model_provider=OpenAIProvider(api_key=api_key, use_responses=True),
         tracing_disabled=not context.runtime_config.tracing_enabled,
         trace_include_sensitive_data=context.runtime_config.trace_include_sensitive_data,
-        workflow_name=("Clue Seat Chat" if context.mode == "chat" else "Clue Seat Decision"),
+        workflow_name=("Clue Seat Chat" if is_chat else "Clue Seat Decision"),
         trace_id=context.trace_id,
         group_id=context.game_id,
         trace_metadata={

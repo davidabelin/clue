@@ -43,7 +43,11 @@ def build_initial_state(game_id: str, title: str, seats: list[SeatConfig], hidde
 
     ordered_seat_ids = [seat.seat_id for seat in seats]
     seat_state = {}
-    social_state = {"seats": {}}
+    social_state = {
+        "last_public_event_index": 0,
+        "threads": [],
+        "seats": {},
+    }
     for seat in seats:
         seat_state[seat.seat_id] = {
             "seat_id": seat.seat_id,
@@ -52,6 +56,8 @@ def build_initial_state(game_id: str, title: str, seats: list[SeatConfig], hidde
             "seat_kind": seat.seat_kind,
             "agent_model": seat.agent_model,
             "agent_profile": seat.agent_profile,
+            "agent_chat_model": seat.agent_chat_model,
+            "agent_chat_profile": seat.agent_chat_profile,
             "position": CHARACTER_START_NODES[seat.character],
             "hand_count": len(hidden_setup["hands"][seat.seat_id]),
             "can_win": True,
@@ -61,6 +67,11 @@ def build_initial_state(game_id: str, title: str, seats: list[SeatConfig], hidde
                 "last_processed_public_event_index": 0,
                 "cooldown_events_remaining": 0,
                 "last_chat_event_index": 0,
+                "mood": "calm",
+                "focus_seat_id": "",
+                "speaking_streak": 0,
+                "recent_intents": [],
+                "relationships": {},
             }
     return {
         "game_id": game_id,

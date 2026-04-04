@@ -55,6 +55,14 @@ class ChatDecision:
 
     speak: bool
     text: str = ""
+    intent: str = ""
+    target_seat_id: str = ""
+    topic: str = ""
+    tone: str = ""
+    thread_action: str = ""
+    relationship_deltas: list[dict[str, Any]] = field(default_factory=list)
+    action_pressure_hint: str = ""
+    thread_id: str = ""
     rationale_private: str = ""
     debug_private: dict[str, Any] = field(default_factory=dict)
     agent_meta: dict[str, Any] = field(default_factory=dict)
@@ -66,6 +74,14 @@ class ChatDecision:
         return cls(
             speak=bool(payload.get("speak")),
             text=str(payload.get("text", "") or ""),
+            intent=str(payload.get("intent", "") or ""),
+            target_seat_id=str(payload.get("target_seat_id", "") or ""),
+            topic=str(payload.get("topic", "") or ""),
+            tone=str(payload.get("tone", "") or ""),
+            thread_action=str(payload.get("thread_action", "") or ""),
+            relationship_deltas=[dict(item) for item in list(payload.get("relationship_deltas") or []) if isinstance(item, dict)],
+            action_pressure_hint=str(payload.get("action_pressure_hint", "") or ""),
+            thread_id=str(payload.get("thread_id", "") or ""),
             rationale_private=str(payload.get("rationale_private", "") or ""),
             debug_private=dict(payload.get("debug_private") or {}),
             agent_meta=dict(payload.get("agent_meta") or {}),

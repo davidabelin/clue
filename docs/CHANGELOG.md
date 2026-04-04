@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.6.0 - 2026-04-03
+- Added richer YAML persona-social schema including signature moves, insecurities, relationship posture, taboos, and per-intent chat examples.
+- Added separate deterministic chat profile selection and chat runtime defaults alongside the existing turn-decision model catalog.
+- Reworked idle NPC conversation into a two-stage OpenAI Agents SDK chat pipeline with `ChatIntentOutput` and `ChatUtteranceOutput`.
+- Expanded code-owned social memory with moods, relationship scores, active chat threads, bounded burst chatter, and refresh-driven cooldown handling.
+- Exposed social-summary tools to the SDK so chat and action decisions can use the same seat-safe public context.
+- Extended action-side persona influence without changing rule legality, accusation gating, or Game Master authority.
+- Updated release markers, docs, diagnostics, and tests for `v1.6.0`.
+
 ## v1.5.0 - 2026-03-29
 - Added an explicit repo version marker for the standalone Clue lab.
 - Reworked the LLM seat runtime around the OpenAI Agents SDK while keeping the deterministic Game Master authoritative.

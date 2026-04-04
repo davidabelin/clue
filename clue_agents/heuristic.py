@@ -6,12 +6,27 @@ from collections import defaultdict
 from typing import Any
 
 from clue_agents.base import ChatDecision, SeatAgent, TurnDecision
-from clue_agents.policy import accusation_window, stock_idle_chat, stock_public_comment
+from clue_agents.policy import (
+    accusation_window,
+    current_seat_social_state,
+    current_social_thread,
+    event_actor_seat_id,
+    public_chat_events,
+    stock_idle_chat,
+    stock_public_comment,
+)
+from clue_agents.profile_loader import persona_metric
 from clue_core.board import NODE_TO_ROOM_NAME, ROOM_NAME_TO_NODE, shortest_paths
 
 
 class HeuristicSeatAgent(SeatAgent):
     """Simple rules-first agent that leans on the deduction tool snapshot."""
+
+    @staticmethod
+    def _persona_value(snapshot: dict[str, Any], field_name: str, *, default: int = 3) -> int:
+        """Read one persona slider for the acting seat from the YAML catalog."""
+
+        return persona_metric(str(snapshot["seat"].get("character") or ""), field_name, default=default)
 
     @staticmethod
     def _decision_context(tool_snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -137,6 +152,70 @@ class HeuristicSeatAgent(SeatAgent):
             "ranked_rooms": ranked_rooms[:5],
         }
 
+    def _pick_refute_card(self, snapshot: dict[str, Any], cards: list[str]) -> tuple[str, dict[str, Any]]:
+        """Choose the least revealing legal refute card using public-history hints."""
+
+        if not cards:
+            return "", {"refute_card_mentions": {}}
+        concealment = self._persona_value(snapshot, "concealment_priority", default=3)
+        mention_counts: defaultdict[str, int] = defaultdict(int)
+        for event in snapshot.get("events") or []:
+            payload = dict(event.get("payload") or {})
+            suggestion = dict(payload.get("suggestion") or {})
+            for card_name in suggestion.values():
+                mention_counts[str(card_name)] += 1
+        ranked = sorted(
+            cards,
+            key=lambda card_name: (
+                -(mention_counts.get(str(card_name), 0) * max(concealment, 1)),
+                str(card_name),
+            ),
+        )
+        return str(ranked[0]), {"refute_card_mentions": dict(mention_counts), "refute_choice_ranked": ranked}
+
+    def _pick_suggestion(self, snapshot: dict[str, Any], tool_snapshot: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+        """Choose a suggestion using deduction rank plus social-pressure tie-breaks."""
+
+        ranked = list(tool_snapshot.get("suggestion_ranking") or [])
+        if not ranked:
+            return None, {"suggestion_evaluations": []}
+        focus_seat_id = str(current_seat_social_state(snapshot).get("focus_seat_id") or "")
+        pressure_weight = self._persona_value(snapshot, "opponent_pressure", default=3) / 5.0
+        image_weight = self._persona_value(snapshot, "table_image_management", default=3) / 5.0
+        concealment_weight = self._persona_value(snapshot, "concealment_priority", default=3) / 5.0
+        evaluations = []
+        for choice in ranked[:5]:
+            likely_refuter = str(choice.get("likely_refuter") or "")
+            score = float(choice.get("score") or 0.0)
+            pressure_bonus = 0.0
+            image_bonus = 0.0
+            concealment_penalty = float(choice.get("opponent_leak_penalty") or 0.0) * concealment_weight * 0.18
+            if likely_refuter and likely_refuter != "unanswered":
+                pressure_bonus += 0.08 * pressure_weight
+            if focus_seat_id and likely_refuter == focus_seat_id:
+                pressure_bonus += 0.2 * pressure_weight
+            image_bonus += float(choice.get("unanswered_probability") or 0.0) * 0.12 * image_weight
+            total = score + pressure_bonus + image_bonus - concealment_penalty
+            evaluations.append(
+                dict(choice)
+                | {
+                    "persona_pressure_bonus": round(pressure_bonus, 4),
+                    "persona_image_bonus": round(image_bonus, 4),
+                    "persona_concealment_penalty": round(concealment_penalty, 4),
+                    "persona_total_score": round(total, 4),
+                }
+            )
+        selected = max(
+            evaluations,
+            key=lambda item: (
+                float(item["persona_total_score"]),
+                float(item.get("score") or 0.0),
+                str(item.get("suspect") or ""),
+                str(item.get("weapon") or ""),
+            ),
+        )
+        return selected, {"suggestion_evaluations": evaluations, "focus_seat_id": focus_seat_id}
+
     def decide_turn(self, *, snapshot: dict[str, Any], tool_snapshot: dict[str, Any]) -> TurnDecision:
         """Pick a deterministic fallback action using only legal moves and tool hints."""
 
@@ -152,11 +231,12 @@ class HeuristicSeatAgent(SeatAgent):
         }
         if "show_refute_card" in available:
             cards = legal.get("refute_cards") or []
+            selected_card, refute_debug = self._pick_refute_card(snapshot, [str(card) for card in cards])
             return TurnDecision(
                 action="show_refute_card",
-                card=str(cards[0]),
-                rationale_private="Show the first legal refutation card.",
-                debug_private=debug | {"selected_refute_card": str(cards[0])},
+                card=selected_card,
+                rationale_private="Show the least revealing legal refutation card.",
+                debug_private=debug | {"selected_refute_card": selected_card} | refute_debug,
                 agent_meta=agent_meta,
             )
         if "pass_refute" in available:
@@ -167,20 +247,28 @@ class HeuristicSeatAgent(SeatAgent):
                 agent_meta=agent_meta,
             )
         accusation = dict(tool_snapshot.get("accusation") or {})
+        risk_tolerance = self._persona_value(snapshot, "risk_tolerance", default=3)
+        accusation_patience = self._persona_value(snapshot, "accusation_patience", default=3)
         if "accuse" in available and accusation_gate["ready"]:
-            guess = dict(accusation.get("accusation") or {})
-            return TurnDecision(
-                action="accuse",
-                **guess,
-                text=stock_public_comment(snapshot, {"action": "accuse", **guess}),
-                rationale_private="Top case-file hypothesis cleared the accusation threshold.",
-                debug_private=debug | {"chosen_accusation": guess},
-                agent_meta=agent_meta,
-            )
+            if "suggest" in available and not accusation_gate["lock_case"] and (accusation_patience >= 4 or risk_tolerance <= 2):
+                debug["persona_accusation_hold"] = {
+                    "risk_tolerance": risk_tolerance,
+                    "accusation_patience": accusation_patience,
+                    "reason": "held accusation for one more information-seeking action",
+                }
+            else:
+                guess = dict(accusation.get("accusation") or {})
+                return TurnDecision(
+                    action="accuse",
+                    **guess,
+                    text=stock_public_comment(snapshot, {"action": "accuse", **guess}),
+                    rationale_private="Top case-file hypothesis cleared the accusation threshold.",
+                    debug_private=debug | {"chosen_accusation": guess},
+                    agent_meta=agent_meta,
+                )
         if "suggest" in available:
-            ranked = list(tool_snapshot.get("suggestion_ranking") or [])
-            if ranked:
-                choice = ranked[0]
+            choice, suggestion_debug = self._pick_suggestion(snapshot, tool_snapshot)
+            if choice:
                 return TurnDecision(
                     action="suggest",
                     suspect=str(choice["suspect"]),
@@ -195,7 +283,12 @@ class HeuristicSeatAgent(SeatAgent):
                         },
                     ),
                     rationale_private=str(choice.get("why") or "Top ranked suggestion."),
-                    debug_private=debug | {"selected_suggestion": choice, "top_ranked_suggestions": ranked[:3]},
+                    debug_private=debug
+                    | {
+                        "selected_suggestion": choice,
+                        "top_ranked_suggestions": list(tool_snapshot.get("suggestion_ranking") or [])[:3],
+                    }
+                    | suggestion_debug,
                     agent_meta=agent_meta,
                 )
         if "move" in available:
@@ -222,10 +315,46 @@ class HeuristicSeatAgent(SeatAgent):
         """Compose one short deterministic public chat line from visible table context."""
 
         text = stock_idle_chat(snapshot)
+        seat_social = current_seat_social_state(snapshot)
+        thread = current_social_thread(snapshot)
+        latest_chat = public_chat_events(snapshot)
+        latest_actor = event_actor_seat_id(latest_chat[-1]) if latest_chat else ""
+        intent = {
+            "dispute": "reconcile" if str(thread.get("status") or "") == "cooling" else "challenge",
+            "alliance": "ally",
+            "flirtation": "tease",
+            "meta": "meta_observe",
+            "banter": "tease",
+        }.get(str(thread.get("kind") or ""), "deflect" if latest_chat else "meta_observe")
+        target_seat_id = str(seat_social.get("focus_seat_id") or latest_actor or "")
+        tone = {
+            "challenge": "cutting",
+            "ally": "warm",
+            "reconcile": "measured",
+            "tease": "wry",
+            "deflect": "guarded",
+            "meta_observe": "dry",
+        }.get(intent, "dry")
+        relationship_deltas = []
+        if target_seat_id and target_seat_id != str(snapshot["seat"].get("seat_id") or ""):
+            if intent == "challenge":
+                relationship_deltas.append({"seat_id": target_seat_id, "friction_delta": 1})
+            elif intent == "ally":
+                relationship_deltas.append({"seat_id": target_seat_id, "affinity_delta": 1, "trust_delta": 1})
+            elif intent == "reconcile":
+                relationship_deltas.append({"seat_id": target_seat_id, "trust_delta": 1, "friction_delta": -1})
         return ChatDecision(
             speak=bool(text),
             text=text,
+            intent=intent,
+            target_seat_id=target_seat_id,
+            topic=str(thread.get("topic") or ""),
+            tone=tone,
+            thread_action=("continue" if thread else ("open" if target_seat_id else "observe")),
+            relationship_deltas=relationship_deltas,
+            action_pressure_hint=("keep pressure on " + target_seat_id) if target_seat_id and intent == "challenge" else "",
+            thread_id=str(thread.get("thread_id") or ""),
             rationale_private="Responded with a deterministic in-character table-talk line.",
-            debug_private={"mode": "heuristic_idle_chat"},
+            debug_private={"mode": "heuristic_idle_chat", "thread": dict(thread), "seat_social": dict(seat_social)},
             agent_meta={"policy": "heuristic", "fallback_used": False, "persona": str(snapshot["seat"].get("character") or "")},
         )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from clue_agents.profile_loader import build_persona_guidance, build_social_guidance
+from clue_agents.profile_loader import build_persona_guidance, build_social_guidance, persona_chat_examples
 from clue_core.board import BOARD_NODES, NODE_TO_ROOM_NAME
 
 
@@ -221,20 +221,22 @@ def stock_public_comment(snapshot: dict[str, Any], decision: dict[str, Any]) -> 
         room_name = str(snapshot.get("legal_actions", {}).get("current_room") or decision.get("room") or "this room")
         suspect = str(decision.get("suspect") or "someone")
         weapon = str(decision.get("weapon") or "something sharp")
-        return _choose_template(persona["suggest"], turn_index).format(
+        line = _choose_template(persona["suggest"], turn_index).format(
             suspect=suspect,
             weapon=weapon,
             room=room_name,
         )
+        return _with_social_action_lead(snapshot, line)
     if action == "accuse":
         suspect = str(decision.get("suspect") or "someone")
         weapon = str(decision.get("weapon") or "something")
         room_name = str(decision.get("room") or "somewhere")
-        return _choose_template(persona["accuse"], turn_index).format(
+        line = _choose_template(persona["accuse"], turn_index).format(
             suspect=suspect,
             weapon=weapon,
             room=room_name,
         )
+        return _with_social_action_lead(snapshot, line)
     if action == "move" and _is_secret_passage_move(snapshot, decision):
         target_node = str(decision.get("target_node") or "")
         target_label = str(BOARD_NODES.get(target_node, {}).get("label") or NODE_TO_ROOM_NAME.get(target_node) or "the next room")
@@ -280,6 +282,9 @@ def stock_idle_chat(snapshot: dict[str, Any]) -> str:
 
     seat = dict(snapshot.get("seat") or {})
     character = str(seat.get("character") or "")
+    examples = persona_chat_examples(character)
+    seat_social = current_seat_social_state(snapshot)
+    active_thread = current_social_thread(snapshot)
     persona = IDLE_CHAT_LINES.get(character)
     if not persona:
         return ""
@@ -296,13 +301,45 @@ def stock_idle_chat(snapshot: dict[str, Any]) -> str:
     latest_narrative = narratives[-1] if narratives else {}
     speaker_name = _seat_display_name(snapshot, event_actor_seat_id(latest_chat)) or "someone"
     actor_name = _seat_display_name(snapshot, event_actor_seat_id(latest_narrative)) or "someone"
+    target_name = _seat_display_name(snapshot, str(seat_social.get("focus_seat_id") or "")) or speaker_name
+
+    if active_thread:
+        intent_name = {
+            "dispute": "reconcile" if str(active_thread.get("status") or "") == "cooling" else "challenge",
+            "alliance": "ally",
+            "flirtation": "tease",
+            "meta": "meta_observe",
+            "banter": "tease",
+        }.get(str(active_thread.get("kind") or ""), "meta_observe")
+        line = _persona_chat_example_line(
+            examples,
+            intent_name,
+            speaker=speaker_name,
+            actor=actor_name,
+            target=target_name,
+            topic=str(active_thread.get("topic") or ""),
+        )
+        if line:
+            return line
 
     if latest_chat and _event_mentions_current_seat(latest_chat, snapshot):
+        line = _persona_chat_example_line(examples, "deflect", speaker=speaker_name, actor=actor_name, target=target_name, topic="")
+        if line:
+            return line
         return _choose_template(persona["reply"], turn_index).format(speaker=speaker_name)
     if str(latest_event.get("event_type") or "") == "chat_posted" and speaker_name != (seat.get("display_name") or ""):
+        line = _persona_chat_example_line(examples, "tease", speaker=speaker_name, actor=actor_name, target=target_name, topic="")
+        if line:
+            return line
         return _choose_template(persona["chat"], turn_index).format(speaker=speaker_name)
     if latest_narrative:
+        line = _persona_chat_example_line(examples, "meta_observe", speaker=speaker_name, actor=actor_name, target=target_name, topic="")
+        if line:
+            return line
         return _choose_template(persona["narrative"], turn_index).format(actor=actor_name)
+    line = _persona_chat_example_line(examples, "meta_observe", speaker=speaker_name, actor=actor_name, target=target_name, topic="")
+    if line:
+        return line
     return _choose_template(persona["generic"], turn_index)
 
 
@@ -377,6 +414,57 @@ def _seat_display_name(snapshot: dict[str, Any], seat_id: str) -> str:
         if str(seat.get("seat_id") or "") == seat_id:
             return str(seat.get("display_name") or "")
     return ""
+
+
+def current_seat_social_state(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Return the current seat's filtered social-memory state."""
+
+    return dict((snapshot.get("social") or {}).get("seat_state") or {})
+
+
+def current_social_thread(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Return the hottest active thread currently involving the seat."""
+
+    return dict((snapshot.get("social") or {}).get("hottest_thread") or {})
+
+
+def _with_social_action_lead(snapshot: dict[str, Any], line: str) -> str:
+    """Prefix action comments with a small thread-aware cue when useful."""
+
+    if not line:
+        return line
+    thread = current_social_thread(snapshot)
+    kind = str(thread.get("kind") or "")
+    if kind == "dispute":
+        return f"Since we're being blunt, {line[0].lower() + line[1:]}" if len(line) > 1 else line
+    if kind == "alliance":
+        return f"For once, let's be practical. {line}"
+    if kind == "meta":
+        return f"Setting the chatter aside, {line[0].lower() + line[1:]}" if len(line) > 1 else line
+    return line
+
+
+def _persona_chat_example_line(
+    examples: dict[str, list[str]],
+    intent_name: str,
+    *,
+    speaker: str,
+    actor: str,
+    target: str,
+    topic: str,
+) -> str:
+    """Render the first matching YAML chat example with safe placeholder formatting."""
+
+    choices = list(examples.get(intent_name) or [])
+    if not choices:
+        return ""
+    template = str(choices[0]).strip()
+    if not template:
+        return ""
+    try:
+        return template.format(speaker=speaker, actor=actor, target=target, topic=topic)
+    except Exception:
+        return template
 
 
 def _is_secret_passage_move(snapshot: dict[str, Any], decision: dict[str, Any]) -> bool:
