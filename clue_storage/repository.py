@@ -1,4 +1,9 @@
-"""Repository layer for Clue game state, seats, tokens, and event history."""
+"""Repository layer for Clue game state, seats, tokens, and event history.
+
+The repository keeps SQL concerns thin and boring on purpose. Gameplay semantics
+live in Python state objects; this layer is responsible for durable storage,
+token lookup, and event ordering across SQLite and PostgreSQL targets.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +33,13 @@ def _to_sqlite_url(path_value: str) -> str:
 
 
 class ClueRepository:
-    """Persistence facade for standalone and AIX-mounted Clue gameplay."""
+    """Persistence facade for standalone and AIX-mounted Clue gameplay.
+
+    The repository persists opaque JSON payloads for config, setup, state, and
+    notebooks rather than trying to model the full rules system relationally.
+    That keeps the domain logic centralized in the code paths that already own
+    privacy, legality, and event semantics.
+    """
 
     def __init__(self, db_target: str) -> None:
         """Initialize the SQLAlchemy engine for SQLite or PostgreSQL storage."""
@@ -59,7 +70,11 @@ class ClueRepository:
                 conn.execute(text(statement))
 
     def init_schema(self) -> None:
-        """Create the required tables and indexes for the active SQL dialect."""
+        """Create the required tables and indexes for the active SQL dialect.
+
+        Schema creation is idempotent so local development, tests, and deployed
+        startup can all call it safely without a separate migration step.
+        """
 
         sqlite_schema = """
             PRAGMA foreign_keys = ON;
@@ -203,7 +218,11 @@ class ClueRepository:
         seat_tokens: list[dict[str, str]],
         events: list[dict[str, Any]],
     ) -> None:
-        """Persist one freshly created game plus seats, tokens, and opening events."""
+        """Persist one freshly created game plus seats, tokens, and opening events.
+
+        The initial write is transactional so game state, seat rows, invite
+        tokens, and opening events either appear together or not at all.
+        """
 
         created_at = utcnow_iso()
         with self._lock, self.engine.begin() as conn:
@@ -340,7 +359,12 @@ class ClueRepository:
         return dict(row["state"])
 
     def save_state_and_events(self, game_id: str, *, state: dict[str, Any], events: list[dict[str, Any]]) -> None:
-        """Persist one post-action state snapshot and its newly emitted events."""
+        """Persist one post-action state snapshot and its newly emitted events.
+
+        Callers are expected to hand in a state snapshot that already reflects
+        the applied action. Event ordering is preserved by appending against the
+        same transaction that updates the game row.
+        """
 
         updated_at = utcnow_iso()
         with self._lock, self.engine.begin() as conn:
@@ -446,7 +470,11 @@ class ClueRepository:
             )
 
     def visible_events(self, game_id: str, *, seat_id: str, since_event_index: int = 0) -> list[dict[str, Any]]:
-        """Return public plus seat-private events visible to one seat after a cursor."""
+        """Return public plus seat-private events visible to one seat after a cursor.
+
+        Visibility is enforced in SQL so callers can build browser and agent
+        snapshots from the same filtered event stream.
+        """
 
         with self.engine.begin() as conn:
             rows = conn.execute(

@@ -1,4 +1,10 @@
-"""Standalone Clue runtime service: create games, resolve tokens, and auto-run seats."""
+"""Standalone Clue runtime service: create games, resolve tokens, and auto-run seats.
+
+This module is the orchestration layer above the pure rules engine. It is where
+storage, filtered snapshots, deduction summaries, telemetry, social memory, and
+seat-agent execution are stitched together. Future changes that touch privacy,
+fallback behavior, or request-to-action flow almost always pass through here.
+"""
 
 from __future__ import annotations
 
@@ -44,7 +50,14 @@ def _timestamp_slug() -> str:
 
 
 class GameService:
-    """High-level gameplay service that bridges web requests, storage, and agents."""
+    """High-level gameplay service that bridges web requests, storage, and agents.
+
+    ``GameService`` deliberately owns everything around the rules engine rather
+    than inside it: seat-token validation, persistence, analysis metrics,
+    social-memory normalization, tool-snapshot generation, and autonomous-seat
+    loops. ``GameMaster`` stays small and deterministic; this service handles
+    the operational concerns needed by the Flask app.
+    """
 
     def __init__(self, repository: ClueRepository, *, secret_key: str) -> None:
         """Store repository access and build the seat-token serializer."""
@@ -76,7 +89,11 @@ class GameService:
         return "local"
 
     def _build_analysis_defaults(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Create the persisted analysis block used for traces, evals, and diagnostics."""
+        """Create the persisted analysis block used for traces, evals, and diagnostics.
+
+        This block is part of persisted game state so browser diagnostics, tests,
+        and later replay/eval work all read the same source of truth.
+        """
 
         seat_mix: dict[str, int] = {}
         for seat in state["seats"].values():
@@ -145,7 +162,12 @@ class GameService:
         }
 
     def _ensure_social(self, state: dict[str, Any]) -> dict[str, Any]:
-        """Backfill the canonical social-memory state onto one persisted game snapshot."""
+        """Backfill the canonical social-memory state onto one persisted game snapshot.
+
+        Social state is normalized here rather than trusted as-is from storage so
+        older games, partial payloads, or future schema drifts do not crash the
+        runtime or silently widen the allowed numeric/state ranges.
+        """
 
         defaults = self._build_social_defaults(state)
         social = dict(state.get("social") or {})
@@ -373,7 +395,13 @@ class GameService:
         analysis["game_metrics"] = aggregates
 
     def create_game(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Create one new game, persist it, and immediately run any autonomous seats."""
+        """Create one new game, persist it, and immediately run any autonomous seats.
+
+        Game creation is also where legacy seat kinds are normalized, YAML model
+        profiles are assigned, telemetry context is seeded, and invite tokens are
+        minted. The returned payload is intentionally minimal: game id, title,
+        and per-seat invitation links.
+        """
 
         title = str(payload.get("title", "")).strip() or "Clue Table"
         requested_seats = list(payload.get("seats") or [])
@@ -466,7 +494,12 @@ class GameService:
         return seat
 
     def snapshot_for_token(self, token: str, *, since_event_index: int = 0) -> dict[str, Any]:
-        """Return the public/private snapshot visible to one seat token."""
+        """Return the public/private snapshot visible to one seat token.
+
+        Snapshot reads may also advance idle social chatter, but they do so only
+        when no autonomous gameplay action is pending. This keeps passive browser
+        refreshes from racing ahead of queued turns.
+        """
 
         seat = self.resolve_token(token)
         self.maybe_run_idle_chat(seat["game_id"])
@@ -482,7 +515,12 @@ class GameService:
         )
 
     def submit_action(self, token: str, action: dict[str, Any]) -> dict[str, Any]:
-        """Apply one human-seat action, then continue any autonomous follow-up turns."""
+        """Apply one human-seat action, then continue any autonomous follow-up turns.
+
+        This is the main human-seat write path. It records rejected actions in
+        persisted metrics, saves newly emitted events, then runs the autonomous
+        loop until a human seat must respond again.
+        """
 
         seat = self.resolve_token(token)
         state = self._repository.get_state(seat["game_id"])
@@ -910,7 +948,14 @@ class GameService:
         return social
 
     def maybe_run_idle_chat(self, game_id: str) -> None:
-        """Run at most one non-human idle-chat reply for new player-facing public activity."""
+        """Run at most one non-human idle-chat reply for new player-facing public activity.
+
+        Idle chat is intentionally conservative: it never runs while an
+        autonomous gameplay action is pending, it advances only on new
+        player-facing public events, and it emits at most one new NPC line per
+        sweep. The social-memory layer uses this method to keep table chatter
+        lively without turning polling into an uncontrolled conversation loop.
+        """
 
         state = self._repository.get_state(game_id)
         self._ensure_analysis(state)
@@ -1056,7 +1101,14 @@ class GameService:
             self._repository.save_state_and_events(game_id, state=state, events=events)
 
     def maybe_run_agents(self, game_id: str, *, max_cycles: int = 32) -> None:
-        """Advance queued heuristic/LLM turns until a human seat must respond."""
+        """Advance queued heuristic/LLM turns until a human seat must respond.
+
+        Each cycle rebuilds the latest seat-private snapshot, refreshes the
+        deduction helper payload, asks the selected seat agent for one decision,
+        and then pushes that decision back through ``GameMaster``. The loop stops
+        as soon as the game completes, a human response is required, or the
+        cycle cap is reached.
+        """
 
         cycles = 0
         while cycles < max_cycles:
@@ -1273,7 +1325,11 @@ class GameService:
         return value / float(2**64)
 
     def _tool_snapshot_for(self, state: dict[str, Any], seat_id: str, visible_events: list[dict[str, Any]]):
-        """Build the deduction helper payload for one autonomous seat decision."""
+        """Build the deduction helper payload for one autonomous seat decision.
+
+        The returned snapshot is shared between heuristic and LLM seats so both
+        policy paths reason over the same seat-local belief state.
+        """
 
         hand_counts = {other_id: int(seat["hand_count"]) for other_id, seat in state["seats"].items()}
         room_name = None
@@ -1292,7 +1348,12 @@ class GameService:
         )
 
     def _build_internal_snapshot(self, game_id: str, seat_id: str) -> dict[str, Any]:
-        """Build the full seat-private snapshot used internally by autonomous seats."""
+        """Build the full seat-private snapshot used internally by autonomous seats.
+
+        This reuses the same filtered snapshot builder used by the browser so the
+        model-facing path cannot accidentally see data that the server-side
+        privacy boundary would otherwise hide.
+        """
 
         state = self._repository.get_state(game_id)
         seat_row = next(item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id)

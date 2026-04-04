@@ -1,47 +1,71 @@
 # clue
 
-Standalone Clue lab for AIX, currently labeled **v1.6.0**.
+Standalone Clue lab for AIX, currently labeled **v1.6.1**.
 
-## Summary
-- Deterministic, event-sourced classic Clue rules engine
-- Seat-token multiplayer web UI with polling-based synchronization
-- Human, heuristic, and OpenAI-backed autonomous seats under one rules authority
-- Flask app that runs standalone and also mounts under AIX at `/clue`
-- Local-first OpenAI integration: the model path is tool-augmented and stateful, but the rules engine, private seat data, notebooks, diagnostics, session memory, and social-memory graph remain code-owned by Clue
+## What This Repo Is
+- Classic Clue rules implemented as a deterministic, event-sourced Python engine.
+- A standalone Flask web app that also mounts cleanly under AIX at `/clue`.
+- Mixed human and autonomous seats under one code-owned Game Master.
+- Local-first OpenAI integration: the model can inspect filtered, read-only seat context, but it never mutates gameplay state directly.
 
-## v1.6.0 Architecture
-
-### Core invariant
-The **Game Master** remains authoritative. No model, prompt, tool, or session store is allowed to mutate gameplay state directly. Autonomous seats can only return a normalized `TurnDecision`, which is then validated and applied by the deterministic rules engine.
-
-### Autonomous seat stack
-- `heuristic` seats remain the baseline nonhuman policy and the universal fallback
-- `llm` seats now run through the **OpenAI Agents SDK**
-- LLM seats use **read-only function tools** to inspect the legal envelope, belief summary, ranked suggestions, accusation recommendation, notebook excerpt, and selected move/refute details
-- Chat runs through a **two-stage intent-plus-utterance pipeline** using the same encrypted `game_id:seat_id:chat` session namespace
-- Separate YAML-selected **turn profiles** and **chat profiles** let one seat reason conservatively while still sounding socially vivid
-- Code-owned **social memory** tracks mood, relationship posture, active side threads, cooldowns, and bounded burst chatter
-- LLM outputs are validated by **output guardrails** before any decision reaches the rules engine
-- Tool argument scope is constrained by **tool guardrails**
-- Seat-private short-term memory uses an **EncryptedSession** over a local SQLAlchemy-backed SQLite store
-
-### Privacy posture
-- Private seat state is filtered server-side before it reaches the browser
-- Private notebooks remain seat-local
-- Local encrypted session memory is keyed by `game_id:seat_id`
-- OpenAI-hosted stored responses and hosted sessions are **not** the default production path
-- SDK tracing is configurable, but sensitive trace data is **off by default**
+## Core Invariants
+- `clue_core` remains authoritative for legality, turn order, refutation flow, accusations, and win/loss state.
+- Autonomous seats may only return a normalized `TurnDecision` or `ChatDecision`.
+- Seat-private information is filtered server-side before it reaches the browser.
+- Public chat is sanitized and guardrailed before LLM-authored text is accepted.
+- Local encrypted session memory is seat-scoped and separate from the persisted game-state database.
 
 ## Repo Layout
-- `clue_core/`: deterministic rules engine, board, setup, events, filtering, version marker
-- `clue_agents/`: heuristic and Agents-SDK seat runtimes, safety helpers, secret resolution, ML runtime config
-- `clue_storage/`: SQLAlchemy persistence facade for games, seats, tokens, notebooks, and events
-- `clue_web/`: Flask app factory, runtime service, routes, templates, static assets
-- `tests/`: engine, app, heuristic, deduction, and LLM-seat coverage
-- `docs/`: design notes, roadmap material, maintainer-facing ML/runtime documentation
-- `data/`: local SQLite databases and the local encrypted agent-session store
+- `clue_core/`: board model, constants, setup, events, deterministic rules engine, deduction-facing types, release metadata
+- `clue_agents/`: seat interfaces, heuristic policy, Agents SDK integration, prompt/policy helpers, YAML profile loading, runtime config, safety helpers, secret resolution
+- `clue_storage/`: SQLAlchemy-backed persistence for games, seats, notebooks, tokens, and event history
+- `clue_web/`: Flask app factory, runtime service, routes, templates, and browser assets
+- `tests/`: unit and integration-style coverage for engine, profiles, runtime config, app/API flow, heuristic play, and LLM wrappers
+- `docs/`: maintainer documentation, architecture notes, backlog, and release history
+- `data/`: local SQLite files for gameplay state and encrypted seat-agent sessions
 
-## Key Environment Variables
+## Runtime Shape
+
+### 1. Game creation
+- `clue_web.runtime.GameService.create_game()` validates seat payloads, normalizes legacy seat kinds, applies YAML-selected LLM profiles where needed, builds hidden setup, persists initial state, and may immediately run autonomous opening turns.
+
+### 2. Web request surface
+- `/` renders the create-game page.
+- `/join/<token>` marks a seat invite as used and redirects to `/game`.
+- `/game?token=...` renders the seat-specific shell; `clue.js` hydrates state from JSON.
+- `/api/v1/games/current` returns the filtered snapshot for the current signed seat token.
+- `/api/v1/games/current/actions` applies one action through the Game Master, persists state and events, and runs any follow-up autonomous turns.
+- `/api/v1/games/current/notebook` updates one seat-private notebook.
+
+### 3. Rules authority
+- `clue_core.engine.GameMaster` validates every action and emits public or seat-private events.
+- `clue_core.engine.build_filtered_snapshot()` is the privacy boundary for browser and agent-visible state.
+
+### 4. Autonomous seats
+- `clue_agents.runtime.AgentRuntime` instantiates heuristic or LLM-backed seats behind one shared interface.
+- `clue_core.deduction.build_tool_snapshot()` prepares the seat-local deduction summary used by both heuristic and LLM policies.
+- `clue_agents.llm.LLMSeatAgent` uses the OpenAI Agents SDK with read-only tools, output guardrails, and deterministic fallback to the heuristic policy.
+- Idle chat uses a separate chat profile path and a two-stage intent-plus-utterance run.
+
+## Environment Contract
+
+### App and storage
+- `CLUE_SECRET_KEY`
+  Flask secret key and fallback session-encryption seed for local development.
+- `CLUE_DATABASE_URL`
+  Preferred SQLAlchemy database URL for game state.
+- `CLUE_DATABASE_URL_SECRET`
+  Secret Manager indirection for `CLUE_DATABASE_URL`.
+- `CLUE_DB_PATH`
+  Local SQLite fallback when `CLUE_DATABASE_URL` is unset.
+- `APP_BASE_PATH`
+  Mount prefix such as `/clue` when running behind AIX dispatch.
+- `AIX_HUB_URL`
+  Base URL used to build shared AIX chrome links.
+- `CLUE_INTERNAL_WORKER_TOKEN`
+  Optional shared token for the internal run-agents endpoint.
+
+### LLM runtime
 - `CLUE_LLM_MODEL`
   Default: `gpt-5.4-mini-2026-03-17`
 - `CLUE_LLM_REASONING_EFFORT`
@@ -59,9 +83,9 @@ The **Game Master** remains authoritative. No model, prompt, tool, or session st
 - `CLUE_AGENT_SESSION_TTL_SECONDS`
   Default: `900`
 - `CLUE_AGENT_SESSION_DB_PATH`
-  Default: `data/clue_agent_sessions.db`
+  Default: `data/clue_agent_sessions.db` locally, `/tmp/clue_agent_sessions.db` in `app.aix.yaml`
 - `CLUE_AGENT_SESSION_ENCRYPTION_KEY`
-  Default: falls back to `CLUE_SECRET_KEY`
+  Falls back to `CLUE_SECRET_KEY`, then a dev default
 - `CLUE_AGENT_EVAL_EXPORT_ENABLED`
   Default: `0`
 - `OPENAI_API_KEY`
@@ -69,20 +93,33 @@ The **Game Master** remains authoritative. No model, prompt, tool, or session st
 - `OPENAI_API_KEY_SECRET_VERSION`
   Secret Manager indirection for deployment
 
+Model-profile and chat-profile YAML defaults live in:
+- [`clue_agents/profiles/models.yaml`](./clue_agents/profiles/models.yaml)
+- [`clue_agents/profiles/personas.yaml`](./clue_agents/profiles/personas.yaml)
+
 ## Local Run
 ```powershell
 pip install -r requirements.txt
 python run.py
 ```
 
-Then open `http://127.0.0.1:5002/`.
+Open `http://127.0.0.1:5002/`.
 
 ## Tests
 ```powershell
 pytest -q
 ```
 
-## Maintainer Notes
-- Start with [`docs/ClueMLRuntime.md`](./docs/ClueMLRuntime.md) for the v1.6.0 OpenAI runtime design.
-- Historical design and roadmap material remains in `docs/ClueDeepDive.md`, `docs/CLUE_PLAN_alpha.md`, and `docs/clue_to_do.md`.
-- The standalone `clue` repo currently contains **no `.bat` files**. Batch helper documentation therefore remains N/A here unless such scripts are added later.
+## Deployment Notes
+- `app.aix.yaml` runs the app behind Gunicorn on App Engine.
+- Game state can live in SQLite or PostgreSQL/Cloud SQL through `CLUE_DATABASE_URL`.
+- The deployed config expects Secret Manager-backed `clue-database-url` and `openai-api-key`.
+- `APP_BASE_PATH=/clue` plus `PathPrefixMiddleware` keeps standalone routes mount-safe under AIX.
+
+## Documentation Map
+- Start with [`docs/README.md`](./docs/README.md) for the maintainer doc index.
+- Use [`docs/ClueMLRuntime.md`](./docs/ClueMLRuntime.md) for OpenAI runtime, guardrail, and session behavior.
+- Use [`docs/ClueDeepDive.md`](./docs/ClueDeepDive.md) for the end-to-end architecture walkthrough.
+- Use [`docs/CLUE_PLAN_alpha.md`](./docs/CLUE_PLAN_alpha.md) for the implementation-history and architecture-decision record.
+- Use [`docs/clue_to_do.md`](./docs/clue_to_do.md) for the current post-`v1.6.1` backlog.
+- Use [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) for release history.

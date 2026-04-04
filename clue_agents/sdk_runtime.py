@@ -138,7 +138,9 @@ class SeatAgentContext:
 
     This object is the private source of truth for tool data. It allows tools and
     guardrails to inspect seat-local state without expanding the model-visible
-    prompt with unnecessary hidden details.
+    prompt with unnecessary hidden details. The same object also captures trace
+    ids, session ids, and tool-access logs so the runtime can surface useful
+    diagnostics without giving the model direct write access to them.
     """
 
     runtime_config: LLMRuntimeConfig
@@ -259,7 +261,11 @@ def build_seat_context(
     mode: str = "turn",
     chat_plan: dict[str, Any] | None = None,
 ) -> SeatAgentContext:
-    """Build the private context object for one seat-agent run."""
+    """Build the private context object for one seat-agent run.
+
+    Context construction is the join point between the filtered snapshot, the
+    deduction summary, accusation pacing, and the mode-specific session id.
+    """
 
     seat = dict(snapshot.get("seat") or {})
     game_id = str(snapshot.get("game_id") or "test_game")
@@ -640,7 +646,13 @@ if AGENTS_SDK_AVAILABLE:
 
 
 def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agent[SeatAgentContext]:
-    """Construct the Clue seat agent definition for one turn or chat run."""
+    """Construct the Clue seat agent definition for one turn or chat run.
+
+    The returned agent surface stays deliberately narrow: typed output,
+    read-only tools, and output guardrails only. Any new tool or prompt path
+    added here should be evaluated against the privacy and legality boundaries
+    described in the maintainer docs.
+    """
 
     if not AGENTS_SDK_AVAILABLE:
         raise RuntimeError("OpenAI Agents SDK is not available in this environment.")
@@ -807,7 +819,11 @@ def _history_block(events: list[dict[str, Any]], *, empty: str) -> str:
 
 
 def build_run_config(context: SeatAgentContext, api_key: str) -> RunConfig:
-    """Build the run configuration for one local-first Clue seat-agent turn."""
+    """Build the run configuration for one local-first Clue seat-agent turn.
+
+    Trace metadata is intentionally compact and release-aware so cross-run
+    debugging stays useful without turning tracing into a second data store.
+    """
 
     if not AGENTS_SDK_AVAILABLE:
         raise RuntimeError("OpenAI Agents SDK is not available in this environment.")
@@ -836,7 +852,11 @@ def build_session(context: SeatAgentContext):
 
 
 def build_session_for_id(session_id: str, *, runtime_config: LLMRuntimeConfig):
-    """Build one encrypted session wrapper for a known session id."""
+    """Build one encrypted session wrapper for a known session id.
+
+    Session construction is centralized here so turn and chat paths always use
+    the same TTL, encryption, and local database rules.
+    """
 
     if not AGENTS_SDK_AVAILABLE:
         raise RuntimeError("OpenAI Agents SDK is not available in this environment.")
@@ -854,7 +874,12 @@ def build_session_for_id(session_id: str, *, runtime_config: LLMRuntimeConfig):
 
 
 def build_artifacts(result: Any, context: SeatAgentContext) -> SeatRunArtifacts:
-    """Convert the raw SDK run result into Clue-facing diagnostics metadata."""
+    """Convert the raw SDK run result into Clue-facing diagnostics metadata.
+
+    The artifacts payload intentionally mirrors what browser diagnostics and
+    tests care about most: trace ids, session ids, tool calls, and guardrail
+    outcomes.
+    """
 
     output_guardrails: list[dict[str, Any]] = []
     for item in list(getattr(result, "output_guardrail_results", []) or []):

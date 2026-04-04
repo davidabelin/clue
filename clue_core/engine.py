@@ -1,4 +1,10 @@
-"""Deterministic Clue rules engine and seat snapshot builder."""
+"""Deterministic Clue rules engine and seat snapshot builder.
+
+The rules engine owns gameplay legality and nothing else. It does not know about
+Flask requests, storage, prompts, sessions, or browser concerns. That separation
+is deliberate: if a change affects actual turn outcomes, it should be visible
+and testable here first.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +29,13 @@ Action = dict[str, Any]
 
 
 class GameMaster:
-    """Apply validated actions to one Clue game state."""
+    """Apply validated actions to one Clue game state.
+
+    ``GameMaster`` works against an in-memory mutable copy of persisted state and
+    emits event rows describing what happened. Callers are responsible for
+    persistence and any higher-level orchestration, but this class remains the
+    sole authority on what is legal within classic Clue flow.
+    """
 
     def __init__(self, state: dict[str, Any], rng: random.Random | None = None) -> None:
         """Copy one persisted state snapshot into a mutable rules-engine instance."""
@@ -71,7 +83,11 @@ class GameMaster:
         return blocked
 
     def legal_actions(self, seat_id: str) -> dict[str, Any]:
-        """Compute the current legal-action envelope for one seat-local snapshot."""
+        """Compute the current legal-action envelope for one seat-local snapshot.
+
+        This envelope is the shared contract used by the browser, heuristic
+        seats, and LLM guardrails. If it changes, review all three callers.
+        """
 
         if self.state["status"] != "active":
             return {"available": []}
@@ -142,7 +158,12 @@ class GameMaster:
         }
 
     def apply_action(self, seat_id: str, action: Action) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """Validate and apply one seat action, returning the next state and emitted events."""
+        """Validate and apply one seat action, returning the next state and emitted events.
+
+        Every non-chat action eventually funnels through this dispatcher. It
+        enforces turn ownership before delegating to the more specific phase
+        handlers below.
+        """
 
         kind = str(action.get("action", "")).strip().lower()
         if not kind:
@@ -488,7 +509,12 @@ def build_filtered_snapshot(
     visible_events: list[dict[str, Any]],
     notebook: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Project the full game state into the public/private view for one seat."""
+    """Project the full game state into the public/private view for one seat.
+
+    This is the privacy boundary shared by browser and autonomous-seat paths.
+    Anything added here is potentially visible outside the raw persisted state,
+    so public versus seat-private routing should stay explicit and easy to audit.
+    """
 
     game = GameMaster(state)
     hidden = state["hidden"]

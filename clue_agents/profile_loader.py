@@ -28,7 +28,12 @@ MODELS_PATH = PROFILE_DIR / "models.yaml"
 
 @dataclass(slots=True)
 class ModelProfileSelection:
-    """One selected LLM runtime profile for a seat."""
+    """One selected LLM runtime profile for a seat.
+
+    The selection keeps both the profile id and the resolved payload so callers
+    can surface stable diagnostics while still applying the concrete runtime
+    values chosen from ``models.yaml``.
+    """
 
     profile_id: str
     profile: dict[str, Any]
@@ -65,7 +70,11 @@ def _safe_yaml_map(path: Path) -> dict[str, Any]:
 
 @lru_cache(maxsize=1)
 def load_persona_catalog() -> dict[str, Any]:
-    """Load the persona catalog from disk once per process."""
+    """Load the persona catalog from disk once per process.
+
+    Persona loading stays cached because profile selection and prompt assembly
+    can happen repeatedly during one request cycle or test run.
+    """
 
     return _safe_yaml_map(PERSONAS_PATH)
 

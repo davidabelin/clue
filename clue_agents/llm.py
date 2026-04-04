@@ -46,7 +46,11 @@ def _runtime_config_with_profile(
     profile: dict[str, Any],
     model_override: str = "",
 ) -> LLMRuntimeConfig:
-    """Apply one selected model-profile block to the normalized runtime config."""
+    """Apply one selected model-profile block to the normalized runtime config.
+
+    This is the final merge step between env-level defaults, YAML runtime
+    defaults, and explicit per-seat model overrides.
+    """
 
     if not profile:
         return base_config.with_model_override(model_override)
@@ -92,6 +96,10 @@ class LLMSeatAgent(SeatAgent):
     - output guardrails validate legality and leakage risk
     - the heuristic agent remains the fallback for any missing dependency,
       missing API key, guardrail block, timeout, or model failure
+
+    This class is where runtime config, profile selection, local session ids,
+    and normalized SDK output are converted into the seat-agent contract used by
+    the rest of the repo.
     """
 
     def __init__(
@@ -186,7 +194,11 @@ class LLMSeatAgent(SeatAgent):
         extra_debug: dict[str, Any] | None = None,
         extra_meta: dict[str, Any] | None = None,
     ) -> TurnDecision:
-        """Attach LLM-runtime diagnostics to the heuristic fallback decision."""
+        """Attach LLM-runtime diagnostics to the heuristic fallback decision.
+
+        Fallback decisions should still explain why the model path was rejected
+        so browser diagnostics and replay-style analysis remain actionable.
+        """
 
         debug_private = dict(fallback.debug_private or {})
         debug_private.setdefault("belief_summary", dict(tool_snapshot.get("belief_summary") or {}))
@@ -326,7 +338,12 @@ class LLMSeatAgent(SeatAgent):
         }
 
     def decide_turn(self, *, snapshot: dict[str, Any], tool_snapshot: dict[str, Any]) -> TurnDecision:
-        """Ask the Agents SDK seat policy for one turn or fall back safely."""
+        """Ask the Agents SDK seat policy for one turn or fall back safely.
+
+        The happy path is deliberately short. Any missing dependency, runtime
+        error, illegal output, or unsafe public text routes back through the
+        deterministic heuristic policy.
+        """
 
         fallback = self._fallback.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
         if not AGENTS_SDK_AVAILABLE or not self._api_key:

@@ -1,9 +1,9 @@
 """Runtime configuration helpers for OpenAI-backed Clue seat agents.
 
-This module centralizes the environment contract for the v1.6.0 seat runtime.
+This module centralizes the environment contract for the v1.6.1 seat runtime.
 The rest of the codebase should read one normalized config object rather than
 repeating environment parsing logic or making ad hoc decisions about privacy,
-latency, tracing, and model defaults.
+latency, tracing, profile overrides, and model defaults.
 """
 
 from __future__ import annotations
@@ -128,7 +128,12 @@ class LLMRuntimeConfig:
 
 @lru_cache(maxsize=1)
 def load_llm_runtime_config() -> LLMRuntimeConfig:
-    """Load and cache the normalized v1.6.0 LLM runtime configuration."""
+    """Load and cache the normalized v1.6.1 LLM runtime configuration.
+
+    The returned object is the base runtime contract before per-seat YAML
+    profiles are applied. Keeping this cached and centralized makes it easier to
+    keep app config, tests, and maintainer docs aligned.
+    """
 
     reasoning_effort = str(os.getenv("CLUE_LLM_REASONING_EFFORT", "medium")).strip().lower()
     if reasoning_effort not in _VALID_REASONING_EFFORTS:

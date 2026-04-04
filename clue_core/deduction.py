@@ -1,4 +1,10 @@
-"""Seat-local deduction, sampling, and action-ranking helpers."""
+"""Seat-local deduction, sampling, and action-ranking helpers.
+
+This module is intentionally shared by both heuristic and LLM-backed seats. It
+turns the visible event stream plus one seat's private hand into a bounded,
+code-owned belief summary so policy logic does not need to re-implement Clue
+inference inside prompts or ad hoc heuristics.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +23,12 @@ CASE_FILE_OWNER = "case_file"
 
 @dataclass(slots=True)
 class ToolSnapshot:
-    """Seat-local deduction summary exposed to heuristic and LLM policies."""
+    """Seat-local deduction summary exposed to heuristic and LLM policies.
+
+    The fields here are meant to be lightweight, serializable, and stable enough
+    to surface in diagnostics. Future additions should stay compact and should
+    prefer summaries over raw sampled-world dumps.
+    """
 
     envelope_marginals: dict[str, dict[str, float]] = field(default_factory=dict)
     top_hypotheses: list[dict[str, Any]] = field(default_factory=list)
@@ -30,7 +41,14 @@ class ToolSnapshot:
 
 
 class ClueBeliefTracker:
-    """Maintain seat-local ownership constraints over cards."""
+    """Maintain seat-local ownership constraints over cards.
+
+    The tracker mixes exact constraint propagation with bounded sampling. Exact
+    deductions collapse impossible ownership states, while sampling provides the
+    probabilistic picture needed for accusation confidence and suggestion
+    ranking. The tracker never sees hidden global truth; it reasons only from
+    seat-local private information plus visible events.
+    """
 
     def __init__(
         self,
@@ -268,7 +286,13 @@ class ClueBeliefTracker:
         seed: int = 0,
         time_budget_ms: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Score suspect/weapon suggestions using information gain and leak-aware penalties."""
+        """Score suspect/weapon suggestions using information gain and leak-aware penalties.
+
+        The score intentionally balances three goals:
+        - reduce uncertainty about the case file
+        - preserve the value of unanswered suggestions
+        - avoid feeding the same information-rich opponents over and over
+        """
 
         if marginals is None or assignments is None:
             marginals, assignments, _ = self.marginal_probabilities(samples=samples, seed=seed, time_budget_ms=time_budget_ms)
@@ -694,7 +718,12 @@ def build_tool_snapshot(
     sample_count: int = 128,
     time_budget_ms: int | None = None,
 ) -> ToolSnapshot:
-    """Build the tool payload consumed by autonomous seat policies for one turn."""
+    """Build the tool payload consumed by autonomous seat policies for one turn.
+
+    This is the single entry point used by the runtime to derive a seat-local
+    deduction summary from visible play history. Keeping the snapshot generation
+    centralized helps maintain parity between heuristic and LLM behavior.
+    """
 
     started = time.perf_counter()
     tracker = ClueBeliefTracker(

@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.6.1 - 2026-04-03
+- Rewrote the repo documentation so the README and `docs/` set now read as current `v1.6.1` maintainer guidance rather than a mix of launch notes and alpha-era planning material.
+- Added a docs landing map and refreshed the runtime, architecture, backlog, and implementation-history documents to match the shipped codebase.
+- Expanded targeted maintainer-focused docstrings and inline comments in the engine, deduction, runtime, storage, profile-loading, and browser polling/state-preservation hotspots.
+- Updated release markers, versioned copy, and tests from `v1.6.0` to `v1.6.1`.
+
 ## v1.6.0 - 2026-04-03
 - Added richer YAML persona-social schema including signature moves, insecurities, relationship posture, taboos, and per-intent chat examples.
 - Added separate deterministic chat profile selection and chat runtime defaults alongside the existing turn-decision model catalog.

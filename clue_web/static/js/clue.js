@@ -69,6 +69,8 @@ if (app) {
   let chatDirty = false;
   let refreshTimer = null;
   let refreshing = false;
+  // Draft state is kept outside the latest snapshot so polling can redraw from
+  // server-authoritative data without clobbering in-progress human input.
   const actionDrafts = new Map();
 
   function escapeHtml(value) {
@@ -160,6 +162,8 @@ if (app) {
     if (refreshTimer) {
       window.clearTimeout(refreshTimer);
     }
+    // Poll more aggressively only while waiting on an autonomous seat so the UI
+    // feels responsive without making human-only tables constantly hammer the API.
     refreshTimer = window.setTimeout(() => {
       refresh();
     }, nextRefreshDelay(snapshot));
