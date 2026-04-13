@@ -22,20 +22,29 @@ if (app) {
   const board = document.getElementById("board");
   const positionGrid = document.getElementById("position-grid");
   const actionControls = document.getElementById("action-controls");
+  const actionPanel = document.getElementById("action-panel");
   const turnBanner = document.getElementById("turn-banner");
   const phasePill = document.getElementById("phase-pill");
+  const activeSeatLabel = document.getElementById("active-seat-label");
+  const turnIndexLabel = document.getElementById("turn-index-label");
+  const legalCount = document.getElementById("legal-count");
   const notebookText = document.getElementById("notebook-text");
   const chatInput = document.getElementById("chat-input");
   const saveNotebook = document.getElementById("save-notebook");
   const sendChat = document.getElementById("send-chat");
   const gameTitle = document.getElementById("game-title");
   const actionStatus = document.getElementById("action-status");
+  const decisionContextCard = document.getElementById("decision-context-card");
+  const decisionContext = document.getElementById("decision-context");
   const turnGuidance = document.getElementById("turn-guidance");
+  const legalSummary = document.getElementById("legal-summary");
   const paceNote = document.getElementById("pace-note");
   const requestError = document.getElementById("request-error");
   const notebookStatus = document.getElementById("notebook-status");
+  const seatStatePill = document.getElementById("seat-state-pill");
   const narrativeCount = document.getElementById("narrative-count");
   const chatCount = document.getElementById("chat-count");
+  const chatFeedCount = document.getElementById("chat-feed-count");
   const privateCount = document.getElementById("private-count");
   const seatDebug = document.getElementById("seat-debug");
   const debugStatus = document.getElementById("debug-status");
@@ -60,9 +69,23 @@ if (app) {
     ballroom: "#e7d8ef",
     kitchen: "#f5e0bd",
   };
+  const ACTION_LABELS = {
+    roll: "Roll",
+    move: "Move",
+    suggest: "Suggest",
+    show_refute_card: "Show Refute Card",
+    pass_refute: "Pass Refute",
+    accuse: "Accuse",
+    end_turn: "End Turn",
+    send_chat: "Send Chat",
+  };
   const POLL_FAST_MS = 900;
   const POLL_NORMAL_MS = 2200;
   const POLL_IDLE_MS = 4200;
+  const clockFormatter = new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 
   let currentSnapshot = null;
   let snapshotKey = "";
@@ -110,6 +133,12 @@ if (app) {
     return normalized || "Unknown";
   }
 
+  function titleize(value) {
+    return String(value ?? "")
+      .replaceAll("_", " ")
+      .replace(/\b\w/g, (match) => match.toUpperCase());
+  }
+
   function seatMap(snapshot) {
     const map = new Map();
     snapshot.seats.forEach((seat) => {
@@ -119,6 +148,41 @@ if (app) {
       });
     });
     return map;
+  }
+
+  function seatName(snapshot, seatId) {
+    return seatMap(snapshot).get(seatId)?.display_name || seatId || "Unknown";
+  }
+
+  function actionLabel(action) {
+    return ACTION_LABELS[action] || titleize(action);
+  }
+
+  function deskActions(snapshot) {
+    return (snapshot.legal_actions?.available || []).filter((action) => action !== "send_chat");
+  }
+
+  function currentViewState(snapshot) {
+    if (!snapshot) {
+      return "loading";
+    }
+    if (snapshot.status === "complete") {
+      return "complete";
+    }
+    if (currentSeatIsRefuting(snapshot)) {
+      return "refute";
+    }
+    if (snapshot.active_seat_id === snapshot.seat.seat_id) {
+      return "your-turn";
+    }
+    const activeSeat = seatMap(snapshot).get(snapshot.active_seat_id);
+    return activeSeat && activeSeat.seat_kind !== "human" ? "ai-turn" : "waiting";
+  }
+
+  function setState(node, state) {
+    if (node) {
+      node.dataset.state = state;
+    }
   }
 
   function boardLabelById(snapshot) {
@@ -172,15 +236,16 @@ if (app) {
     return waitingOnAutonomousSeat(snapshot) ? POLL_FAST_MS : POLL_NORMAL_MS;
   }
 
-  function scheduleRefresh(snapshot = currentSnapshot) {
+  function scheduleRefresh(next = currentSnapshot) {
     if (refreshTimer) {
       window.clearTimeout(refreshTimer);
     }
+    const delay = typeof next === "number" ? next : nextRefreshDelay(next);
     // Poll more aggressively only while waiting on an autonomous seat so the UI
     // feels responsive without making human-only tables constantly hammer the API.
     refreshTimer = window.setTimeout(() => {
       refresh();
-    }, nextRefreshDelay(snapshot));
+    }, delay);
   }
 
   function showError(message) {
@@ -212,11 +277,22 @@ if (app) {
   }
 
   function prettifyPhase(phase) {
-    return String(phase ?? "").replaceAll("_", " ");
+    return titleize(phase);
   }
 
   function nearBottom(container, threshold = 42) {
     return (container.scrollHeight - (container.scrollTop + container.clientHeight)) <= threshold;
+  }
+
+  function formatClock(value) {
+    if (!value) {
+      return "";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+    return clockFormatter.format(date);
   }
 
   function renderBoard(snapshot) {
@@ -340,6 +416,14 @@ if (app) {
 
   function renderSeatSummary(snapshot) {
     const labels = boardLabelById(snapshot);
+    const activeName = seatName(snapshot, snapshot.active_seat_id);
+    const tableState = snapshot.status === "complete"
+      ? "Case closed"
+      : snapshot.active_seat_id === snapshot.seat.seat_id
+        ? "Acting now"
+        : `Waiting on ${activeName}`;
+    seatStatePill.textContent = snapshot.seat.can_win ? "Live Case" : "Out";
+    seatStatePill.dataset.state = snapshot.seat.can_win ? "live" : "out";
     seatSummary.innerHTML = `
       <div class="seat-summary-grid">
         <article class="summary-stat">
@@ -351,12 +435,24 @@ if (app) {
           <strong>${escapeHtml(labels.get(snapshot.seat.position) || snapshot.seat.position)}</strong>
         </article>
         <article class="summary-stat">
+          <span class="card-kicker">Seat Type</span>
+          <strong>${escapeHtml(displaySeatKind(snapshot.seat.seat_kind))}</strong>
+        </article>
+        <article class="summary-stat">
           <span class="card-kicker">Status</span>
           <strong>${snapshot.seat.can_win ? "Live case" : "Out of contention"}</strong>
         </article>
         <article class="summary-stat">
           <span class="card-kicker">Hand Size</span>
           <strong>${escapeHtml(snapshot.seat.hand_count)}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Table Pulse</span>
+          <strong>${escapeHtml(tableState)}</strong>
+        </article>
+        <article class="summary-stat">
+          <span class="card-kicker">Phase</span>
+          <strong>${escapeHtml(prettifyPhase(snapshot.phase))}</strong>
         </article>
       </div>
     `;
@@ -404,21 +500,58 @@ if (app) {
     return "private";
   }
 
-  function renderEventItem(event) {
+  function describeEventType(event, channel) {
+    if (channel === "chat") {
+      return "Table Talk";
+    }
+    const overrides = {
+      game_created: "Table Opened",
+      turn_started: "Turn Start",
+      suggestion_made: "Suggestion",
+      accusation_made: "Accusation",
+      accusation_wrong: "Wrong Accusation",
+      accusation_correct: "Solved Case",
+      refute_passed: "Refute Pass",
+      private_card_shown: "Card Revealed",
+      suspect_moved: "Marker Moved",
+      dice_rolled: "Roll Result",
+    };
+    return overrides[event.event_type] || titleize(event.event_type || "");
+  }
+
+  function eventActorName(snapshot, event) {
+    const seatId = event?.payload?.seat_id;
+    return seatId ? seatName(snapshot, seatId) : "";
+  }
+
+  function renderEventItem(snapshot, event) {
+    const channel = eventChannel(event);
+    const actorName = eventActorName(snapshot, event);
+    const timestamp = formatClock(event.created_at);
+    const label = describeEventType(event, channel);
+    const message = channel === "chat" && event.payload?.text
+      ? event.payload.text
+      : event.message;
     const li = document.createElement("li");
-    li.className = `log-item ${event.visibility === "public" ? "is-public" : "is-private"}`;
+    li.className = `log-item ${event.visibility === "public" ? "is-public" : "is-private"} is-${channel}`;
     li.dataset.eventIndex = String(event.event_index || "");
+    li.dataset.channel = channel;
     li.innerHTML = `
       <div class="log-meta">
-        <span class="log-badge">${escapeHtml(event.visibility === "public" ? "Public" : "Private")}</span>
-        <span class="log-type">${escapeHtml(String(event.event_type || "").replaceAll("_", " "))}</span>
+        <span class="log-badge">${escapeHtml(channel === "chat" ? "Chat" : event.visibility === "public" ? "Public" : "Private")}</span>
+        <span class="log-type">${escapeHtml(label)}</span>
+        ${actorName ? `<span class="log-stamp">${escapeHtml(actorName)}</span>` : ""}
+        ${timestamp ? `<span class="log-time">${escapeHtml(timestamp)}</span>` : ""}
       </div>
-      <p>${escapeHtml(event.message)}</p>
+      <div class="log-body">
+        ${channel === "chat" ? `<p class="log-speaker">${escapeHtml(actorName || "Table")}</p>` : ""}
+        <p class="log-message">${escapeHtml(message)}</p>
+      </div>
     `;
     return li;
   }
 
-  function appendEventItems(container, events, { chatChannel = false } = {}) {
+  function appendEventItems(container, snapshot, events, { chatChannel = false } = {}) {
     if (!events.length) return;
     const shouldStick = forceChatScroll || nearBottom(container);
     const emptyState = container.querySelector(".empty-state");
@@ -427,7 +560,7 @@ if (app) {
     }
     const fragment = document.createDocumentFragment();
     events.forEach((event) => {
-      fragment.appendChild(renderEventItem(event));
+      fragment.appendChild(renderEventItem(snapshot, event));
     });
     container.appendChild(fragment);
     if (chatChannel && !shouldStick) {
@@ -465,10 +598,10 @@ if (app) {
     return appended;
   }
 
-  function renderEventPanels(appended) {
-    appendEventItems(narrativeLog, appended.narrative);
-    appendEventItems(chatLog, appended.chat, { chatChannel: true });
-    appendEventItems(privateLog, appended.private);
+  function renderEventPanels(snapshot, appended) {
+    appendEventItems(narrativeLog, snapshot, appended.narrative);
+    appendEventItems(chatLog, snapshot, appended.chat, { chatChannel: true });
+    appendEventItems(privateLog, snapshot, appended.private);
 
     ensureEmptyState(narrativeLog, eventsByChannel.narrative, "The public story of the game will appear here.");
     ensureEmptyState(chatLog, eventsByChannel.chat, "The table chat stream will appear here.");
@@ -476,28 +609,89 @@ if (app) {
 
     narrativeCount.textContent = String(eventsByChannel.narrative.length);
     const totalChat = eventsByChannel.chat.length;
-    chatCount.textContent = chatUnread > 0 ? `${totalChat} (+${chatUnread})` : String(totalChat);
+    const chatLabel = chatUnread > 0 ? `${totalChat} (+${chatUnread})` : String(totalChat);
+    chatCount.textContent = chatLabel;
+    chatFeedCount.textContent = chatLabel;
     privateCount.textContent = String(eventsByChannel.private.length);
+    narrativeCount.dataset.state = eventsByChannel.narrative.length ? "active" : "calm";
+    chatCount.dataset.state = chatUnread > 0 ? "attention" : "calm";
+    chatFeedCount.dataset.state = chatUnread > 0 ? "attention" : "calm";
+    privateCount.dataset.state = eventsByChannel.private.length ? "private" : "calm";
+  }
+
+  function legalSummaryText(snapshot) {
+    const legal = snapshot.legal_actions || {};
+    const actions = deskActions(snapshot);
+    if (snapshot.status === "complete") {
+      return "The case is closed. Review the wire and private briefing to reconstruct the finish.";
+    }
+    if (currentSeatIsRefuting(snapshot)) {
+      const cardCount = (legal.refute_cards || []).length;
+      return `${cardCount} eligible ${cardCount === 1 ? "card is" : "cards are"} available for a seat-private refute response.`;
+    }
+    if (snapshot.active_seat_id !== snapshot.seat.seat_id) {
+      return actions.length
+        ? `Off-turn private options remain available: ${actions.map(actionLabel).join(", ")}.`
+        : "No private table action is required from this seat right now.";
+    }
+    if (actions.includes("move")) {
+      const targetCount = (legal.move_targets || []).length;
+      return `${targetCount} legal ${targetCount === 1 ? "destination is" : "destinations are"} highlighted on the board and mirrored below.`;
+    }
+    if (actions.includes("suggest")) {
+      return "Build a room suggestion from the staged suspect and weapon fields, then commit it once satisfied.";
+    }
+    if (actions.includes("accuse") && actions.length === 1) {
+      return "Accusation is live. Commit only when your private evidence is decisive.";
+    }
+    if (actions.includes("roll")) {
+      return "Open the turn with a roll. Movement and follow-up decisions will unlock immediately after it resolves.";
+    }
+    if (actions.includes("end_turn") && actions.length === 1) {
+      return "No further forced decisions are pending. End the turn when you are ready.";
+    }
+    return actions.length
+      ? `Available now: ${actions.map(actionLabel).join(", ")}.`
+      : "No private table action is required from this seat right now.";
   }
 
   function renderGuidance(snapshot) {
     const available = new Set(snapshot.legal_actions?.available || []);
     const activeSeat = seatMap(snapshot).get(snapshot.active_seat_id);
+    const activeName = seatName(snapshot, snapshot.active_seat_id);
+    const state = currentViewState(snapshot);
+    const winnerName = snapshot.winner_seat_id ? seatName(snapshot, snapshot.winner_seat_id) : "Unknown";
+
+    setState(turnBanner, state);
+    setState(phasePill, state);
+    setState(actionStatus, state);
+    setState(decisionContextCard, state);
+    setState(actionPanel, state);
+    activeSeatLabel.textContent = snapshot.status === "complete" ? winnerName : activeName;
+    turnIndexLabel.textContent = `Turn ${Number(snapshot.turn_index || 0) + 1}`;
+    legalCount.textContent = snapshot.status === "complete" ? "Closed" : String(deskActions(snapshot).length);
+    legalSummary.textContent = legalSummaryText(snapshot);
 
     if (snapshot.status === "complete") {
       actionStatus.textContent = "Case Closed";
+      decisionContext.textContent = `${winnerName} closed the case.`;
+      turnBanner.textContent = `Case closed. Winner: ${winnerName}`;
       turnGuidance.textContent = snapshot.winner_seat_id
-        ? `${snapshot.winner_seat_id} won the game. You can keep reviewing the table record and private notes.`
+        ? `${winnerName} won the game. You can keep reviewing the table record and private notes.`
         : "The case is closed.";
       return;
     }
     if (available.has("show_refute_card") || available.has("pass_refute")) {
       actionStatus.textContent = "Private Refute";
+      decisionContext.textContent = "A seat-private response is waiting on you.";
+      turnBanner.textContent = `${snapshot.seat.display_name}, resolve the private refute.`;
       turnGuidance.textContent = "You are being asked to refute a suggestion. Any shown card stays private to the suggesting seat.";
       return;
     }
     if (snapshot.active_seat_id === snapshot.seat.seat_id) {
       actionStatus.textContent = "Your Turn";
+      decisionContext.textContent = `Turn ${Number(snapshot.turn_index || 0) + 1} is yours to resolve.`;
+      turnBanner.textContent = `${snapshot.seat.display_name}, you are up.`;
       if (available.has("roll")) {
         turnGuidance.textContent = "Open the turn with a roll, or use a secret passage if one is available.";
       } else if (available.has("move")) {
@@ -513,12 +707,16 @@ if (app) {
     }
     if (activeSeat && activeSeat.seat_kind !== "human") {
       actionStatus.textContent = "AI Seat Acting";
-      turnGuidance.textContent = `Waiting on ${activeSeat.display_name}. Auto-refresh is running at a faster cadence until the autonomous turn settles.`;
+      decisionContext.textContent = `${activeName} is resolving an autonomous turn.`;
+      turnBanner.textContent = `${activeName} is resolving an autonomous turn.`;
+      turnGuidance.textContent = `Waiting on ${activeName}. Auto-refresh is running at a faster cadence until the autonomous turn settles.`;
       return;
     }
     actionStatus.textContent = "Waiting";
+    decisionContext.textContent = `${activeName} currently controls the table.`;
+    turnBanner.textContent = `Waiting on ${activeName}.`;
     turnGuidance.textContent = activeSeat
-      ? `Waiting on ${activeSeat.display_name} to act.`
+      ? `Waiting on ${activeName} to act.`
       : "Waiting on the next seat.";
   }
 
@@ -598,12 +796,13 @@ if (app) {
   function updateDraftControls() {
     const busy = Boolean(pendingMutation);
     notebookStatus.textContent = notebookDirty ? "Unsaved" : "Synced";
+    notebookStatus.dataset.state = notebookDirty ? "dirty" : "synced";
     saveNotebook.disabled = !notebookDirty || busy;
     sendChat.disabled = !chatInput.value.trim() || busy;
     saveNotebook.textContent = pendingMutation === "notebook" ? "Saving..." : "Save Notes";
     sendChat.textContent = pendingMutation === "chat" ? "Posting..." : "Send Chat";
-    actionControls.querySelectorAll("button[data-action-button='1']").forEach((button) => {
-      button.disabled = busy;
+    actionControls.querySelectorAll("button[data-action-button='1'], select").forEach((control) => {
+      control.disabled = busy;
     });
   }
 
@@ -623,9 +822,6 @@ if (app) {
     currentSnapshot = snapshot;
     snapshotKey = nextSnapshotKey;
     gameTitle.textContent = snapshot.title;
-    turnBanner.textContent = snapshot.status === "complete"
-      ? `Game complete. Winner: ${snapshot.winner_seat_id || "Unknown"}`
-      : `Active seat: ${snapshot.active_seat_id}`;
     phasePill.textContent = prettifyPhase(snapshot.phase);
     paceNote.textContent = waitingOnAutonomousSeat(snapshot)
       ? "Faster polling is active while an autonomous seat resolves its turn."
@@ -642,7 +838,7 @@ if (app) {
     renderPositionGrid(snapshot);
 
     const appended = ingestEvents(snapshot.events || []);
-    renderEventPanels(appended);
+    renderEventPanels(snapshot, appended);
 
     const nextLegalFingerprint = JSON.stringify(snapshot.legal_actions || {});
     if (nextLegalFingerprint !== legalFingerprint) {
@@ -681,6 +877,26 @@ if (app) {
     return wrapper;
   }
 
+  function createActionCard({ eyebrow, title, detail, tone = "neutral" }) {
+    const card = document.createElement("section");
+    card.className = "action-card";
+    card.dataset.tone = tone;
+
+    const head = document.createElement("div");
+    head.className = "action-card-head";
+    head.innerHTML = `
+      <p class="card-kicker">${escapeHtml(eyebrow)}</p>
+      <h4>${escapeHtml(title)}</h4>
+      <p class="field-note action-card-detail">${escapeHtml(detail)}</p>
+    `;
+
+    const body = document.createElement("div");
+    body.className = "action-card-body";
+    card.appendChild(head);
+    card.appendChild(body);
+    return { card, body };
+  }
+
   function addActionButton(container, text, payloadBuilder, extraClass = "") {
     const button = document.createElement("button");
     button.type = "button";
@@ -702,54 +918,99 @@ if (app) {
     actionControls.innerHTML = "";
 
     if (available.has("roll")) {
-      addActionButton(actionControls, "Roll", () => ({ action: "roll" }));
+      const { card, body } = createActionCard({
+        eyebrow: "Open Turn",
+        title: "Roll For Movement",
+        detail: "Start the turn. Follow-up movement stays staged until you confirm it.",
+        tone: "primary",
+      });
+      addActionButton(body, "Roll", () => ({ action: "roll" }));
+      actionControls.appendChild(card);
     }
     if (available.has("move") && (legal.move_targets || []).length) {
+      const targetCount = legal.move_targets.length;
       const options = legal.move_targets.map((item) => ({ value: item.node_id, label: `${item.label} (${item.cost})` }));
-      actionControls.appendChild(buildSelect("move-target", options, "Move To"));
-      addActionButton(actionControls, "Move", () => ({
+      const { card, body } = createActionCard({
+        eyebrow: "Movement",
+        title: "Stage A Destination",
+        detail: `${targetCount} legal ${targetCount === 1 ? "destination is" : "destinations are"} available. Board clicks and the dropdown stay in sync.`,
+        tone: "primary",
+      });
+      body.appendChild(buildSelect("move-target", options, "Move To"));
+      addActionButton(body, "Move", () => ({
         action: "move",
         target_node: document.getElementById("move-target").value,
       }));
+      actionControls.appendChild(card);
     }
     if (available.has("suggest")) {
       const suspects = snapshot.case_file_categories.suspect.map((item) => ({ value: item, label: item }));
       const weapons = snapshot.case_file_categories.weapon.map((item) => ({ value: item, label: item }));
-      actionControls.appendChild(buildSelect("suggest-suspect", suspects, "Suggest Suspect"));
-      actionControls.appendChild(buildSelect("suggest-weapon", weapons, "Suggest Weapon"));
-      addActionButton(actionControls, "Suggest", () => ({
+      const { card, body } = createActionCard({
+        eyebrow: "Case Theory",
+        title: "Make A Suggestion",
+        detail: "Suggestions stay tied to your current room and can trigger private refutation flow.",
+        tone: "neutral",
+      });
+      body.appendChild(buildSelect("suggest-suspect", suspects, "Suggest Suspect"));
+      body.appendChild(buildSelect("suggest-weapon", weapons, "Suggest Weapon"));
+      addActionButton(body, "Suggest", () => ({
         action: "suggest",
         suspect: document.getElementById("suggest-suspect").value,
         weapon: document.getElementById("suggest-weapon").value,
       }));
+      actionControls.appendChild(card);
     }
-    if (available.has("show_refute_card")) {
-      const cards = (legal.refute_cards || []).map((item) => ({ value: item, label: item }));
-      actionControls.appendChild(buildSelect("refute-card", cards, "Show Card"));
-      addActionButton(actionControls, "Show Refute Card", () => ({
-        action: "show_refute_card",
-        card: document.getElementById("refute-card").value,
-      }));
-    }
-    if (available.has("pass_refute")) {
-      addActionButton(actionControls, "Pass Refute", () => ({ action: "pass_refute" }), "secondary-action");
+    if (available.has("show_refute_card") || available.has("pass_refute")) {
+      const { card, body } = createActionCard({
+        eyebrow: "Private Response",
+        title: "Resolve The Refute",
+        detail: "Only the suggesting seat sees a shown card. Pass only if you cannot legally refute.",
+        tone: "private",
+      });
+      if (available.has("show_refute_card")) {
+        const cards = (legal.refute_cards || []).map((item) => ({ value: item, label: item }));
+        body.appendChild(buildSelect("refute-card", cards, "Show Card"));
+        addActionButton(body, "Show Refute Card", () => ({
+          action: "show_refute_card",
+          card: document.getElementById("refute-card").value,
+        }));
+      }
+      if (available.has("pass_refute")) {
+        addActionButton(body, "Pass Refute", () => ({ action: "pass_refute" }), "secondary-action");
+      }
+      actionControls.appendChild(card);
     }
     if (available.has("accuse")) {
       const suspects = snapshot.case_file_categories.suspect.map((item) => ({ value: item, label: item }));
       const weapons = snapshot.case_file_categories.weapon.map((item) => ({ value: item, label: item }));
       const rooms = snapshot.case_file_categories.room.map((item) => ({ value: item, label: item }));
-      actionControls.appendChild(buildSelect("accuse-suspect", suspects, "Accuse Suspect"));
-      actionControls.appendChild(buildSelect("accuse-weapon", weapons, "Accuse Weapon"));
-      actionControls.appendChild(buildSelect("accuse-room", rooms, "Accuse Room"));
-      addActionButton(actionControls, "Accuse", () => ({
+      const { card, body } = createActionCard({
+        eyebrow: "Final Call",
+        title: "Make An Accusation",
+        detail: "This can end your path to victory. Treat it as the highest-risk commit on the desk.",
+        tone: "danger",
+      });
+      body.appendChild(buildSelect("accuse-suspect", suspects, "Accuse Suspect"));
+      body.appendChild(buildSelect("accuse-weapon", weapons, "Accuse Weapon"));
+      body.appendChild(buildSelect("accuse-room", rooms, "Accuse Room"));
+      addActionButton(body, "Accuse", () => ({
         action: "accuse",
         suspect: document.getElementById("accuse-suspect").value,
         weapon: document.getElementById("accuse-weapon").value,
         room: document.getElementById("accuse-room").value,
       }), "danger-action");
+      actionControls.appendChild(card);
     }
     if (available.has("end_turn")) {
-      addActionButton(actionControls, "End Turn", () => ({ action: "end_turn" }), "secondary-action");
+      const { card, body } = createActionCard({
+        eyebrow: "Wrap Up",
+        title: "Close The Turn",
+        detail: "Use this only after your planned movement, suggestion, and private review are complete.",
+        tone: "secondary",
+      });
+      addActionButton(body, "End Turn", () => ({ action: "end_turn" }), "secondary-action");
+      actionControls.appendChild(card);
     }
     if (!actionControls.children.length) {
       actionControls.innerHTML = '<p class="empty-state">No private actions are available from this seat right now.</p>';
@@ -861,6 +1122,9 @@ if (app) {
     if (nearBottom(chatLog)) {
       chatUnread = 0;
       chatCount.textContent = String(eventsByChannel.chat.length);
+      chatFeedCount.textContent = String(eventsByChannel.chat.length);
+      chatCount.dataset.state = "calm";
+      chatFeedCount.dataset.state = "calm";
     }
   });
 

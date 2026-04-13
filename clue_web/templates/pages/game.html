@@ -9,10 +9,24 @@
       <p class="marquee-note">A live caseboard for movement, public table talk, and private deductions.</p>
     </div>
     <div class="marquee-status">
-      <div id="turn-banner" class="turn-banner">Loading table state...</div>
+      <div id="turn-banner" class="turn-banner" data-state="loading">Loading table state...</div>
       <div class="phase-strip">
         <span class="phase-label">Phase</span>
         <div id="phase-pill" class="phase-pill"></div>
+      </div>
+      <div class="turn-metrics">
+        <article class="turn-metric">
+          <span class="card-kicker">Acting Seat</span>
+          <strong id="active-seat-label">Loading</strong>
+        </article>
+        <article class="turn-metric">
+          <span class="card-kicker">Turn</span>
+          <strong id="turn-index-label">--</strong>
+        </article>
+        <article class="turn-metric">
+          <span class="card-kicker">Legal Actions</span>
+          <strong id="legal-count">--</strong>
+        </article>
       </div>
       <p id="pace-note" class="pace-note">Synchronizing table...</p>
     </div>
@@ -45,10 +59,25 @@
           <p class="card-kicker">Current Turn</p>
           <h2>Decision Desk</h2>
         </div>
-        <span id="action-status" class="status-chip">Loading</span>
       </div>
-      <p id="turn-guidance" class="guidance">Reading current turn state...</p>
-      <div id="action-controls" class="action-controls"></div>
+      <section id="decision-context-card" class="info-card decision-context-card" data-state="loading">
+        <div class="panel-head compact">
+          <h3>Turn Readout</h3>
+          <span id="action-status" class="status-chip" data-state="loading">Loading</span>
+        </div>
+        <p id="decision-context" class="decision-context">Reading current turn state...</p>
+        <p id="turn-guidance" class="guidance">Reading current turn state...</p>
+        <p id="legal-summary" class="field-note">Reading legal actions...</p>
+      </section>
+      <section id="action-panel" class="info-card action-panel" data-state="loading">
+        <div class="panel-head compact">
+          <div>
+            <h3>Action Queue</h3>
+            <p class="field-note">High-stakes table actions stay here so chat never competes with committing a move.</p>
+          </div>
+        </div>
+        <div id="action-controls" class="action-controls"></div>
+      </section>
 
       <section class="info-card chat-composer">
         <div class="panel-head compact">
@@ -69,7 +98,13 @@
           <h2>Private Briefing</h2>
         </div>
       </div>
-      <div id="seat-summary"></div>
+      <section class="info-card seat-summary-panel">
+        <div class="panel-head compact">
+          <h3>Seat Snapshot</h3>
+          <span id="seat-state-pill" class="status-chip" data-state="loading">Loading</span>
+        </div>
+        <div id="seat-summary"></div>
+      </section>
       <section class="info-card hand-panel">
         <div class="panel-head compact">
           <h3>Your Hand</h3>
@@ -102,6 +137,7 @@
           <h2>Table Wire</h2>
         </div>
       </div>
+      <p class="panel-head-note">Public narrative, public chat, and suspect positions stay separated so the table remains easy to scan mid-turn.</p>
       <div class="wire-grid">
         <section class="info-card lineup-panel">
           <div class="panel-head compact">
@@ -119,6 +155,7 @@
         <section class="info-card chat-feed-panel">
           <div class="panel-head compact">
             <h3>Chat Feed</h3>
+            <span id="chat-feed-count" class="status-chip">0</span>
           </div>
           <ul id="chat-log" class="event-log public-log chat-log"></ul>
         </section>
