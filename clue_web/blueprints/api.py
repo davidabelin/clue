@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
-import time
-
-from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
+from flask import Blueprint, current_app, jsonify, request
 
 api_bp = Blueprint("api", __name__, url_prefix="/api/v1")
 
@@ -25,17 +22,6 @@ def _error(message: str, status_code: int):
     return jsonify({"error": message}), status_code
 
 
-def _since_event_index_from_request() -> int:
-    """Parse and validate the optional incremental-events cursor."""
-
-    raw = str(request.args.get("since", "0") or "0").strip()
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ValueError("Query parameter 'since' must be an integer.") from exc
-    return max(value, 0)
-
-
 @api_bp.post("/games")
 def create_game():
     """Create a new game and return per-seat invitation links."""
@@ -53,69 +39,12 @@ def current_snapshot():
     """Return the seat-filtered current snapshot for the provided token."""
 
     token = _token_from_request()
-    try:
-        since_event_index = _since_event_index_from_request()
-    except ValueError as exc:
-        return _error(str(exc), 400)
+    since_event_index = int(request.args.get("since", "0") or 0)
     try:
         snapshot = current_app.extensions["game_service"].snapshot_for_token(token, since_event_index=since_event_index)
     except KeyError as exc:
         return _error(str(exc), 404)
     return jsonify(snapshot)
-
-
-@api_bp.get("/games/current/stream")
-def current_snapshot_stream():
-    """Stream seat-filtered snapshots over SSE with cursor-based incremental updates."""
-
-    token = _token_from_request()
-    try:
-        since_event_index = _since_event_index_from_request()
-    except ValueError as exc:
-        return _error(str(exc), 400)
-    try:
-        seat = current_app.extensions["game_service"].resolve_token(token)
-    except KeyError as exc:
-        return _error(str(exc), 404)
-
-    poll_ms_raw = str(request.args.get("poll_ms", "900") or "900").strip()
-    try:
-        poll_ms = max(int(poll_ms_raw), 300)
-    except ValueError:
-        poll_ms = 900
-    poll_seconds = poll_ms / 1000.0
-    heartbeat_seconds = 10.0
-
-    @stream_with_context
-    def stream():
-        cursor = since_event_index
-        first_emit = True
-        last_heartbeat = time.monotonic()
-
-        yield "retry: 2000\n\n"
-        while True:
-            snapshot = current_app.extensions["game_service"].snapshot_for_seat(seat, since_event_index=cursor)
-            next_cursor = int(snapshot.get("event_cursor", cursor) or cursor)
-            should_emit = first_emit or next_cursor > cursor
-            if should_emit:
-                cursor = max(cursor, next_cursor)
-                snapshot["event_cursor"] = cursor
-                payload = json.dumps(snapshot, separators=(",", ":"))
-                yield f"id: {cursor}\n"
-                yield "event: snapshot\n"
-                yield f"data: {payload}\n\n"
-                first_emit = False
-                last_heartbeat = time.monotonic()
-            elif (time.monotonic() - last_heartbeat) >= heartbeat_seconds:
-                yield ": keepalive\n\n"
-                last_heartbeat = time.monotonic()
-            time.sleep(poll_seconds)
-
-    response = Response(stream(), mimetype="text/event-stream")
-    response.headers["Cache-Control"] = "no-cache"
-    response.headers["Connection"] = "keep-alive"
-    response.headers["X-Accel-Buffering"] = "no"
-    return response
 
 
 @api_bp.post("/games/current/actions")

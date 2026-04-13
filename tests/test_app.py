@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from clue_agents.base import ChatDecision
@@ -29,23 +28,6 @@ def _chat_events(snapshot: dict) -> list[dict]:
     ]
 
 
-def _first_sse_snapshot(stream_response) -> dict:
-    """Read the first streamed snapshot payload from one SSE response."""
-
-    buffer = ""
-    for chunk in stream_response.response:
-        buffer += chunk.decode("utf-8")
-        if "\n\n" not in buffer:
-            continue
-        blocks = buffer.split("\n\n")
-        for block in blocks[:-1]:
-            for line in block.splitlines():
-                if line.startswith("data: "):
-                    return json.loads(line.removeprefix("data: "))
-        buffer = blocks[-1]
-    raise AssertionError("SSE stream ended before a snapshot payload was emitted.")
-
-
 def test_home_page_renders(client):
     """The landing page should expose the intended create-game affordances."""
 
@@ -61,12 +43,6 @@ def test_home_page_renders(client):
     assert ">Heuristic<" not in html
     assert 'fetch("api/v1/games"' in html
     assert 'fetch("/api/v1/games"' not in html
-
-
-def test_app_defaults_idle_chat_trigger_to_read(app):
-    """Runtime config should default idle chat trigger mode to read-time."""
-
-    assert app.config["CLUE_IDLE_CHAT_TRIGGER"] == "read"
 
 
 def test_create_game_and_snapshot_flow(client):
@@ -97,60 +73,6 @@ def test_create_game_and_snapshot_flow(client):
     assert snapshot["seat"]["character"] == "Miss Scarlet"
     assert len(snapshot["seat"]["hand"]) == snapshot["seat"]["hand_count"]
     assert snapshot["events"]
-    assert isinstance(snapshot["event_cursor"], int)
-    assert snapshot["event_cursor"] >= 1
-
-
-def test_snapshot_since_cursor_returns_incremental_events(client):
-    """Cursor reads should return only newer events while keeping an accurate event cursor."""
-
-    response = client.post("/api/v1/games", json={})
-    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
-
-    first = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
-    first_cursor = int(first["event_cursor"])
-
-    client.post(
-        "/api/v1/games/current/actions",
-        headers={"X-Clue-Seat-Token": token},
-        json={"action": "send_chat", "text": "Cursor test line."},
-    )
-
-    incremental = client.get(
-        f"/api/v1/games/current?since={first_cursor}",
-        headers={"X-Clue-Seat-Token": token},
-    ).get_json()
-    assert incremental["event_cursor"] >= first_cursor
-    assert incremental["events"]
-    assert all(int(event["event_index"]) > first_cursor for event in incremental["events"])
-
-    stable = client.get(
-        f"/api/v1/games/current?since={incremental['event_cursor']}",
-        headers={"X-Clue-Seat-Token": token},
-    ).get_json()
-    assert stable["event_cursor"] == incremental["event_cursor"]
-    assert stable["events"] == []
-
-
-def test_snapshot_stream_emits_sse_snapshot_payload(client):
-    """The SSE stream endpoint should emit seat-filtered snapshot payloads."""
-
-    response = client.post("/api/v1/games", json={})
-    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
-
-    stream_response = client.get(
-        f"/api/v1/games/current/stream?token={token}",
-        buffered=False,
-    )
-    try:
-        assert stream_response.status_code == 200
-        assert stream_response.mimetype == "text/event-stream"
-        snapshot = _first_sse_snapshot(stream_response)
-    finally:
-        stream_response.close()
-
-    assert snapshot["seat"]["seat_id"] == "seat_scarlet"
-    assert isinstance(snapshot["event_cursor"], int)
 
 
 def test_notebook_update_persists_per_seat(client):
@@ -169,26 +91,27 @@ def test_notebook_update_persists_per_seat(client):
 
 
 def test_game_page_renders_private_and_public_table_sections(client):
-    """The restored game page should render the older board, seat, and record sections."""
+    """The game page should render the redesigned caseboard, desk, and briefing sections."""
 
     response = client.post("/api/v1/games", json={})
     token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
     page = client.get(f"/game?token={token}")
     assert page.status_code == 200
     html = page.get_data(as_text=True)
-    assert "Board" in html
-    assert "Private Seat" in html
+    assert "Caseboard" in html
+    assert "Decision Desk" in html
+    assert "Private Briefing" in html
     assert "Private Intel" in html
     assert "Marker Grid" in html
-    assert "Table Record" in html
-    assert "Narrative" in html
-    assert "Table Chat" in html
-    assert "Public Table Talk" in html
+    assert "Case Notes" in html
+    assert "Table Wire" in html
+    assert "Witness Record" in html
+    assert "Table Talk" in html
+    assert "Chat Feed" in html
     assert "Seat Debug" in html
     assert "How LLM Seats Work" in html
-    assert "Table Seats" in html
-    assert "Round Table" not in html
-    assert "Players" not in html
+    assert "Suspect Lineup" in html
+    assert "Advanced Diagnostics" in html
 
 
 def test_idle_chat_limits_one_npc_message_per_sweep(client, monkeypatch):

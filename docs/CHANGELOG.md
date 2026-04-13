@@ -1,10 +1,10 @@
 # Changelog
 
 ## v1.7.0 - 2026-04-13
-- Delivered the in-game UX overhaul with gameplay-first layout, collapsed diagnostics, and improved mobile behavior.
-- Added SSE snapshot streaming with cursor-aware fallback polling for seat-specific table synchronization.
-- Introduced snapshot `event_cursor` tracking and incremental `since` handling for monotonic client updates.
-- Refactored browser state handling to preserve in-progress action/chat/notebook drafts during live refresh.
+- Delivered the in-game UX overhaul with a redesigned caseboard layout, clearer turn controls, easier chat, and improved mobile behavior.
+- Kept the shipped game on the stable polling request path instead of introducing new server sync contracts.
+- Refactored browser state handling to preserve in-progress action, chat, and notebook drafts during live refresh.
+- Added append-only chat and narrative rendering, smarter scroll behavior, and Enter-to-send public chat.
 - Updated code/docs/test release markers to align with `VERSION` (`1.7.0`).
 
 ## v1.6.1 - 2026-04-03

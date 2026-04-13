@@ -88,7 +88,6 @@ def create_app(config: dict | None = None) -> Flask:
         CLUE_AGENT_SESSION_DB_PATH=os.getenv("CLUE_AGENT_SESSION_DB_PATH", str(data_dir / "clue_agent_sessions.db")),
         CLUE_AGENT_SESSION_ENCRYPTION_KEY=os.getenv("CLUE_AGENT_SESSION_ENCRYPTION_KEY", ""),
         CLUE_AGENT_EVAL_EXPORT_ENABLED=os.getenv("CLUE_AGENT_EVAL_EXPORT_ENABLED", "0"),
-        CLUE_IDLE_CHAT_TRIGGER=os.getenv("CLUE_IDLE_CHAT_TRIGGER", "read"),
     )
     if config:
         app.config.update(config)

@@ -507,7 +507,6 @@ def build_filtered_snapshot(
     *,
     seat_id: str,
     visible_events: list[dict[str, Any]],
-    event_cursor: int | None = None,
     notebook: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Project the full game state into the public/private view for one seat.
@@ -539,9 +538,6 @@ def build_filtered_snapshot(
                 "hand_count": int(seat["hand_count"]),
             }
         )
-    if event_cursor is None:
-        event_cursor = max((int(event.get("event_index") or 0) for event in visible_events), default=0)
-
     return {
         "game_id": state["game_id"],
         "title": state["title"],
@@ -567,7 +563,6 @@ def build_filtered_snapshot(
         "seat": state["seats"][seat_id] | {"hand": list(hidden["hands"][seat_id])},
         "seats": public_seats,
         "legal_actions": game.legal_actions(seat_id),
-        "event_cursor": int(event_cursor),
         "events": visible_events,
         "notebook": notebook or {},
         "social": _filtered_social_snapshot(state, social, seat_id),

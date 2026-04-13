@@ -507,28 +507,6 @@ class ClueRepository:
                 for row in rows
             ]
 
-    def visible_event_cursor(self, game_id: str, *, seat_id: str) -> int:
-        """Return the latest event index visible to one seat."""
-
-        with self.engine.begin() as conn:
-            row = self._first_or_none(
-                conn.execute(
-                    text(
-                        """
-                        SELECT COALESCE(MAX(event_index), 0) AS max_index
-                        FROM events
-                        WHERE game_id = :game_id
-                          AND (visibility = 'public' OR visibility = :seat_visibility)
-                        """
-                    ),
-                    {
-                        "game_id": game_id,
-                        "seat_visibility": f"seat:{seat_id}",
-                    },
-                ).mappings()
-            )
-        return int(row["max_index"] if row is not None else 0)
-
     def public_events(self, game_id: str, *, since_event_index: int = 0) -> list[dict[str, Any]]:
         """Return the public event stream for one game after a cursor."""
 
