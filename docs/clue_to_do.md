@@ -1,6 +1,6 @@
 # Clue Rolling TO DO List
 
-## Current State After v1.6.1
+## Current State After v1.7.0
 - [x] Standalone Flask app plus AIX-mount-safe routing
 - [x] Deterministic Clue rules engine with filtered seat snapshots
 - [x] Mixed human and autonomous seats under one Game Master
@@ -8,7 +8,7 @@
 - [x] YAML-driven turn/chat profiles and persona-social guidance
 - [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and heuristic fallback
 - [x] Browser UI with polling synchronization and seat-private/public separation
-- [x] Maintainer documentation and targeted docstring sweep completed for `v1.6.1`
+- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.0`
 
 ## Highest Priority Backlog
 - [ ] Add browser/API end-to-end coverage for a full human-only game, including reconnect after refresh or tab reopen.

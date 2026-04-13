@@ -41,6 +41,7 @@ TURN_METRIC_LIMIT = 256
 SOCIAL_MOODS = {"calm", "amused", "annoyed", "guarded", "confident", "wounded"}
 SOCIAL_THREAD_KINDS = {"banter", "dispute", "alliance", "flirtation", "meta"}
 SOCIAL_THREAD_STATUSES = {"active", "cooling", "resolved"}
+IDLE_CHAT_TRIGGER_MODES = {"read", "write", "off"}
 
 
 def _timestamp_slug() -> str:
@@ -132,6 +133,25 @@ class GameService:
             "turn_metrics": [],
             "latest_private_debug_by_seat": {},
         }
+
+    @staticmethod
+    def _idle_chat_trigger_mode() -> str:
+        """Return when idle chat should run: read-time, write-time, or disabled."""
+
+        mode = str(os.getenv("CLUE_IDLE_CHAT_TRIGGER", "read")).strip().lower()
+        return mode if mode in IDLE_CHAT_TRIGGER_MODES else "read"
+
+    def _maybe_run_idle_chat_for_read(self, game_id: str) -> None:
+        """Run idle chat for read-driven mode without changing write-mode behavior."""
+
+        if self._idle_chat_trigger_mode() == "read":
+            self.maybe_run_idle_chat(game_id)
+
+    def _maybe_run_idle_chat_for_write(self, game_id: str) -> None:
+        """Run idle chat for write-driven mode without changing read-mode behavior."""
+
+        if self._idle_chat_trigger_mode() == "write":
+            self.maybe_run_idle_chat(game_id)
 
     def _ensure_analysis(self, state: dict[str, Any]) -> dict[str, Any]:
         """Backfill the per-game analysis structure onto a persisted state snapshot."""
@@ -502,16 +522,24 @@ class GameService:
         """
 
         seat = self.resolve_token(token)
-        self.maybe_run_idle_chat(seat["game_id"])
+        self._maybe_run_idle_chat_for_read(seat["game_id"])
+        return self.snapshot_for_seat(seat, since_event_index=since_event_index)
+
+    def snapshot_for_seat(self, seat: dict[str, Any], *, since_event_index: int = 0) -> dict[str, Any]:
+        """Return a filtered snapshot for one resolved seat payload."""
+
+        seat_row = next(item for item in self._repository.list_seats(seat["game_id"]) if item["seat_id"] == seat["seat_id"])
         state = self._repository.get_state(seat["game_id"])
         self._ensure_analysis(state)
         self._ensure_social(state)
         visible_events = self._repository.visible_events(seat["game_id"], seat_id=seat["seat_id"], since_event_index=since_event_index)
+        event_cursor = self._repository.visible_event_cursor(seat["game_id"], seat_id=seat["seat_id"])
         return build_filtered_snapshot(
             state,
             seat_id=seat["seat_id"],
             visible_events=visible_events,
-            notebook=seat["notebook"],
+            event_cursor=event_cursor,
+            notebook=seat_row["notebook"],
         )
 
     def submit_action(self, token: str, action: dict[str, Any]) -> dict[str, Any]:
@@ -609,6 +637,7 @@ class GameService:
         self._repository.save_state_and_events(seat["game_id"], state=new_state, events=events)
         self._cleanup_llm_sessions_if_complete(new_state)
         self.maybe_run_agents(seat["game_id"])
+        self._maybe_run_idle_chat_for_write(seat["game_id"])
         return self.snapshot_for_token(token)
 
     def update_notebook(self, token: str, notebook: dict[str, Any]) -> dict[str, Any]:
@@ -616,6 +645,7 @@ class GameService:
 
         seat = self.resolve_token(token)
         self._repository.update_notebook(seat["game_id"], seat["seat_id"], notebook)
+        self._maybe_run_idle_chat_for_write(seat["game_id"])
         return self.snapshot_for_token(token)
 
     @staticmethod

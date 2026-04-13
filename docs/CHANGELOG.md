@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.0 - 2026-04-13
+- Delivered the in-game UX overhaul with gameplay-first layout, collapsed diagnostics, and improved mobile behavior.
+- Added SSE snapshot streaming with cursor-aware fallback polling for seat-specific table synchronization.
+- Introduced snapshot `event_cursor` tracking and incremental `since` handling for monotonic client updates.
+- Refactored browser state handling to preserve in-progress action/chat/notebook drafts during live refresh.
+- Updated code/docs/test release markers to align with `VERSION` (`1.7.0`).
+
 ## v1.6.1 - 2026-04-03
 - Rewrote the repo documentation so the README and `docs/` set now read as current `v1.6.1` maintainer guidance rather than a mix of launch notes and alpha-era planning material.
 - Added a docs landing map and refreshed the runtime, architecture, backlog, and implementation-history documents to match the shipped codebase.

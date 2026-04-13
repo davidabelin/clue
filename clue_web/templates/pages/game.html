@@ -1,8 +1,8 @@
 {# Seat-specific gameplay shell. All dynamic seat state is hydrated by clue.js. #}
 {% extends "base.html" %}
 {% block content %}
-<section id="game-app" class="game-app" data-seat-token="{{ seat_token }}">
-  <div class="game-header panel">
+<section id="game-app" class="game-app game-app--table" data-seat-token="{{ seat_token }}">
+  <header class="game-header panel">
     <div>
       <p class="eyebrow">{{ seat.display_name }}</p>
       <h1 id="game-title">Clue Table</h1>
@@ -11,74 +11,82 @@
       <div id="turn-banner" class="turn-banner">Loading table state...</div>
       <p id="pace-note" class="pace-note">Synchronizing table...</p>
     </div>
-  </div>
+  </header>
+
   <section id="request-error" class="panel request-error hidden" aria-live="polite"></section>
-  <div class="layout-grid">
-    <section class="panel board-panel">
+
+  <div class="table-layout">
+    <section class="panel board-stage">
       <div class="panel-head">
         <h2>Board</h2>
         <div id="phase-pill" class="phase-pill"></div>
       </div>
       <svg id="board" viewBox="0 0 720 560" class="board-svg"></svg>
       <p class="field-note board-note">Highlighted spaces are legal movement targets. Click one to prime the move control when movement is available.</p>
-      <div class="board-meta-grid">
-        <section class="board-meta-card">
-          <div class="panel-head compact">
-            <h3>Marker Grid</h3>
-          </div>
-          <div id="position-grid" class="position-grid"></div>
-        </section>
-      </div>
+      <section class="board-meta-card marker-strip">
+        <div class="panel-head compact">
+          <h3>Marker Grid</h3>
+        </div>
+        <div id="position-grid" class="position-grid"></div>
+      </section>
     </section>
-    <section class="panel side-panel">
+
+    <section class="panel command-stage">
       <div class="panel-head">
-        <h2>Private Seat</h2>
-      </div>
-      <div id="seat-summary"></div>
-      <div class="hand-panel">
-        <h3>Hand</h3>
-        <ul id="hand-list"></ul>
-      </div>
-      <div class="private-intel-panel">
-        <div class="panel-head compact">
-          <h3>Private Intel</h3>
-          <span id="private-count" class="status-chip">0</span>
-        </div>
-        <p class="field-note">Only you can see card reveals and other seat-private prompts.</p>
-        <ul id="private-log" class="event-log private-log"></ul>
-      </div>
-      <div class="notebook-panel">
-        <div class="panel-head compact">
-          <h3>Notebook</h3>
-          <span id="notebook-status" class="status-chip">Synced</span>
-        </div>
-        <p class="field-note">Private notes stay local to this seat unless you explicitly share them in table talk.</p>
-        <textarea id="notebook-text" rows="12" placeholder="Track deductions here."></textarea>
-        <button id="save-notebook" type="button">Save Notebook</button>
-      </div>
-      <div class="seat-debug-panel">
-        <div class="panel-head compact">
-          <h3>Seat Debug</h3>
-          <span id="debug-status" class="status-chip">Idle</span>
-        </div>
-        <div id="seat-debug"></div>
-      </div>
-    </section>
-    <section class="panel action-panel">
-      <div class="panel-head">
-        <h2>Actions</h2>
+        <h2>Turn Console</h2>
         <span id="action-status" class="status-chip">Loading</span>
       </div>
       <p id="turn-guidance" class="guidance">Reading current turn state...</p>
       <div id="action-controls" class="action-controls"></div>
-      <div class="ai-panel">
+
+      <section class="chat-box chat-composer">
         <div class="panel-head compact">
-          <h3>How LLM Seats Work</h3>
+          <h3>Table Chat</h3>
+          <span id="chat-count" class="status-chip">0</span>
         </div>
-        <div id="ai-explainer"></div>
-      </div>
+        <label for="chat-input">Public Table Talk</label>
+        <p class="field-note">Use public-game terms only. Hidden card ownership never belongs in table chat.</p>
+        <textarea id="chat-input" rows="3" placeholder="Public round-table discussion"></textarea>
+        <button id="send-chat" type="button">Send Chat</button>
+      </section>
+
+      <section class="stream-panel">
+        <div class="panel-head compact">
+          <h3>Chat Feed</h3>
+        </div>
+        <ul id="chat-log" class="event-log public-log chat-log"></ul>
+      </section>
     </section>
-    <section class="panel event-panel">
+
+    <aside class="panel intel-rail">
+      <div class="panel-head">
+        <h2>Private Seat</h2>
+      </div>
+      <div id="seat-summary"></div>
+      <section class="hand-panel">
+        <h3>Hand</h3>
+        <ul id="hand-list"></ul>
+      </section>
+      <section class="private-intel-panel">
+        <div class="panel-head compact">
+          <h3>Private Intel</h3>
+          <span id="private-count" class="status-chip">0</span>
+        </div>
+        <p class="field-note">Only you can see card reveals and seat-private prompts.</p>
+        <ul id="private-log" class="event-log private-log"></ul>
+      </section>
+      <section class="notebook-panel">
+        <div class="panel-head compact">
+          <h3>Notebook</h3>
+          <span id="notebook-status" class="status-chip">Synced</span>
+        </div>
+        <p class="field-note">Private notes stay local to this seat unless you share them explicitly.</p>
+        <textarea id="notebook-text" rows="11" placeholder="Track deductions here."></textarea>
+        <button id="save-notebook" type="button">Save Notebook</button>
+      </section>
+    </aside>
+
+    <section class="panel record-stage">
       <div class="panel-head">
         <h2>Table Record</h2>
       </div>
@@ -95,19 +103,27 @@
         </div>
         <ul id="narrative-log" class="event-log public-log narrative-log"></ul>
       </section>
-      <section class="stream-panel">
-        <div class="panel-head compact">
-          <h3>Table Chat</h3>
-          <span id="chat-count" class="status-chip">0</span>
+    </section>
+
+    <section class="panel diagnostics-stage">
+      <details class="diagnostics-drawer">
+        <summary>Advanced Diagnostics</summary>
+        <div class="diagnostics-grid">
+          <section class="seat-debug-panel">
+            <div class="panel-head compact">
+              <h3>Seat Debug</h3>
+              <span id="debug-status" class="status-chip">Idle</span>
+            </div>
+            <div id="seat-debug"></div>
+          </section>
+          <section class="ai-panel">
+            <div class="panel-head compact">
+              <h3>How LLM Seats Work</h3>
+            </div>
+            <div id="ai-explainer"></div>
+          </section>
         </div>
-        <div class="chat-box">
-          <label for="chat-input">Public Table Talk</label>
-          <p class="field-note">Speak only in public-game terms here. Hidden card ownership never belongs in table chat.</p>
-          <textarea id="chat-input" rows="3" placeholder="Public round-table discussion"></textarea>
-          <button id="send-chat" type="button">Send Chat</button>
-        </div>
-        <ul id="chat-log" class="event-log public-log chat-log"></ul>
-      </section>
+      </details>
     </section>
   </div>
 </section>

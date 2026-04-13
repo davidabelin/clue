@@ -260,20 +260,6 @@ button:disabled {
   color: #5f1019;
 }
 
-.layout-grid {
-  display: grid;
-  gap: 1rem;
-  grid-template-columns: minmax(0, 2.1fr) minmax(320px, 1fr);
-  grid-template-areas:
-    "board side"
-    "actions events";
-}
-
-.board-panel { grid-area: board; }
-.side-panel { grid-area: side; }
-.action-panel { grid-area: actions; }
-.event-panel { grid-area: events; }
-
 .panel-head {
   display: flex;
   align-items: center;
@@ -284,7 +270,6 @@ button:disabled {
 
 .panel-head h2,
 .panel-head h3,
-.move-card h4,
 .position-card h4,
 .seat-card h3 {
   margin: 0;
@@ -294,15 +279,42 @@ button:disabled {
   margin-bottom: 0.48rem;
 }
 
+.table-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.15fr);
+  grid-template-areas:
+    "board command"
+    "record intel"
+    "diagnostics intel";
+}
+
+.board-stage { grid-area: board; }
+.command-stage { grid-area: command; }
+.record-stage { grid-area: record; }
+.intel-rail { grid-area: intel; }
+.diagnostics-stage { grid-area: diagnostics; }
+
+.board-stage,
+.command-stage,
+.record-stage,
+.intel-rail {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+}
+
 .board-svg {
   width: 100%;
-  min-height: 372px;
+  min-height: 390px;
   background:
-    radial-gradient(circle at 50% 30%, rgba(255, 245, 220, 0.32), transparent 34%),
-    linear-gradient(180deg, #b69262, #d6bb8a 48%, #e7d2aa);
-  border: 1px solid rgba(58, 37, 19, 0.16);
+    radial-gradient(circle at 50% 25%, rgba(255, 245, 220, 0.42), transparent 38%),
+    linear-gradient(180deg, #b38a56, #cfaa75 52%, #e4c89a);
+  border: 1px solid rgba(58, 37, 19, 0.2);
   border-radius: 18px;
-  box-shadow: inset 0 0 0 1px rgba(255, 247, 226, 0.4);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 247, 226, 0.44),
+    inset 0 0 28px rgba(103, 67, 31, 0.14);
 }
 
 .board-svg text {
@@ -311,7 +323,7 @@ button:disabled {
 }
 
 .board-note {
-  margin-top: 0.75rem;
+  margin-top: -0.1rem;
 }
 
 .board-edge {
@@ -361,13 +373,6 @@ button:disabled {
   stroke-width: 1.6;
 }
 
-.board-meta-grid {
-  display: grid;
-  gap: 0.9rem;
-  grid-template-columns: 1fr;
-  margin-top: 1rem;
-}
-
 .board-meta-card,
 .private-intel-panel,
 .notebook-panel,
@@ -382,6 +387,10 @@ button:disabled {
   border: 1px solid rgba(44, 31, 23, 0.12);
   border-radius: 16px;
   padding: 0.9rem;
+}
+
+.marker-strip {
+  margin-top: 0.05rem;
 }
 
 .position-grid,
@@ -474,14 +483,6 @@ button:disabled {
   color: var(--ink-soft);
 }
 
-.side-panel,
-.action-panel,
-.event-panel {
-  display: grid;
-  gap: 0.9rem;
-  align-content: start;
-}
-
 .hand-panel ul,
 .event-log {
   padding-left: 0;
@@ -513,6 +514,10 @@ button:disabled {
   gap: 0.55rem;
 }
 
+.chat-composer button {
+  justify-self: start;
+}
+
 .stream-panel {
   display: grid;
   gap: 0.7rem;
@@ -532,19 +537,57 @@ button:disabled {
   color: var(--ink-soft);
 }
 
+.diagnostics-stage {
+  padding: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.diagnostics-drawer {
+  background:
+    linear-gradient(180deg, rgba(255, 250, 237, 0.99), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow:
+    0 16px 32px var(--shadow),
+    inset 0 1px 0 rgba(255, 249, 233, 0.85);
+  padding: 0.9rem 1rem;
+}
+
+.diagnostics-drawer summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.diagnostics-grid {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 0.75rem;
+}
+
 .event-log {
   display: grid;
   gap: 0.7rem;
   list-style: none;
   margin: 0;
   padding: 0 0.25rem 0 0;
-  max-height: 26rem;
+  max-height: 25rem;
   overflow-y: auto;
+  scroll-behavior: smooth;
 }
 
-.narrative-log,
+.narrative-log {
+  max-height: 16rem;
+}
+
 .chat-log {
-  max-height: 14rem;
+  max-height: 21rem;
+}
+
+.private-log {
+  max-height: 18rem;
 }
 
 .log-item {
@@ -597,18 +640,19 @@ button:disabled {
   margin: 0;
 }
 
-@media (max-width: 1080px) {
-  .layout-grid {
+@media (max-width: 1200px) {
+  .table-layout {
     grid-template-columns: 1fr;
     grid-template-areas:
       "board"
-      "side"
-      "actions"
-      "events";
+      "command"
+      "record"
+      "intel"
+      "diagnostics";
   }
 
-  .board-meta-grid {
-    grid-template-columns: 1fr;
+  .chat-log {
+    max-height: 15rem;
   }
 }
 
@@ -627,13 +671,14 @@ button:disabled {
     justify-items: start;
   }
 
-  .seat-summary-grid {
-    grid-template-columns: 1fr;
-  }
-
+  .seat-summary-grid,
   .debug-grid,
   .position-grid,
   .seat-list {
     grid-template-columns: 1fr;
+  }
+
+  .board-svg {
+    min-height: 330px;
   }
 }
