@@ -68,6 +68,8 @@
         <p id="decision-context" class="decision-context">Reading current turn state...</p>
         <p id="turn-guidance" class="guidance">Reading current turn state...</p>
         <p id="legal-summary" class="field-note">Reading legal actions...</p>
+        <p id="phase-detail" class="phase-detail">Reading phase details...</p>
+        <ol id="turn-rail" class="turn-rail" aria-label="Turn progress"></ol>
       </section>
       <section id="action-panel" class="info-card action-panel" data-state="loading">
         <div class="panel-head compact">
@@ -76,6 +78,7 @@
             <p class="field-note">High-stakes table actions stay here so chat never competes with committing a move.</p>
           </div>
         </div>
+        <p id="action-priority-note" class="action-priority-note">Reading action priority...</p>
         <div id="action-controls" class="action-controls"></div>
       </section>
 
@@ -87,6 +90,10 @@
         <label for="chat-input">Public Chat</label>
         <p class="field-note">Press Enter to send. Use Shift+Enter for a new line. Hidden card ownership never belongs here.</p>
         <textarea id="chat-input" rows="4" placeholder="Keep the table talking."></textarea>
+        <div class="composer-meta">
+          <span id="chat-draft-state" class="micro-status" data-state="idle">Draft empty.</span>
+          <span class="composer-hint">Refresh-safe draft. Enter sends, Shift+Enter creates a newline.</span>
+        </div>
         <button id="send-chat" type="button">Send Chat</button>
       </section>
     </section>
@@ -118,6 +125,10 @@
         </div>
         <p class="field-note">Keep deductions here without losing them during refreshes.</p>
         <textarea id="notebook-text" rows="11" placeholder="Track cards, bluffs, and contradictions here."></textarea>
+        <div class="composer-meta">
+          <span id="notebook-draft-state" class="micro-status" data-state="synced">Seat notebook synced.</span>
+          <span class="composer-hint">Notebook drafts stay intact across refreshes until you save them.</span>
+        </div>
         <button id="save-notebook" type="button">Save Notes</button>
       </section>
       <section class="info-card private-intel-panel">

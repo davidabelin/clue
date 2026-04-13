@@ -100,7 +100,10 @@ def test_game_page_renders_private_and_public_table_sections(client):
     html = page.get_data(as_text=True)
     assert "Caseboard" in html
     assert "Decision Desk" in html
+    assert "Turn Readout" in html
+    assert "Action Queue" in html
     assert "Private Briefing" in html
+    assert "Seat Snapshot" in html
     assert "Private Intel" in html
     assert "Marker Grid" in html
     assert "Case Notes" in html

@@ -38,12 +38,17 @@ if (app) {
   const decisionContext = document.getElementById("decision-context");
   const turnGuidance = document.getElementById("turn-guidance");
   const legalSummary = document.getElementById("legal-summary");
+  const phaseDetail = document.getElementById("phase-detail");
+  const turnRail = document.getElementById("turn-rail");
+  const actionPriorityNote = document.getElementById("action-priority-note");
   const paceNote = document.getElementById("pace-note");
   const requestError = document.getElementById("request-error");
   const notebookStatus = document.getElementById("notebook-status");
+  const notebookDraftState = document.getElementById("notebook-draft-state");
   const seatStatePill = document.getElementById("seat-state-pill");
   const narrativeCount = document.getElementById("narrative-count");
   const chatCount = document.getElementById("chat-count");
+  const chatDraftState = document.getElementById("chat-draft-state");
   const chatFeedCount = document.getElementById("chat-feed-count");
   const privateCount = document.getElementById("private-count");
   const seatDebug = document.getElementById("seat-debug");
@@ -183,6 +188,12 @@ if (app) {
     if (node) {
       node.dataset.state = state;
     }
+  }
+
+  function secretPassageDestination(snapshot) {
+    const room = String(snapshot.legal_actions?.current_room || "").trim().toLowerCase();
+    const target = snapshot.secret_passages?.[room];
+    return target ? titleize(target) : "";
   }
 
   function boardLabelById(snapshot) {
@@ -655,6 +666,166 @@ if (app) {
       : "No private table action is required from this seat right now.";
   }
 
+  function phaseDetailText(snapshot) {
+    const legal = snapshot.legal_actions || {};
+    const currentRoom = legal.current_room;
+    const passageTo = secretPassageDestination(snapshot);
+
+    if (snapshot.status === "complete") {
+      return "The live turn loop is over. The remaining panels are now for review, chat, and private reconstruction.";
+    }
+    if (currentSeatIsRefuting(snapshot)) {
+      const suggestionRoom = legal.pending_refute?.suggestion?.room;
+      return suggestionRoom
+        ? `A suggestion in the ${suggestionRoom} is waiting on your private response.`
+        : "A seat-private refute is waiting on your response.";
+    }
+    if (snapshot.phase === "start_turn") {
+      if (currentRoom) {
+        return passageTo
+          ? `You begin in the ${currentRoom}. A secret passage to ${passageTo} is available before or instead of walking.`
+          : `You begin in the ${currentRoom}. Suggestion play is legal from here before you end the turn.`;
+      }
+      return "The turn is open. Roll to generate movement, or end the turn only if you are intentionally holding position.";
+    }
+    if (snapshot.phase === "move") {
+      const roll = legal.roll_value ?? snapshot.current_roll ?? "--";
+      const steps = legal.remaining_steps ?? snapshot.remaining_steps ?? 0;
+      return `Movement is live with a roll of ${roll}. ${steps} ${steps === 1 ? "step remains" : "steps remain"} and highlighted targets are legal destinations.`;
+    }
+    if (snapshot.phase === "post_move") {
+      if (currentRoom) {
+        return passageTo
+          ? `You are now in the ${currentRoom}. Suggestion play is available, and this room connects to ${passageTo} by secret passage on a future turn.`
+          : `You are now in the ${currentRoom}. Suggestion play is available before you close the turn.`;
+      }
+      return "Movement is complete. Review the board state and decide whether to close the turn.";
+    }
+    if (snapshot.phase === "post_suggest") {
+      return currentRoom
+        ? `A suggestion from the ${currentRoom} has resolved. Review the wire and decide whether to accuse or end the turn.`
+        : "The suggestion sequence has resolved. Review the new evidence before ending the turn.";
+    }
+    return currentRoom
+      ? `Current room: ${currentRoom}. Public and private updates are still arriving without resetting your drafts.`
+      : "Polling is preserving the table state without interrupting in-progress choices.";
+  }
+
+  function actionPriorityText(snapshot) {
+    const available = new Set(deskActions(snapshot));
+    const currentRoom = snapshot.legal_actions?.current_room;
+    const passageTo = secretPassageDestination(snapshot);
+
+    if (snapshot.status === "complete") {
+      return "No further table actions are queued. Review the final sequence, your notes, and the private intel feed.";
+    }
+    if (currentSeatIsRefuting(snapshot)) {
+      return available.has("show_refute_card")
+        ? "Best next: choose one legal card to show. The reveal stays private to the suggesting seat."
+        : "Best next: pass the refute because no legal card is available.";
+    }
+    if (snapshot.active_seat_id !== snapshot.seat.seat_id) {
+      return available.size
+        ? `This desk is quiet until your seat is prompted again. Off-turn private options: ${[...available].map(actionLabel).join(", ")}.`
+        : "This desk is quiet until your seat is prompted again.";
+    }
+    if (available.has("roll")) {
+      return currentRoom && passageTo
+        ? `Best next: decide between rolling and the secret passage from ${currentRoom} to ${passageTo}.`
+        : "Best next: roll to open movement.";
+    }
+    if (available.has("move")) {
+      return "Best next: stage a destination, then commit the move once the board highlight matches your intent.";
+    }
+    if (available.has("suggest")) {
+      return currentRoom
+        ? `Best next: pressure the ${currentRoom} with a suggestion before you consider ending the turn.`
+        : "Best next: use the current room to make a suggestion.";
+    }
+    if (available.has("end_turn") && available.has("accuse")) {
+      return "Best next: end the turn unless your case file is strong enough to justify a final accusation.";
+    }
+    if (available.has("accuse")) {
+      return "Best next: accuse only if your private evidence is decisive.";
+    }
+    if (available.has("end_turn")) {
+      return "Best next: close the turn once your review is complete.";
+    }
+    return "No immediate table action is queued for this seat.";
+  }
+
+  function turnRailEntries(snapshot) {
+    const legal = snapshot.legal_actions || {};
+    const currentRoom = legal.current_room;
+    const phase = snapshot.phase;
+    const available = new Set(deskActions(snapshot));
+
+    if (snapshot.status === "complete") {
+      return [
+        { label: "Open Turn", note: "Resolved", state: "done" },
+        { label: "Reposition", note: "Resolved", state: "done" },
+        { label: "Room Play", note: "Resolved", state: "done" },
+        { label: "Close Turn", note: "Case closed", state: "done" },
+      ];
+    }
+
+    if (currentSeatIsRefuting(snapshot)) {
+      return [
+        { label: "Suggestion", note: legal.pending_refute?.suggestion?.room || "Public suggestion", state: "done" },
+        { label: "Private Refute", note: available.has("show_refute_card") ? "Choose a legal card" : "No legal card to show", state: "current" },
+        { label: "Resume Turn", note: "Control returns after the refute resolves", state: "upcoming" },
+      ];
+    }
+
+    const entries = [
+      { label: "Open Turn", note: available.has("roll") ? "Roll or use a passage" : snapshot.current_roll ? `Rolled ${snapshot.current_roll}` : "Turn opened", state: "waiting" },
+      { label: "Reposition", note: available.has("move") ? `${(legal.move_targets || []).length} legal destinations` : currentRoom || "Board movement", state: "waiting" },
+      { label: "Room Play", note: currentRoom || "Suggestion needs a room", state: "waiting" },
+      { label: "Close Turn", note: available.has("end_turn") ? "Available now" : "Pending", state: "waiting" },
+    ];
+
+    if (phase === "start_turn") {
+      entries[0].state = "current";
+      entries[1].state = "upcoming";
+      entries[2].state = currentRoom ? "ready" : "waiting";
+      entries[3].state = available.has("end_turn") ? "ready" : "waiting";
+    } else if (phase === "move") {
+      entries[0].state = "done";
+      entries[1].state = "current";
+      entries[2].state = currentRoom ? "ready" : "waiting";
+      entries[3].state = available.has("end_turn") ? "ready" : "waiting";
+    } else if (phase === "post_move") {
+      entries[0].state = "done";
+      entries[1].state = "done";
+      entries[2].state = available.has("suggest") ? "current" : currentRoom ? "ready" : "waiting";
+      entries[3].state = available.has("end_turn") ? "ready" : "waiting";
+    } else if (phase === "post_suggest") {
+      entries[0].state = "done";
+      entries[1].state = "done";
+      entries[2].state = "done";
+      entries[3].state = available.has("end_turn") ? "current" : "ready";
+    } else {
+      entries[0].state = snapshot.current_roll ? "done" : "waiting";
+      entries[1].state = available.has("move") ? "current" : currentRoom ? "done" : "waiting";
+      entries[2].state = available.has("suggest") ? "current" : currentRoom ? "ready" : "waiting";
+      entries[3].state = available.has("end_turn") ? "ready" : "waiting";
+    }
+
+    return entries;
+  }
+
+  function renderTurnRail(snapshot) {
+    turnRail.innerHTML = turnRailEntries(snapshot).map((item, index) => `
+      <li class="rail-step" data-state="${escapeHtml(item.state)}">
+        <span class="rail-index">${index + 1}</span>
+        <div class="rail-copy">
+          <strong>${escapeHtml(item.label)}</strong>
+          <span>${escapeHtml(item.note)}</span>
+        </div>
+      </li>
+    `).join("");
+  }
+
   function renderGuidance(snapshot) {
     const available = new Set(snapshot.legal_actions?.available || []);
     const activeSeat = seatMap(snapshot).get(snapshot.active_seat_id);
@@ -671,6 +842,9 @@ if (app) {
     turnIndexLabel.textContent = `Turn ${Number(snapshot.turn_index || 0) + 1}`;
     legalCount.textContent = snapshot.status === "complete" ? "Closed" : String(deskActions(snapshot).length);
     legalSummary.textContent = legalSummaryText(snapshot);
+    phaseDetail.textContent = phaseDetailText(snapshot);
+    actionPriorityNote.textContent = actionPriorityText(snapshot);
+    renderTurnRail(snapshot);
 
     if (snapshot.status === "complete") {
       actionStatus.textContent = "Case Closed";
@@ -795,8 +969,30 @@ if (app) {
 
   function updateDraftControls() {
     const busy = Boolean(pendingMutation);
+    const chatLength = chatInput.value.trim().length;
+    const notebookLength = notebookText.value.length;
     notebookStatus.textContent = notebookDirty ? "Unsaved" : "Synced";
     notebookStatus.dataset.state = notebookDirty ? "dirty" : "synced";
+    if (pendingMutation === "notebook") {
+      notebookDraftState.textContent = "Saving seat notebook...";
+      notebookDraftState.dataset.state = "busy";
+    } else if (notebookDirty) {
+      notebookDraftState.textContent = `${notebookLength} ${notebookLength === 1 ? "character" : "characters"} unsaved locally.`;
+      notebookDraftState.dataset.state = "dirty";
+    } else {
+      notebookDraftState.textContent = "Seat notebook synced.";
+      notebookDraftState.dataset.state = "synced";
+    }
+    if (pendingMutation === "chat") {
+      chatDraftState.textContent = "Posting public chat...";
+      chatDraftState.dataset.state = "busy";
+    } else if (chatLength) {
+      chatDraftState.textContent = `${chatLength} ${chatLength === 1 ? "character" : "characters"} ready. Draft survives refresh.`;
+      chatDraftState.dataset.state = "ready";
+    } else {
+      chatDraftState.textContent = "Draft empty.";
+      chatDraftState.dataset.state = "idle";
+    }
     saveNotebook.disabled = !notebookDirty || busy;
     sendChat.disabled = !chatInput.value.trim() || busy;
     saveNotebook.textContent = pendingMutation === "notebook" ? "Saving..." : "Save Notes";
