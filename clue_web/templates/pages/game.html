@@ -42,10 +42,10 @@
           <p class="card-kicker">Board State</p>
           <h2>Caseboard</h2>
         </div>
-        <p class="panel-head-note">Board clicks stage movement only.</p>
+        <p class="panel-head-note">Click the board to stage movement.</p>
       </div>
       <svg id="board" viewBox="0 0 720 560" class="board-svg"></svg>
-      <p class="field-note board-note">Legal targets glow on the board. Nothing commits until you use the move controls.</p>
+      <p class="field-note board-note">Glowing targets are legal. Nothing commits until you use the move controls.</p>
       <details class="info-card info-drawer marker-grid-card" data-collapse-key="marker-grid" data-default-open="0">
         <summary class="info-drawer-summary">
           <div class="drawer-head">
@@ -93,7 +93,7 @@
         </div>
         <label for="chat-input">Public Chat</label>
         <p class="field-note">Enter sends. Shift+Enter adds a line.</p>
-        <textarea id="chat-input" rows="4" placeholder="Keep the table talking."></textarea>
+        <textarea id="chat-input" rows="2" placeholder="Keep the table talking."></textarea>
         <div class="composer-meta">
           <span id="chat-draft-state" class="micro-status" data-state="idle">Draft empty.</span>
           <span class="composer-hint">Refresh-safe draft. Enter sends, Shift+Enter creates a newline.</span>
@@ -131,7 +131,7 @@
         </summary>
         <div class="info-drawer-body">
           <p class="field-note">Keep deductions here without losing them during refreshes.</p>
-          <textarea id="notebook-text" rows="11" placeholder="Track cards, bluffs, and contradictions here."></textarea>
+          <textarea id="notebook-text" rows="6" placeholder="Track cards, bluffs, and contradictions here."></textarea>
           <div class="composer-meta">
             <span id="notebook-draft-state" class="micro-status" data-state="synced">Seat notebook synced.</span>
             <span class="composer-hint">Notebook drafts stay intact across refreshes until you save them.</span>
@@ -160,7 +160,7 @@
           <h2>Table Wire</h2>
         </div>
       </div>
-      <p class="panel-head-note">Latest entries stay at the top. Public history and table chat stay separated.</p>
+      <p class="panel-head-note">Latest entries stay at the top. Public history and table chat stay separate.</p>
       <div class="wire-grid">
         <details class="info-card info-drawer lineup-panel" data-collapse-key="suspect-lineup" data-default-open="0">
           <summary class="info-drawer-summary">
@@ -212,5 +212,5 @@
     </section>
   </div>
 </section>
-<script src="{{ url_for('static', filename='js/clue.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/clue.js', v=clue_static_token) }}" defer></script>
 {% endblock %}

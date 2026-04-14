@@ -1,7 +1,7 @@
 # Clue ML Runtime Guide
 
 ## Purpose
-This document describes the shipped OpenAI seat runtime in **v1.7.0**. It is for the maintainer changing prompts, profiles, tools, tracing, fallback behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
+This document describes the shipped OpenAI seat runtime in **v1.7.2**. It is for the maintainer changing prompts, profiles, tools, tracing, fallback behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
 
 ## Runtime Boundary
 - `clue_core` owns rules, hidden setup, legality, turn progression, refutation order, accusations, and filtered snapshots.

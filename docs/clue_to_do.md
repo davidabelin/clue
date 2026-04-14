@@ -1,28 +1,62 @@
 # Clue TO DO List
-- As of 4/13/26
-- Current version 1.7.x
+- As of 4/14/26
+- Current version 1.7.2
 
 ## *Rolling List*
 
-- [] No more 'Moves' destinations at starting locations
-- [] Gameboard needs total redesign, and made scalable, and make it click-to-move
-- [] feed scrolls are all latest-at-the-top
+- [] Important: determinism and not-quite-random behavior.
+  - [] Am I dealt same hand every time, and what else is the same every time?
+  - [] Are calls to random() well-seeded and properly distributed?
+
+- [] When can we have **LLM NPC**s? Because there is nothing but rote nonsense coming from this "placeholder" NPC's. Where is that implementation left hanging, and what can be done?!
+
+- We need some exits from the game:
+  - [] Quit Game button (priority)
+  - [] Pause, Save, Resume Game buttons...? (not yet a priority)
+
+
+- [x] No more 'Moves' destinations at starting locations
+- [] Gameboard needs big-time redesign
+  - [] Make it scalable
+  - [x] Make it click-to-move
+    - [] and commit the move upon the click (don't wait for the Commit Move button anymore)
+  - [] improved aesthetic
+    - [] no jagged, irregular lines
+- [x] feed scrolls are all latest-at-the-top
 
 ### Ongoing and Immediate UX Improvement Effort
 - SCOPE -- we are only speaking right now about *Beginner Mode* (on the new introduction of "Modes", see below)
 - [] DECLUTTER -- do a thorough decluttering of player displays
+  - [x] Collapse secondary sections by default in Beginner Mode
+  - [x] Tuck `Accuse` into a collapsed `Final Call` drawer
+  - [] Keep trimming remaining low-value copy and vertical bulk
 - [] CONDENSE -- remove "filler" text and leave only what is most relevant to playing the game 
   - be *liberal* with the condensation for Beginner Mode but if *better* information is required or helpful to new players, this is the mode in which it should appear!
 	  - ie. err on the side of *declutter and condensation*, and we will add more back to it later if need be
     - *Player Mode* will be even further stripped down to bare essentials, whereas
     - *Super Mode* on the other hand will expand beyond even what is there right now
+  - [x] Replace the hero-style marquee with a compact status strip
+  - [x] Condense `Decision Desk` and other turn-state copy
+  - [] Re-check whether more helper text can still be removed after fresh screenshots
 - [] TIGHTEN -- with clutter removed, shrink and excise dead space around what remains
+  - [x] Tighten panel spacing and reduce editor heights
+  - [x] Strengthen pill, helper-note, and footer contrast
+  - [x] Add cache-busting for CSS/JS so refreshed screenshots show current frontend code
+  - [] Reduce remaining dead space at zoomed-out desktop sizes
 - [] REARRANGE -- *Use legit gameplay UX-design best-practices from reputable sources*
-- [] REDESIGN -- create a formal /Plan of specific code changes to make
-  - [] thoroughly study the literature before hard "arrangement" of anything 
-  - [] every choice about placement, visibility, accessibility, etc. should have a sound and justifiable reason for it
-- [] IMPLEMENT -- after approval, execute the redesign /Plan
-- [] FINISH -- after /Plan has been approved and implemented, compose a summary of all the changes made in md-format text that I can easily paste into the Commit window in the Source Control panel in VSC
+  - [x] Implement the first Beginner Mode layout pass using the current research anchors
+  - [] Decide whether `Table Wire` should move or compress further relative to `Caseboard`
+- [x] REDESIGN -- create a formal /Plan of specific code changes to make
+  - [x] thoroughly study the literature before hard "arrangement" of anything 
+  - [x] every choice about placement, visibility, accessibility, etc. should have a sound and justifiable reason for it
+- [x] IMPLEMENT -- execute the approved initial Beginner Mode redesign /Plan
+- [] VERIFY -- review fresh screenshots after cache-busting and use that evidence for Beginner Mode pass 2
+- [x] FINISH -- after /Plan has been approved and implemented, compose a summary of all the changes made in md-format text that I can easily paste into the Commit window in the Source Control panel in VSC
+
+### Tomorrow First
+- [] Review fresh cache-busted screenshots with special attention to header/pill/footer readability
+- [] Do Beginner Mode pass 2 for remaining dead space and final `Table Wire` vs `Caseboard` balance
+- [] Choose the next non-UX priority: `Quit Game`, determinism/randomness investigation, or LLM NPC follow-through
 
 ### Planned Shift to Multimodal Gameplay
 *Beginner Mode, Player Mode, Super Mode*: A Different UI for each!
@@ -41,7 +75,7 @@
 
 ## **TO DO Backlog and Follow-Up** (as of **pre-**4/13/26)
 
-### Current State **After** v1.7.0
+### Current State **After** v1.7.2
 - [x] Standalone Flask app plus AIX-mount-safe routing
 - [x] Deterministic Clue rules engine with filtered seat snapshots
 - [x] Mixed human and autonomous seats under one Game Master
@@ -49,7 +83,7 @@
 - [x] YAML-driven turn/chat profiles and persona-social guidance
 - [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and heuristic fallback
 - [x] Browser UI with polling synchronization and seat-private/public separation
-- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.0`
+- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.2`
 
 ### Highest Priority Backlog
 - [ ] Add browser/API end-to-end coverage for a full human-only game, including reconnect after refresh or tab reopen.

@@ -55,10 +55,20 @@ def _aix_page_url(base_url: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
 
 
+def _static_asset_token(static_root: Path, *, version: str) -> str:
+    """Build a lightweight cache-busting token for bundled static assets."""
+
+    latest_mtime = 0
+    for path in static_root.rglob("*"):
+        if path.is_file():
+            latest_mtime = max(latest_mtime, int(path.stat().st_mtime))
+    return f"{version}-{latest_mtime}"
+
+
 def create_app(config: dict | None = None) -> Flask:
     """Create the standalone Clue Flask app and wire storage, routes, and chrome links.
 
-    The app factory is also the central configuration bridge for v1.7.0. It
+    The app factory is also the central configuration bridge for v1.7.2. It
     keeps deployment defaults explicit so future maintainers can see which knobs
     belong to the OpenAI seat runtime versus the core Flask or storage layers,
     and where Secret Manager-backed values may override local defaults.
@@ -67,9 +77,11 @@ def create_app(config: dict | None = None) -> Flask:
     root = Path(__file__).resolve().parents[1]
     data_dir = root / "data"
     app = Flask(__name__, template_folder="templates", static_folder="static")
+    static_token = _static_asset_token(root / "clue_web" / "static", version=CLUE_VERSION)
     app.config.from_mapping(
         CLUE_VERSION=CLUE_VERSION,
         CLUE_RELEASE_LABEL=CLUE_RELEASE_LABEL,
+        CLUE_STATIC_TOKEN=static_token,
         SECRET_KEY=os.getenv("CLUE_SECRET_KEY", "clue-dev-secret-key"),
         DATABASE_URL=os.getenv("CLUE_DATABASE_URL", ""),
         DATABASE_URL_SECRET=os.getenv("CLUE_DATABASE_URL_SECRET", ""),
@@ -113,6 +125,7 @@ def create_app(config: dict | None = None) -> Flask:
         return {
             "clue_version": app.config["CLUE_VERSION"],
             "clue_release_label": app.config["CLUE_RELEASE_LABEL"],
+            "clue_static_token": app.config["CLUE_STATIC_TOKEN"],
             "aix_hub_url": hub_url,
             "aix_contact_url": _aix_page_url(hub_url, "/contact"),
             "aix_privacy_url": _aix_page_url(hub_url, "/privacy"),

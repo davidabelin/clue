@@ -7,6 +7,7 @@ from pathlib import Path
 from clue_agents.base import ChatDecision
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_core.deduction import ToolSnapshot
+from clue_core.version import CLUE_RELEASE_LABEL
 from clue_web import create_app
 
 
@@ -38,7 +39,7 @@ def test_home_page_renders(client):
     assert "Mrs. Peacock" in html
     assert "Professor Plum" in html
     assert "Set unused seats to NP." in html
-    assert "Clue v1.7.0 runs as a standalone lab" in html
+    assert f"Clue {CLUE_RELEASE_LABEL} runs as a standalone lab" in html
     assert "Seed" not in html
     assert ">Heuristic<" not in html
     assert 'fetch("api/v1/games"' in html
@@ -426,7 +427,7 @@ def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client):
 
     snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
     other_snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": other_token}).get_json()
-    assert snapshot["analysis"]["run_context"]["release_label"] == "v1.7.0"
+    assert snapshot["analysis"]["run_context"]["release_label"] == CLUE_RELEASE_LABEL
     assert snapshot["analysis"]["agent_runtime"]["sdk_backend"] == "openai_agents_sdk"
     assert snapshot["analysis"]["agent_runtime"]["default_model"] == "gpt-5.4-mini-2026-03-17"
     assert snapshot["analysis"]["game_metrics"]["autonomous_actions"] >= 1

@@ -1,6 +1,6 @@
 # clue
 
-Standalone Clue lab for AIX, currently labeled **v1.7.0**.
+Standalone Clue lab for AIX, currently labeled **v1.7.2**.
 
 ## What This Repo Is
 - Classic Clue rules implemented as a deterministic, event-sourced Python engine.
@@ -121,5 +121,5 @@ pytest -q
 - Use [`docs/ClueMLRuntime.md`](./docs/ClueMLRuntime.md) for OpenAI runtime, guardrail, and session behavior.
 - Use [`docs/ClueDeepDive.md`](./docs/ClueDeepDive.md) for the end-to-end architecture walkthrough.
 - Use [`docs/CLUE_PLAN_alpha.md`](./docs/CLUE_PLAN_alpha.md) for the implementation-history and architecture-decision record.
-- Use [`docs/clue_to_do.md`](./docs/clue_to_do.md) for the current post-`v1.7.0` backlog.
+- Use [`docs/clue_to_do.md`](./docs/clue_to_do.md) for the current post-`v1.7.2` backlog.
 - Use [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) for release history.

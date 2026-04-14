@@ -1,6 +1,6 @@
 # Clue Docs Map
 
-This directory is maintainer-facing. The documents below are all current for **v1.7.0**, but they answer different questions.
+This directory is maintainer-facing. The documents below are all current for **v1.7.2**, but they answer different questions.
 
 ## Start Here
 - [`../README.md`](../README.md)
@@ -18,7 +18,7 @@ This directory is maintainer-facing. The documents below are all current for **v
 - [`CLUE_PLAN_alpha.md`](./CLUE_PLAN_alpha.md)
   Historical implementation path and the architecture decisions that still shape the repo.
 - [`clue_to_do.md`](./clue_to_do.md)
-  Current engineering backlog after the `v1.7.0` documentation sweep.
+  Current engineering backlog after the `v1.7.2` Beginner Mode UX pass.
 
 ## Supporting Material
 - [`dont_use.png`](./dont_use_clue_layout.png)

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.2 - 2026-04-14
+- Reworked the Beginner Mode `/game` page into a denser, clearer play surface with a compact status strip, collapsible secondary sections, tighter action hierarchy, and stronger contrast throughout the gameplay shell.
+- Made the board scale with the viewport, stage movement from board clicks, and removed `start` nodes from legal move destinations.
+- Switched `Witness Record`, `Chat Feed`, and `Private Intel` to newest-first rendering while keeping draft-preservation and stable polling behavior intact.
+- Added lightweight static-asset cache busting so CSS/JS updates reliably appear after refreshes.
+- Aligned release markers, current-facing docs, and tests on `v1.7.2`.
+
 ## v1.7.0 - 2026-04-13
 - Delivered the in-game UX overhaul with a redesigned caseboard layout, clearer turn controls, easier chat, and improved mobile behavior.
 - Kept the shipped game on the stable polling request path instead of introducing new server sync contracts.
