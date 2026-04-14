@@ -150,3 +150,21 @@ def test_private_card_event_is_visible_only_to_suggester():
 
     assert any(event["event_type"] == "private_card_shown" for event in scarlet_snapshot["events"])
     assert not any(event["event_type"] == "private_card_shown" for event in peacock_snapshot["events"])
+
+
+def test_move_targets_do_not_include_start_nodes():
+    """Legal movement targets should never send a seat back onto a start node."""
+
+    seats = _seats()
+    hidden_setup = build_hidden_setup(seats, seed=11)
+    state = build_initial_state("game_test", "Table", seats, hidden_setup)
+    state["seats"]["seat_scarlet"]["position"] = "hall_lounge"
+    state["phase"] = "move"
+    state["current_roll"] = 1
+    state["remaining_steps"] = 1
+
+    legal = GameMaster(state).legal_actions("seat_scarlet")
+    targets = {item["node_id"] for item in legal["move_targets"]}
+
+    assert "scarlet_start" not in targets
+    assert {"hall", "lounge"} <= targets

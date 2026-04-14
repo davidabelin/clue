@@ -214,16 +214,16 @@ button:disabled {
 
 .game-app--briefing {
   display: grid;
-  gap: 1rem;
+  gap: 0.85rem;
   color: #1f1712;
 }
 
 .game-app--briefing .panel {
   background:
-    linear-gradient(180deg, rgba(255, 247, 231, 0.98), rgba(244, 231, 205, 0.96));
-  border-color: rgba(63, 41, 28, 0.4);
+    linear-gradient(180deg, rgba(255, 249, 236, 0.99), rgba(240, 224, 191, 0.97));
+  border-color: rgba(63, 41, 28, 0.48);
   box-shadow:
-    0 20px 38px rgba(16, 12, 10, 0.28),
+    0 16px 28px rgba(16, 12, 10, 0.22),
     inset 0 1px 0 rgba(255, 252, 242, 0.9),
     inset 0 0 0 1px rgba(136, 95, 54, 0.12);
 }
@@ -232,65 +232,69 @@ button:disabled {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1.5rem;
-  padding: 1.2rem 1.25rem;
+  gap: 1.1rem;
+  padding: 0.9rem 1.05rem;
   background:
-    linear-gradient(135deg, rgba(35, 25, 21, 0.92), rgba(78, 51, 37, 0.78)),
-    linear-gradient(180deg, rgba(255, 247, 231, 0.12), rgba(255, 247, 231, 0.03));
-  color: #f7ebd6;
+    linear-gradient(135deg, rgba(28, 21, 19, 0.98), rgba(72, 43, 35, 0.94)),
+    linear-gradient(180deg, rgba(183, 118, 64, 0.16), rgba(255, 247, 231, 0.04));
+  color: #fff3df;
 }
 
 .marquee-panel .eyebrow,
 .marquee-panel .card-kicker {
-  color: #f1c57c;
+  color: #f2cb86;
 }
 
 .marquee-panel h1 {
   margin: 0;
-  font-size: clamp(2rem, 3vw, 2.8rem);
+  font-size: clamp(1.5rem, 2.2vw, 2.2rem);
   letter-spacing: 0.03em;
+  line-height: 1.05;
+  color: #fff8ef;
+  text-shadow: 0 1px 0 rgba(20, 12, 9, 0.45);
 }
 
 .marquee-copy {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.28rem;
+  max-width: 31rem;
 }
 
 .marquee-note {
   margin: 0;
-  max-width: 42rem;
-  color: rgba(247, 235, 214, 0.82);
-  line-height: 1.55;
+  max-width: 30rem;
+  color: rgba(255, 236, 209, 0.9);
+  line-height: 1.4;
 }
 
 .marquee-status {
   display: grid;
-  gap: 0.55rem;
-  min-width: 16rem;
+  gap: 0.42rem;
+  min-width: 13rem;
   justify-items: end;
 }
 
 .turn-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
-  width: min(100%, 29rem);
+  gap: 0.5rem;
+  width: min(100%, 24rem);
 }
 
 .turn-metric {
   min-width: 0;
-  padding: 0.7rem 0.8rem;
-  border-radius: 16px;
-  background: rgba(247, 235, 214, 0.09);
-  border: 1px solid rgba(247, 235, 214, 0.15);
-  box-shadow: inset 0 1px 0 rgba(255, 250, 239, 0.08);
+  padding: 0.52rem 0.68rem;
+  border-radius: 14px;
+  background: rgba(255, 245, 225, 0.14);
+  border: 1px solid rgba(255, 233, 197, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 239, 0.11);
 }
 
 .turn-metric strong {
   display: block;
-  font-size: 1rem;
-  color: #fff6e8;
-  line-height: 1.3;
+  font-size: 0.98rem;
+  color: #fff8ef;
+  line-height: 1.2;
 }
 
 .phase-strip {
@@ -303,7 +307,7 @@ button:disabled {
   font-size: 0.78rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(247, 235, 214, 0.72);
+  color: rgba(255, 236, 209, 0.82);
 }
 
 .turn-banner,
@@ -324,9 +328,9 @@ button:disabled {
 
 .marquee-panel .turn-banner,
 .marquee-panel .phase-pill {
-  background: rgba(247, 235, 214, 0.12);
-  border-color: rgba(247, 235, 214, 0.2);
-  color: #fff6ea;
+  background: rgba(255, 241, 218, 0.18);
+  border-color: rgba(255, 230, 194, 0.28);
+  color: #fffaf2;
 }
 
 .turn-banner {
@@ -425,7 +429,7 @@ button:disabled {
 }
 
 .marquee-panel .pace-note {
-  color: rgba(247, 235, 214, 0.72);
+  color: rgba(255, 232, 202, 0.88);
 }
 
 .request-error {
@@ -436,7 +440,7 @@ button:disabled {
 
 .briefing-grid {
   display: grid;
-  gap: 1rem;
+  gap: 0.85rem;
   grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.82fr) minmax(320px, 0.88fr);
   grid-template-areas:
     "caseboard desk briefing"
@@ -456,7 +460,7 @@ button:disabled {
 .briefing-stage,
 .wire-stage {
   display: grid;
-  gap: 0.95rem;
+  gap: 0.72rem;
   align-content: start;
 }
 
@@ -465,7 +469,7 @@ button:disabled {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.55rem;
 }
 
 .panel-head h2,
@@ -476,18 +480,18 @@ button:disabled {
 }
 
 .compact {
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.4rem;
 }
 
 .info-card {
   background:
-    linear-gradient(180deg, rgba(252, 243, 223, 0.98), rgba(241, 225, 194, 0.96));
-  border: 1px solid rgba(66, 42, 27, 0.14);
-  border-radius: 18px;
-  padding: 0.95rem;
+    linear-gradient(180deg, rgba(255, 246, 228, 0.99), rgba(240, 222, 188, 0.97));
+  border: 1px solid rgba(66, 42, 27, 0.18);
+  border-radius: 16px;
+  padding: 0.78rem;
   box-shadow:
     inset 0 1px 0 rgba(255, 252, 245, 0.88),
-    0 10px 18px rgba(35, 21, 16, 0.08);
+    0 8px 14px rgba(35, 21, 16, 0.06);
 }
 
 .decision-context-card,
@@ -543,7 +547,7 @@ button:disabled {
 }
 
 .board-note {
-  margin-top: 0.8rem;
+  margin-top: 0.55rem;
 }
 
 .board-edge {
@@ -599,7 +603,7 @@ button:disabled {
 .debug-grid,
 .wire-grid {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.7rem;
 }
 
 .position-grid,
@@ -619,7 +623,7 @@ button:disabled {
   border-radius: 16px;
   background:
     linear-gradient(180deg, rgba(255, 250, 240, 0.98), rgba(244, 231, 204, 0.94));
-  padding: 0.9rem;
+  padding: 0.72rem;
   box-shadow:
     inset 0 1px 0 rgba(255, 253, 245, 0.86),
     0 8px 18px rgba(35, 21, 16, 0.06);
@@ -710,7 +714,7 @@ button:disabled {
 
 .action-controls {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.7rem;
   padding: 0;
   background: none;
   border: none;
@@ -732,9 +736,9 @@ button:disabled {
 
 .action-card {
   display: grid;
-  gap: 0.9rem;
-  padding: 0.95rem;
-  border-radius: 18px;
+  gap: 0.72rem;
+  padding: 0.78rem;
+  border-radius: 16px;
   border: 1px solid rgba(66, 42, 27, 0.14);
   background:
     linear-gradient(180deg, rgba(255, 251, 242, 0.98), rgba(244, 232, 210, 0.95));
@@ -788,14 +792,14 @@ button:disabled {
 
 .chat-composer {
   display: grid;
-  gap: 0.65rem;
+  gap: 0.52rem;
   background:
     linear-gradient(180deg, rgba(241, 247, 251, 0.98), rgba(229, 238, 245, 0.96));
   border-color: rgba(46, 86, 111, 0.16);
 }
 
 .guidance {
-  padding: 0.2rem 0 0.15rem;
+  padding: 0.08rem 0;
 }
 
 .decision-context {
@@ -806,7 +810,7 @@ button:disabled {
 
 .phase-detail,
 .action-priority-note {
-  padding: 0.75rem 0.85rem;
+  padding: 0.62rem 0.72rem;
   border-radius: 14px;
   background: rgba(255, 251, 241, 0.72);
   border: 1px solid rgba(66, 42, 27, 0.1);
@@ -821,7 +825,7 @@ button:disabled {
 
 .turn-rail {
   display: grid;
-  gap: 0.65rem;
+  gap: 0.5rem;
   padding-left: 0;
   margin: 0;
   list-style: none;
@@ -832,7 +836,7 @@ button:disabled {
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.75rem;
   align-items: start;
-  padding: 0.8rem 0.85rem;
+  padding: 0.68rem 0.72rem;
   border-radius: 16px;
   border: 1px solid rgba(66, 42, 27, 0.12);
   background:
@@ -970,7 +974,7 @@ button:disabled {
 
 .event-log {
   display: grid;
-  gap: 0.72rem;
+  gap: 0.55rem;
   padding: 0 0.2rem 0 0;
   max-height: 20rem;
   overflow-y: auto;
@@ -985,7 +989,7 @@ button:disabled {
   border: 1px solid rgba(44, 31, 23, 0.12);
   background:
     linear-gradient(180deg, rgba(255, 250, 240, 0.98), rgba(245, 232, 206, 0.94));
-  padding: 0.8rem 0.9rem;
+  padding: 0.68rem 0.78rem;
 }
 
 .log-item.is-private {
@@ -1076,13 +1080,13 @@ button:disabled {
   border-radius: 18px;
   background: rgba(53, 33, 24, 0.04);
   border: 1px solid rgba(66, 42, 27, 0.12);
-  padding: 0.2rem 0.2rem 0.3rem;
+  padding: 0.15rem 0.15rem 0.22rem;
 }
 
 .diagnostics-drawer summary {
   cursor: pointer;
   list-style: none;
-  padding: 0.8rem 0.9rem;
+  padding: 0.65rem 0.75rem;
   font-weight: 700;
 }
 
@@ -1093,8 +1097,8 @@ button:disabled {
 .diagnostics-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.9rem;
-  padding: 0 0.7rem 0.7rem;
+  gap: 0.7rem;
+  padding: 0 0.55rem 0.55rem;
 }
 
 .seat-links {
@@ -1175,5 +1179,483 @@ button:disabled {
   .position-grid,
   .seat-list {
     grid-template-columns: 1fr;
+  }
+}
+
+/*
+  Beginner Mode redesign overrides.
+
+  These rules intentionally live at the end of the stylesheet so the in-game
+  surface can be rebalanced without rewriting the older shared styles above.
+*/
+.game-app--briefing {
+  gap: 0.78rem;
+}
+
+.game-app--briefing .panel {
+  background:
+    linear-gradient(180deg, rgba(255, 249, 236, 0.99), rgba(239, 223, 189, 0.97));
+  border-color: rgba(62, 40, 27, 0.44);
+  box-shadow:
+    0 12px 26px rgba(20, 13, 10, 0.16),
+    inset 0 1px 0 rgba(255, 252, 242, 0.94),
+    inset 0 0 0 1px rgba(136, 95, 54, 0.1);
+}
+
+.marquee-panel--compact {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(20rem, auto);
+  align-items: center;
+  gap: 0.8rem 1rem;
+  padding: 0.78rem 1rem;
+  background:
+    linear-gradient(135deg, rgba(29, 21, 18, 0.98), rgba(69, 42, 35, 0.95)),
+    linear-gradient(180deg, rgba(194, 128, 69, 0.16), rgba(255, 247, 231, 0.04));
+  color: #fff4e1;
+}
+
+.marquee-panel--compact .eyebrow,
+.marquee-panel--compact .card-kicker {
+  color: #f3cb8c;
+}
+
+.status-cluster {
+  display: grid;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.status-cluster--identity h1 {
+  margin: 0;
+  font-size: clamp(1.35rem, 1.9vw, 1.95rem);
+  line-height: 1.05;
+  color: #fffaf1;
+  text-shadow: 0 1px 0 rgba(19, 12, 9, 0.45);
+}
+
+.status-cluster--banner {
+  justify-items: start;
+}
+
+.status-cluster--metrics {
+  justify-items: end;
+  gap: 0.45rem;
+}
+
+.marquee-panel--compact .turn-banner {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 0.44rem 0.82rem;
+  background: rgba(255, 241, 218, 0.18);
+  border-color: rgba(255, 230, 194, 0.28);
+  color: #fffaf2;
+}
+
+.marquee-panel--compact .pace-note {
+  margin: 0;
+  font-size: 0.88rem;
+  color: rgba(255, 234, 205, 0.88);
+  line-height: 1.35;
+}
+
+.marquee-panel--compact .phase-label {
+  color: rgba(255, 236, 209, 0.8);
+}
+
+.marquee-panel--compact .phase-pill {
+  background: rgba(255, 241, 218, 0.16);
+  border-color: rgba(255, 230, 194, 0.24);
+  color: #fffaf2;
+}
+
+.marquee-panel--compact .turn-metrics {
+  width: auto;
+  gap: 0.5rem;
+}
+
+.marquee-panel--compact .turn-metric {
+  padding: 0.52rem 0.68rem;
+  border-radius: 14px;
+  background: rgba(255, 245, 225, 0.14);
+  border: 1px solid rgba(255, 233, 197, 0.2);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 239, 0.1);
+}
+
+.marquee-panel--compact .turn-metric strong {
+  color: #fff9f1;
+  line-height: 1.2;
+}
+
+.briefing-grid {
+  gap: 0.78rem;
+  grid-template-columns: minmax(0, 1.42fr) minmax(330px, 0.94fr) minmax(290px, 0.8fr);
+}
+
+.caseboard-stage,
+.desk-stage,
+.briefing-stage,
+.wire-stage {
+  gap: 0.7rem;
+}
+
+.panel-head {
+  margin-bottom: 0.5rem;
+}
+
+.panel-head--tight {
+  margin-bottom: 0.35rem;
+}
+
+.panel-head-note {
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.info-card {
+  border-radius: 16px;
+  border: 1px solid rgba(66, 42, 27, 0.18);
+  padding: 0.74rem;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 229, 0.99), rgba(241, 223, 188, 0.97));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 252, 245, 0.9),
+    0 6px 12px rgba(35, 21, 16, 0.05);
+}
+
+.decision-context-card,
+.action-panel,
+.seat-summary-panel {
+  gap: 0.5rem;
+}
+
+.decision-context {
+  font-size: 1.16rem;
+  line-height: 1.28;
+}
+
+.guidance {
+  padding: 0;
+  font-size: 0.98rem;
+  color: #4e3a2c;
+}
+
+.turn-rail {
+  gap: 0.42rem;
+}
+
+.rail-step {
+  padding: 0.58rem 0.68rem;
+  border-radius: 14px;
+}
+
+.rail-copy {
+  gap: 0.12rem;
+}
+
+.rail-copy span {
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.action-priority-note,
+.phase-detail {
+  padding: 0.58rem 0.68rem;
+  line-height: 1.35;
+}
+
+.action-controls {
+  gap: 0.65rem;
+}
+
+.action-card {
+  gap: 0.65rem;
+  padding: 0.72rem;
+  border-radius: 15px;
+}
+
+.action-card-head,
+.action-card-body {
+  gap: 0.42rem;
+}
+
+.action-card h4 {
+  font-size: 1.05rem;
+}
+
+.action-card-detail {
+  line-height: 1.35;
+}
+
+.action-drawer {
+  border-radius: 16px;
+  border: 1px solid rgba(122, 19, 31, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 244, 242, 0.98), rgba(247, 228, 223, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 252, 245, 0.9),
+    0 6px 12px rgba(35, 21, 16, 0.05);
+}
+
+.action-drawer summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.72rem 0.78rem;
+}
+
+.action-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.action-drawer-body {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0 0.78rem 0.78rem;
+}
+
+.action-card--drawer {
+  border: none;
+  background: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.info-drawer {
+  padding: 0;
+  overflow: hidden;
+}
+
+.info-drawer-summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0.72rem 0.78rem;
+}
+
+.info-drawer summary::-webkit-details-marker {
+  display: none;
+}
+
+.info-drawer[open] > .info-drawer-summary {
+  border-bottom: 1px solid rgba(66, 42, 27, 0.12);
+}
+
+.info-drawer-body {
+  display: grid;
+  gap: 0.62rem;
+  padding: 0.78rem;
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.drawer-head h3,
+.drawer-head h4 {
+  margin: 0;
+}
+
+.drawer-note {
+  font-size: 0.84rem;
+  line-height: 1.3;
+  color: var(--ink-soft);
+}
+
+.board-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  border-radius: 20px;
+  border: 1px solid rgba(71, 44, 22, 0.46);
+  background:
+    radial-gradient(circle at 28% 22%, rgba(255, 241, 210, 0.24), transparent 28%),
+    radial-gradient(circle at 74% 68%, rgba(226, 176, 93, 0.18), transparent 24%),
+    linear-gradient(180deg, #6a4b36 0%, #7b583a 20%, #b2844f 46%, #d8b273 70%, #efd8a7 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 244, 222, 0.34),
+    inset 0 18px 34px rgba(255, 247, 230, 0.08),
+    0 12px 24px rgba(20, 13, 9, 0.14);
+}
+
+.board-svg text {
+  fill: #231810;
+}
+
+.board-note {
+  margin-top: 0.1rem;
+}
+
+.board-edge {
+  stroke-width: 6;
+  opacity: 0.62;
+}
+
+.board-edge-walk {
+  stroke: rgba(78, 53, 36, 0.48);
+}
+
+.board-edge-passage {
+  stroke: rgba(33, 97, 135, 0.52);
+}
+
+.node.room rect {
+  stroke: rgba(62, 40, 27, 0.82);
+  stroke-width: 2.3;
+}
+
+.node.hallway circle {
+  fill: rgba(255, 249, 236, 0.96);
+  stroke: rgba(66, 45, 31, 0.84);
+}
+
+.node.start circle {
+  fill-opacity: 0.74;
+  stroke: rgba(66, 45, 31, 0.8);
+}
+
+.node.highlight-walk rect,
+.node.highlight-walk circle {
+  fill: rgba(168, 50, 63, 0.14);
+  stroke: rgba(145, 26, 39, 0.92);
+  stroke-width: 3;
+}
+
+.node.highlight-passage rect,
+.node.highlight-passage circle {
+  fill: rgba(47, 96, 130, 0.14);
+  stroke: rgba(35, 92, 126, 0.92);
+  stroke-width: 3;
+}
+
+.node.selected-target rect,
+.node.selected-target circle {
+  stroke: rgba(122, 19, 31, 0.96);
+  stroke-width: 3.4;
+  filter: drop-shadow(0 0 10px rgba(236, 199, 109, 0.95));
+}
+
+.node.selected-target text {
+  fill: #6d1020;
+}
+
+.clickable-node:hover rect,
+.clickable-node:hover circle {
+  filter: brightness(1.03);
+}
+
+.position-grid,
+.seat-list,
+.seat-summary-grid,
+.debug-grid,
+.wire-grid {
+  gap: 0.7rem;
+}
+
+.position-card,
+.seat-card,
+.summary-stat,
+.log-item {
+  padding: 0.68rem 0.74rem;
+}
+
+.position-card p + p,
+.seat-card p + p,
+.summary-stat strong {
+  margin-top: 0.28rem;
+}
+
+.chat-composer {
+  gap: 0.52rem;
+}
+
+.event-log {
+  gap: 0.55rem;
+  max-height: 17rem;
+}
+
+.private-log {
+  max-height: 15rem;
+}
+
+.log-body {
+  gap: 0.28rem;
+}
+
+.log-message {
+  line-height: 1.45;
+}
+
+.diagnostics-drawer {
+  padding: 0.12rem 0.12rem 0.2rem;
+}
+
+.diagnostics-drawer summary {
+  padding: 0.68rem 0.75rem;
+}
+
+.diagnostics-grid {
+  gap: 0.7rem;
+  padding: 0 0.55rem 0.55rem;
+}
+
+@media (max-width: 1320px) {
+  .marquee-panel--compact {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  .status-cluster--metrics {
+    justify-items: start;
+    width: 100%;
+  }
+
+  .briefing-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+    grid-template-areas:
+      "caseboard desk"
+      "wire briefing"
+      "diagnostics diagnostics";
+  }
+}
+
+@media (max-width: 980px) {
+  .briefing-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "caseboard"
+      "desk"
+      "briefing"
+      "wire"
+      "diagnostics";
+  }
+
+  .wire-grid,
+  .diagnostics-grid,
+  .debug-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lineup-panel {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .status-cluster--metrics,
+  .status-cluster--banner {
+    width: 100%;
+  }
+
+  .turn-metrics,
+  .seat-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .drawer-head {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

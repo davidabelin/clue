@@ -2,14 +2,16 @@
 {% extends "base.html" %}
 {% block content %}
 <section id="game-app" class="game-app game-app--briefing" data-seat-token="{{ seat_token }}">
-  <header class="panel marquee-panel">
-    <div class="marquee-copy">
+  <header class="panel marquee-panel marquee-panel--compact">
+    <div class="status-cluster status-cluster--identity">
       <p class="eyebrow">{{ seat.display_name }}</p>
       <h1 id="game-title">Clue Table</h1>
-      <p class="marquee-note">A live caseboard for movement, public table talk, and private deductions.</p>
     </div>
-    <div class="marquee-status">
+    <div class="status-cluster status-cluster--banner">
       <div id="turn-banner" class="turn-banner" data-state="loading">Loading table state...</div>
+      <p id="pace-note" class="pace-note">Synchronizing table...</p>
+    </div>
+    <div class="status-cluster status-cluster--metrics">
       <div class="phase-strip">
         <span class="phase-label">Phase</span>
         <div id="phase-pill" class="phase-pill"></div>
@@ -28,7 +30,6 @@
           <strong id="legal-count">--</strong>
         </article>
       </div>
-      <p id="pace-note" class="pace-note">Synchronizing table...</p>
     </div>
   </header>
 
@@ -36,25 +37,30 @@
 
   <div class="briefing-grid">
     <section class="panel caseboard-stage">
-      <div class="panel-head">
+      <div class="panel-head panel-head--tight">
         <div>
           <p class="card-kicker">Board State</p>
           <h2>Caseboard</h2>
         </div>
-        <p class="panel-head-note">Click a highlighted space to prime movement instantly.</p>
+        <p class="panel-head-note">Board clicks stage movement only.</p>
       </div>
       <svg id="board" viewBox="0 0 720 560" class="board-svg"></svg>
-      <p class="field-note board-note">Movement targets glow on the board as soon as they are legal. Board clicks never commit an action by themselves.</p>
-      <section class="info-card marker-grid-card">
-        <div class="panel-head compact">
-          <h3>Marker Grid</h3>
+      <p class="field-note board-note">Legal targets glow on the board. Nothing commits until you use the move controls.</p>
+      <details class="info-card info-drawer marker-grid-card" data-collapse-key="marker-grid" data-default-open="0">
+        <summary class="info-drawer-summary">
+          <div class="drawer-head">
+            <h3>Marker Grid</h3>
+            <span class="drawer-note">Expand for every seat marker.</span>
+          </div>
+        </summary>
+        <div class="info-drawer-body">
+          <div id="position-grid" class="position-grid"></div>
         </div>
-        <div id="position-grid" class="position-grid"></div>
-      </section>
+      </details>
     </section>
 
     <section class="panel desk-stage">
-      <div class="panel-head">
+      <div class="panel-head panel-head--tight">
         <div>
           <p class="card-kicker">Current Turn</p>
           <h2>Decision Desk</h2>
@@ -67,15 +73,13 @@
         </div>
         <p id="decision-context" class="decision-context">Reading current turn state...</p>
         <p id="turn-guidance" class="guidance">Reading current turn state...</p>
-        <p id="legal-summary" class="field-note">Reading legal actions...</p>
-        <p id="phase-detail" class="phase-detail">Reading phase details...</p>
         <ol id="turn-rail" class="turn-rail" aria-label="Turn progress"></ol>
       </section>
       <section id="action-panel" class="info-card action-panel" data-state="loading">
         <div class="panel-head compact">
           <div>
             <h3>Action Queue</h3>
-            <p class="field-note">High-stakes table actions stay here so chat never competes with committing a move.</p>
+            <p class="field-note">Primary moves stay visible. High-risk options stay tucked away until needed.</p>
           </div>
         </div>
         <p id="action-priority-note" class="action-priority-note">Reading action priority...</p>
@@ -88,7 +92,7 @@
           <span id="chat-count" class="status-chip">0</span>
         </div>
         <label for="chat-input">Public Chat</label>
-        <p class="field-note">Press Enter to send. Use Shift+Enter for a new line. Hidden card ownership never belongs here.</p>
+        <p class="field-note">Enter sends. Shift+Enter adds a line.</p>
         <textarea id="chat-input" rows="4" placeholder="Keep the table talking."></textarea>
         <div class="composer-meta">
           <span id="chat-draft-state" class="micro-status" data-state="idle">Draft empty.</span>
@@ -99,7 +103,7 @@
     </section>
 
     <aside class="panel briefing-stage">
-      <div class="panel-head">
+      <div class="panel-head panel-head--tight">
         <div>
           <p class="card-kicker">Seat-Only View</p>
           <h2>Private Briefing</h2>
@@ -118,44 +122,57 @@
         </div>
         <ul id="hand-list"></ul>
       </section>
-      <section class="info-card notebook-panel">
-        <div class="panel-head compact">
-          <h3>Case Notes</h3>
-          <span id="notebook-status" class="status-chip">Synced</span>
+      <details class="info-card info-drawer notebook-panel" data-collapse-key="case-notes" data-default-open="0">
+        <summary class="info-drawer-summary">
+          <div class="drawer-head">
+            <h3>Case Notes</h3>
+            <span id="notebook-status" class="status-chip">Synced</span>
+          </div>
+        </summary>
+        <div class="info-drawer-body">
+          <p class="field-note">Keep deductions here without losing them during refreshes.</p>
+          <textarea id="notebook-text" rows="11" placeholder="Track cards, bluffs, and contradictions here."></textarea>
+          <div class="composer-meta">
+            <span id="notebook-draft-state" class="micro-status" data-state="synced">Seat notebook synced.</span>
+            <span class="composer-hint">Notebook drafts stay intact across refreshes until you save them.</span>
+          </div>
+          <button id="save-notebook" type="button">Save Notes</button>
         </div>
-        <p class="field-note">Keep deductions here without losing them during refreshes.</p>
-        <textarea id="notebook-text" rows="11" placeholder="Track cards, bluffs, and contradictions here."></textarea>
-        <div class="composer-meta">
-          <span id="notebook-draft-state" class="micro-status" data-state="synced">Seat notebook synced.</span>
-          <span class="composer-hint">Notebook drafts stay intact across refreshes until you save them.</span>
+      </details>
+      <details class="info-card info-drawer private-intel-panel" data-collapse-key="private-intel" data-default-open="0" data-open-when-populated="1">
+        <summary class="info-drawer-summary">
+          <div class="drawer-head">
+            <h3>Private Intel</h3>
+            <span id="private-count" class="status-chip">0</span>
+          </div>
+        </summary>
+        <div class="info-drawer-body">
+          <p class="field-note">Only you can see refutations, reveals, and seat-private prompts.</p>
+          <ul id="private-log" class="event-log private-log"></ul>
         </div>
-        <button id="save-notebook" type="button">Save Notes</button>
-      </section>
-      <section class="info-card private-intel-panel">
-        <div class="panel-head compact">
-          <h3>Private Intel</h3>
-          <span id="private-count" class="status-chip">0</span>
-        </div>
-        <p class="field-note">Only you can see refutations, reveals, and seat-private prompts.</p>
-        <ul id="private-log" class="event-log private-log"></ul>
-      </section>
+      </details>
     </aside>
 
     <section class="panel wire-stage">
-      <div class="panel-head">
+      <div class="panel-head panel-head--tight">
         <div>
           <p class="card-kicker">Shared Table State</p>
           <h2>Table Wire</h2>
         </div>
       </div>
-      <p class="panel-head-note">Public narrative, public chat, and suspect positions stay separated so the table remains easy to scan mid-turn.</p>
+      <p class="panel-head-note">Latest entries stay at the top. Public history and table chat stay separated.</p>
       <div class="wire-grid">
-        <section class="info-card lineup-panel">
-          <div class="panel-head compact">
-            <h3>Suspect Lineup</h3>
+        <details class="info-card info-drawer lineup-panel" data-collapse-key="suspect-lineup" data-default-open="0">
+          <summary class="info-drawer-summary">
+            <div class="drawer-head">
+              <h3>Suspect Lineup</h3>
+              <span class="drawer-note">Expand for full seat positions.</span>
+            </div>
+          </summary>
+          <div class="info-drawer-body">
+            <div id="seat-list" class="seat-list"></div>
           </div>
-          <div id="seat-list" class="seat-list"></div>
-        </section>
+        </details>
         <section class="info-card narrative-panel">
           <div class="panel-head compact">
             <h3>Witness Record</h3>
@@ -174,7 +191,7 @@
     </section>
 
     <section class="panel diagnostics-stage">
-      <details class="diagnostics-drawer">
+      <details class="diagnostics-drawer" data-collapse-key="advanced-diagnostics" data-default-open="0">
         <summary>Advanced Diagnostics</summary>
         <div class="diagnostics-grid">
           <section class="info-card seat-debug-panel">

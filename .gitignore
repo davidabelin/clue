@@ -2,5 +2,11 @@ data/*.db
 __pycache__/
 .pytest_cache/
 .gcloudignore
-docs/clue_layout.png
+docs/dont_use_clue_layout.png
 docs/ROLLING_COMMIT_LINE.md
+docs/screenshots/*
+docs/screenshots/plum bottom 100pcnt 2026-04-13 204958.jpg
+docs/screenshots/plum mid-I 100pcnt 2026-04-13 204804.jpg
+docs/screenshots/plum mid-II 100pcnt 2026-04-13 204857.jpg
+docs/screenshots/plum top 100pcnt 2026-04-13 204632.jpg
+docs/screenshots/plum fullscreen top 100pcnt 2026-04-13 210114.jpg

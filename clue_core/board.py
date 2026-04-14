@@ -138,5 +138,5 @@ def reachable_nodes(start: str, steps: int, blocked: set[str] | None = None) -> 
     return {
         node_id: distance
         for node_id, distance in distances.items()
-        if 0 < distance <= int(steps)
+        if 0 < distance <= int(steps) and node_kind(node_id) != "start"
     }

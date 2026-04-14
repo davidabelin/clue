@@ -21,8 +21,8 @@ This directory is maintainer-facing. The documents below are all current for **v
   Current engineering backlog after the `v1.7.0` documentation sweep.
 
 ## Supporting Material
-- [`clue_layout.png`](./clue_layout.png)
-  Screenshot/sketch reference for the current table layout and panel vocabulary.
+- [`dont_use.png`](./dont_use_clue_layout.png)
+  *Don't use* this screenshot/sketch reference for the then-current table layout and panel vocabulary.
 
 ## Which Doc To Update
 - Change runtime defaults, tool surfaces, tracing, or session behavior:
