@@ -91,8 +91,17 @@ if (app) {
     minute: "2-digit",
   });
   const COLLAPSE_STORAGE_PREFIX = "clue.beginner.collapse.";
+  const PLAYER_NARRATIVE_TYPES = new Set([
+    "suggestion_made",
+    "suggestion_refuted",
+    "suggestion_unanswered",
+    "accusation_made",
+    "accusation_wrong",
+    "accusation_correct",
+  ]);
 
   let currentSnapshot = null;
+  let currentUiMode = "beginner";
   let snapshotKey = "";
   let notebookDirty = false;
   let chatDirty = false;
@@ -205,6 +214,21 @@ if (app) {
       return "NP";
     }
     return normalized || "Unknown";
+  }
+
+  function normalizeUiMode(value) {
+    return String(value || "").trim().toLowerCase() === "player" ? "player" : "beginner";
+  }
+
+  function isPlayerMode() {
+    return currentUiMode === "player";
+  }
+
+  function applyUiMode(snapshot) {
+    currentUiMode = normalizeUiMode(snapshot?.ui_mode);
+    app.dataset.uiMode = currentUiMode;
+    app.classList.toggle("game-app--player", isPlayerMode());
+    app.classList.toggle("game-app--beginner", !isPlayerMode());
   }
 
   function titleize(value) {
@@ -402,18 +426,18 @@ if (app) {
     };
   }
 
-  function setMoveDraft(nodeId) {
+  async function submitBoardMove(nodeId) {
     if (pendingMutation) {
       return;
     }
     actionDrafts.set("move-target", nodeId);
-    const select = document.getElementById("move-target");
-    if (select) {
-      select.value = nodeId;
-    }
     if (currentSnapshot) {
       renderBoard(currentSnapshot);
     }
+    await submitMutation("action", "api/v1/games/current/actions", {
+      action: "move",
+      target_node: nodeId,
+    });
   }
 
   function renderBoard(snapshot) {
@@ -508,8 +532,17 @@ if (app) {
       });
       if (highlights.has(node.id)) {
         g.classList.add("clickable-node");
+        g.setAttribute("role", "button");
+        g.setAttribute("tabindex", pendingMutation ? "-1" : "0");
+        g.setAttribute("aria-label", `Move to ${node.label}`);
         g.addEventListener("click", () => {
-          setMoveDraft(node.id);
+          submitBoardMove(node.id);
+        });
+        g.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            submitBoardMove(node.id);
+          }
         });
       }
       surface.appendChild(g);
@@ -627,7 +660,12 @@ if (app) {
   function eventChannel(event) {
     if (isTraceEvent(event)) return "ignore";
     if (event.visibility === "public" && event.event_type === "chat_posted") return "chat";
-    if (event.visibility === "public") return "narrative";
+    if (event.visibility === "public") {
+      if (isPlayerMode() && !PLAYER_NARRATIVE_TYPES.has(String(event.event_type || ""))) {
+        return "ignore";
+      }
+      return "narrative";
+    }
     return "private";
   }
 
@@ -737,7 +775,11 @@ if (app) {
     prependEventItems(chatLog, snapshot, appended.chat, { chatChannel: true });
     prependEventItems(privateLog, snapshot, appended.private);
 
-    ensureEmptyState(narrativeLog, eventsByChannel.narrative, "The public story of the game will appear here.");
+    ensureEmptyState(
+      narrativeLog,
+      eventsByChannel.narrative,
+      isPlayerMode() ? "Suggestions, refutations, and accusations will appear here." : "The public story of the game will appear here.",
+    );
     ensureEmptyState(chatLog, eventsByChannel.chat, "The table chat stream will appear here.");
     ensureEmptyState(privateLog, eventsByChannel.private, "No private reveals or seat-only prompts yet.");
 
@@ -778,7 +820,7 @@ if (app) {
         : "Roll to open movement.";
     }
     if (available.has("move")) {
-      return "Stage a destination, then commit the move.";
+      return isPlayerMode() ? "Move by clicking a highlighted board space." : "Click a highlighted board space, or use the movement controls.";
     }
     if (available.has("suggest")) {
       return currentRoom
@@ -910,7 +952,9 @@ if (app) {
       if (available.has("roll")) {
         turnGuidance.textContent = "Roll now, or use a passage if one is available.";
       } else if (available.has("move")) {
-        turnGuidance.textContent = "Click a lit target or use the selector to stage movement.";
+        turnGuidance.textContent = isPlayerMode()
+          ? "Click a lit target on the board to move."
+          : "Click a lit target to move now, or use the selector.";
       } else if (available.has("suggest")) {
         turnGuidance.textContent = "Make one room suggestion before you end the turn.";
       } else if (available.has("accuse")) {
@@ -1038,6 +1082,10 @@ if (app) {
     sendChat.disabled = !chatInput.value.trim() || busy;
     saveNotebook.textContent = pendingMutation === "notebook" ? "Saving..." : "Save Notes";
     sendChat.textContent = pendingMutation === "chat" ? "Posting..." : "Send Chat";
+    board.dataset.busy = busy ? "1" : "0";
+    board.querySelectorAll(".clickable-node").forEach((node) => {
+      node.setAttribute("tabindex", busy ? "-1" : "0");
+    });
     actionControls.querySelectorAll("button[data-action-button='1'], select").forEach((control) => {
       control.disabled = busy;
     });
@@ -1045,7 +1093,9 @@ if (app) {
 
   function renderSummary(snapshot) {
     const maxEventIndex = Math.max(eventCursor, ...((snapshot.events || []).map((event) => Number(event.event_index || 0))));
+    const nextUiMode = normalizeUiMode(snapshot.ui_mode);
     const nextSnapshotKey = [
+      nextUiMode,
       snapshot.status,
       snapshot.turn_index,
       snapshot.phase,
@@ -1058,6 +1108,7 @@ if (app) {
 
     currentSnapshot = snapshot;
     snapshotKey = nextSnapshotKey;
+    applyUiMode(snapshot);
     gameTitle.textContent = snapshot.title;
     phasePill.textContent = prettifyPhase(snapshot.phase);
     paceNote.textContent = waitingOnAutonomousSeat(snapshot)
@@ -1077,7 +1128,7 @@ if (app) {
     const appended = ingestEvents(snapshot.events || []);
     renderEventPanels(snapshot, appended);
 
-    const nextLegalFingerprint = JSON.stringify(snapshot.legal_actions || {});
+    const nextLegalFingerprint = JSON.stringify({ ui_mode: currentUiMode, legal_actions: snapshot.legal_actions || {} });
     if (nextLegalFingerprint !== legalFingerprint) {
       legalFingerprint = nextLegalFingerprint;
       renderActions(snapshot);
@@ -1182,6 +1233,7 @@ if (app) {
     // Action controls are rebuilt every refresh because legality changes by phase.
     const legal = snapshot.legal_actions || {};
     const available = new Set(legal.available || []);
+    const playerBoardMove = isPlayerMode() && available.has("move") && (legal.move_targets || []).length;
     actionControls.innerHTML = "";
 
     if (available.has("roll")) {
@@ -1194,17 +1246,17 @@ if (app) {
       addActionButton(body, "Roll", () => ({ action: "roll" }));
       actionControls.appendChild(card);
     }
-    if (available.has("move") && (legal.move_targets || []).length) {
+    if (available.has("move") && (legal.move_targets || []).length && !isPlayerMode()) {
       const targetCount = legal.move_targets.length;
       const options = legal.move_targets.map((item) => ({ value: item.node_id, label: `${item.label} (${item.cost})` }));
       const { card, body } = createActionCard({
         eyebrow: "Movement",
-        title: "Stage A Destination",
+        title: "Choose A Destination",
         detail: `${targetCount} ${targetCount === 1 ? "target" : "targets"} lit on the board.`,
         tone: "primary",
       });
       body.appendChild(buildSelect("move-target", options, "Move To"));
-      addActionButton(body, "Commit Move", () => ({
+      addActionButton(body, "Move", () => ({
         action: "move",
         target_node: document.getElementById("move-target").value,
       }));
@@ -1284,7 +1336,9 @@ if (app) {
       actionControls.appendChild(details);
     }
     if (!actionControls.children.length) {
-      actionControls.innerHTML = '<p class="empty-state">No private actions are available from this seat right now.</p>';
+      actionControls.innerHTML = playerBoardMove
+        ? '<p class="empty-state">Click a highlighted board space.</p>'
+        : '<p class="empty-state">No private actions are available from this seat right now.</p>';
     }
   }
 

@@ -38,6 +38,9 @@ from clue_storage import ClueRepository
 DEFAULT_GAME_SEED = 17
 DEFAULT_TOOL_SNAPSHOT_BUDGET_MS = 250
 TURN_METRIC_LIMIT = 256
+DEFAULT_UI_MODE = "beginner"
+LIVE_UI_MODES = {"beginner", "player"}
+UNAVAILABLE_UI_MODES = {"superplayer"}
 SOCIAL_MOODS = {"calm", "amused", "annoyed", "guarded", "confident", "wounded"}
 SOCIAL_THREAD_KINDS = {"banter", "dispute", "alliance", "flirtation", "meta"}
 SOCIAL_THREAD_STATUSES = {"active", "cooling", "resolved"}
@@ -404,6 +407,7 @@ class GameService:
         """
 
         title = str(payload.get("title", "")).strip() or "Clue Table"
+        ui_mode = self._ui_mode_from_payload(payload)
         requested_seats = list(payload.get("seats") or [])
         if requested_seats:
             seat_configs = self._seat_configs_from_payload(requested_seats)
@@ -414,6 +418,7 @@ class GameService:
         seed = DEFAULT_GAME_SEED
         hidden_setup = build_hidden_setup(seat_configs, seed=seed)
         state = build_initial_state(game_id, title, seat_configs, hidden_setup)
+        state["ui_mode"] = ui_mode
         state["analysis"] = self._build_analysis_defaults(state)
         tokens = []
         seat_links = []
@@ -460,6 +465,7 @@ class GameService:
             config={
                 "game_id": game_id,
                 "title": title,
+                "ui_mode": ui_mode,
                 "seed": seed,
                 "seats": [seat.to_dict() for seat in seat_configs],
             },
@@ -639,6 +645,18 @@ class GameService:
         if len(seat_payloads) < 3 or len(seat_payloads) > 6:
             raise ValueError("Clue requires between 3 and 6 active seats.")
         return [SeatConfig.from_dict(item) for item in seat_payloads]
+
+    @staticmethod
+    def _ui_mode_from_payload(payload: dict[str, Any]) -> str:
+        """Normalize the create-table UI mode and reject unavailable modes."""
+
+        raw_mode = str(payload.get("ui_mode", DEFAULT_UI_MODE) or DEFAULT_UI_MODE).strip().lower()
+        if raw_mode in UNAVAILABLE_UI_MODES:
+            raise ValueError("Superplayer mode is not available yet.")
+        if raw_mode not in LIVE_UI_MODES:
+            allowed = ", ".join(sorted(LIVE_UI_MODES))
+            raise ValueError(f"ui_mode must be one of: {allowed}.")
+        return raw_mode
 
     @staticmethod
     def _mentioned_public_seat_ids(state: dict[str, Any], event: dict[str, Any]) -> list[str]:

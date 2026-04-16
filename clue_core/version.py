@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-CLUE_VERSION = "1.7.2"
+CLUE_VERSION = "1.7.3"
 """Current semantic version label for the standalone Clue repository."""
 
 CLUE_RELEASE_LABEL = f"v{CLUE_VERSION}"

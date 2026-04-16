@@ -21,6 +21,30 @@
         <p>Choose 3 to 6 active seats. Set unused seats to NP.</p>
       </div>
     </div>
+    <fieldset class="mode-picker" aria-label="Table mode">
+      <legend>Mode</legend>
+      <label class="mode-option">
+        <input type="radio" name="ui_mode" value="beginner" checked>
+        <span>
+          <strong>Beginner</strong>
+          <small>Current table view.</small>
+        </span>
+      </label>
+      <label class="mode-option">
+        <input type="radio" name="ui_mode" value="player">
+        <span>
+          <strong>Player</strong>
+          <small>Lean play view.</small>
+        </span>
+      </label>
+      <label class="mode-option mode-option--disabled">
+        <input type="radio" name="ui_mode" value="superplayer" disabled>
+        <span>
+          <strong>Superplayer</strong>
+          <small>Coming later.</small>
+        </span>
+      </label>
+    </fieldset>
     <div class="seat-grid">
       {% set defaults = [
         ("seat_scarlet", "Miss Scarlet", "human"),
@@ -80,6 +104,7 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: formData.get("title"),
+        ui_mode: formData.get("ui_mode") || "beginner",
         seats,
       }),
     });

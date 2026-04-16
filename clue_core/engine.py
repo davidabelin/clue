@@ -541,6 +541,7 @@ def build_filtered_snapshot(
     return {
         "game_id": state["game_id"],
         "title": state["title"],
+        "ui_mode": _ui_mode_from_state(state),
         "status": state["status"],
         "turn_index": state["turn_index"],
         "active_seat_id": state["active_seat_id"],
@@ -576,6 +577,13 @@ def build_filtered_snapshot(
         },
         "case_file_categories": deepcopy(CARD_CATEGORIES),
     }
+
+
+def _ui_mode_from_state(state: dict[str, Any]) -> str:
+    """Return the persisted UI mode, defaulting older games to Beginner."""
+
+    ui_mode = str(state.get("ui_mode") or "beginner").strip().lower()
+    return ui_mode if ui_mode in {"beginner", "player"} else "beginner"
 
 
 def _filtered_social_snapshot(state: dict[str, Any], social: dict[str, Any], seat_id: str) -> dict[str, Any]:

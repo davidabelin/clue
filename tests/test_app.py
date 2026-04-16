@@ -39,6 +39,9 @@ def test_home_page_renders(client):
     assert "Mrs. Peacock" in html
     assert "Professor Plum" in html
     assert "Set unused seats to NP." in html
+    assert 'name="ui_mode" value="beginner" checked' in html
+    assert 'name="ui_mode" value="player"' in html
+    assert 'name="ui_mode" value="superplayer" disabled' in html
     assert f"Clue {CLUE_RELEASE_LABEL} runs as a standalone lab" in html
     assert "Seed" not in html
     assert ">Heuristic<" not in html
@@ -71,9 +74,54 @@ def test_create_game_and_snapshot_flow(client):
     assert snapshot_response.status_code == 200
     snapshot = snapshot_response.get_json()
     assert snapshot["title"] == "Integration Table"
+    assert snapshot["ui_mode"] == "beginner"
     assert snapshot["seat"]["character"] == "Miss Scarlet"
     assert len(snapshot["seat"]["hand"]) == snapshot["seat"]["hand_count"]
     assert snapshot["events"]
+
+
+def test_create_game_accepts_player_mode(client):
+    """Player Mode should persist through game creation into seat snapshots."""
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Player Table",
+            "ui_mode": "player",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    assert response.status_code == 201
+
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+
+    assert snapshot["ui_mode"] == "player"
+
+
+def test_create_game_rejects_invalid_or_unavailable_ui_modes(client):
+    """Only live UI modes should be accepted by the create-game API."""
+
+    base_payload = {
+        "title": "Mode Guard Table",
+        "seats": [
+            {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+            {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+            {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+        ],
+    }
+
+    superplayer = client.post("/api/v1/games", json=base_payload | {"ui_mode": "superplayer"})
+    invalid = client.post("/api/v1/games", json=base_payload | {"ui_mode": "expert"})
+
+    assert superplayer.status_code == 400
+    assert "Superplayer mode is not available yet" in superplayer.get_json()["error"]
+    assert invalid.status_code == 400
+    assert "ui_mode must be one of" in invalid.get_json()["error"]
 
 
 def test_notebook_update_persists_per_seat(client):

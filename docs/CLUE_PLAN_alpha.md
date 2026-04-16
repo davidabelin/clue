@@ -1,6 +1,6 @@
 # Clue Implementation History And Architecture Decisions
 
-This file keeps the historical `CLUE_PLAN_alpha.md` name, but it now serves as a current **v1.7.2** implementation-history record. The original forward plan has been replaced by the decisions that actually shaped the shipped repo.
+This file keeps the historical `CLUE_PLAN_alpha.md` name, but it now serves as a current **v1.7.3** implementation-history record. The original forward plan has been replaced by the decisions that actually shaped the shipped repo.
 
 ## What Shipped
 - Standalone Flask app plus AIX-mount-safe routing

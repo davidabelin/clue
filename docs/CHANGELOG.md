@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.3 - 2026-04-16
+- Added create-table UI modes with Beginner as the default, Player as a live lean table view, and Superplayer visible as a disabled placeholder.
+- Persisted `ui_mode` in game config/state and exposed it in filtered seat snapshots, with older games defaulting to Beginner.
+- Changed highlighted board clicks and keyboard activation to submit movement immediately while keeping Beginner's movement selector as a fallback.
+- Added Player Mode rendering that hides secondary panels and limits the public play log to suggestions, refutations, and accusations.
+- Updated release markers, current-facing docs, and tests for `v1.7.3`.
+
 ## v1.7.2 - 2026-04-14
 - Reworked the Beginner Mode `/game` page into a denser, clearer play surface with a compact status strip, collapsible secondary sections, tighter action hierarchy, and stronger contrast throughout the gameplay shell.
 - Made the board scale with the viewport, stage movement from board clicks, and removed `start` nodes from legal move destinations.

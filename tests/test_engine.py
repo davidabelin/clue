@@ -152,6 +152,18 @@ def test_private_card_event_is_visible_only_to_suggester():
     assert not any(event["event_type"] == "private_card_shown" for event in peacock_snapshot["events"])
 
 
+def test_filtered_snapshot_defaults_missing_ui_mode_to_beginner():
+    """Older persisted games without a UI mode should render as Beginner Mode."""
+
+    seats = _seats()
+    hidden_setup = build_hidden_setup(seats, seed=9)
+    state = build_initial_state("game_test", "Table", seats, hidden_setup)
+
+    snapshot = build_filtered_snapshot(state, seat_id="seat_scarlet", visible_events=[], notebook={})
+
+    assert snapshot["ui_mode"] == "beginner"
+
+
 def test_move_targets_do_not_include_start_nodes():
     """Legal movement targets should never send a seat back onto a start node."""
 

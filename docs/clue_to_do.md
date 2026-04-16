@@ -1,8 +1,13 @@
 # Clue TO DO List
-- As of 4/14/26
-- Current version 1.7.2
+- As of 4/16/26
+- Current version 1.7.3
 
 ## *Rolling List*
+
+- [] Superplayer Mode
+
+- [x] Player Mode
+  - [x] consult and complete docs\CLUE_player_mode_plan.md
 
 - [] Important: determinism and not-quite-random behavior.
   - [] Am I dealt same hand every time, and what else is the same every time?
@@ -19,7 +24,7 @@
 - [] Gameboard needs big-time redesign
   - [] Make it scalable
   - [x] Make it click-to-move
-    - [] and commit the move upon the click (don't wait for the Commit Move button anymore)
+    - [x] and commit the move upon the click (don't wait for the Commit Move button anymore)
   - [] improved aesthetic
     - [] no jagged, irregular lines
 - [x] feed scrolls are all latest-at-the-top
@@ -61,7 +66,7 @@
 ### Planned Shift to Multimodal Gameplay
 *Beginner Mode, Player Mode, Super Mode*: A Different UI for each!
   - Right now the game is excluseively in what we will now call *Beginner Mode*
-  - *Player Mode* is next in line for development as soon as Beginner is stable and "playable enough"
+  - *Player Mode* is now live as a stripped-down play surface
   - *Supervisor Mode* (later)
     - will require administrative privileges to access
     - will include knobs for settings, displays of status... essentially a DungeonMaster UX.
@@ -75,7 +80,7 @@
 
 ## **TO DO Backlog and Follow-Up** (as of **pre-**4/13/26)
 
-### Current State **After** v1.7.2
+### Current State **After** v1.7.3
 - [x] Standalone Flask app plus AIX-mount-safe routing
 - [x] Deterministic Clue rules engine with filtered seat snapshots
 - [x] Mixed human and autonomous seats under one Game Master
@@ -83,7 +88,8 @@
 - [x] YAML-driven turn/chat profiles and persona-social guidance
 - [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and heuristic fallback
 - [x] Browser UI with polling synchronization and seat-private/public separation
-- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.2`
+- [x] Beginner and Player table UI modes, with Superplayer reserved for later
+- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.3`
 
 ### Highest Priority Backlog
 - [ ] Add browser/API end-to-end coverage for a full human-only game, including reconnect after refresh or tab reopen.

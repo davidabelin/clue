@@ -158,6 +158,52 @@ main {
   margin: 1rem 0;
 }
 
+.mode-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.8rem;
+  margin: 1rem 0;
+  padding: 0.85rem;
+  border: 1px solid rgba(44, 31, 23, 0.18);
+  border-radius: 16px;
+  background: rgba(255, 249, 237, 0.78);
+}
+
+.mode-picker legend {
+  padding: 0 0.4rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.mode-option {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.62rem;
+  padding: 0.72rem;
+  border: 1px solid rgba(44, 31, 23, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 252, 244, 0.9);
+}
+
+.mode-option input {
+  width: auto;
+  margin-top: 0.18rem;
+}
+
+.mode-option span {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.mode-option small {
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
+
+.mode-option--disabled {
+  opacity: 0.62;
+}
+
 .seat-card,
 .position-card,
 .move-card,
@@ -1667,6 +1713,12 @@ button:disabled {
   filter: brightness(1.03);
 }
 
+.board-svg[data-busy="1"] .clickable-node {
+  cursor: wait;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
 .position-grid,
 .seat-list,
 .seat-summary-grid,
@@ -1828,5 +1880,171 @@ button:disabled {
   .drawer-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/*
+  Player Mode removes secondary surfaces from the existing Beginner shell while
+  keeping the same server-authoritative polling and action flow.
+*/
+.game-app--player {
+  gap: 0.52rem;
+}
+
+.game-app--player .panel {
+  padding: 0.62rem;
+  border-radius: 14px;
+}
+
+.game-app--player .panel.marquee-panel--compact {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.42rem;
+  padding: 0.58rem 0.7rem;
+}
+
+.game-app--player .status-cluster--metrics,
+.game-app--player .pace-note,
+.game-app--player .phase-strip,
+.game-app--player .turn-metrics,
+.game-app--player .marker-grid-card,
+.game-app--player .seat-summary-panel,
+.game-app--player .lineup-panel,
+.game-app--player .diagnostics-stage,
+.game-app--player .turn-rail,
+.game-app--player .action-priority-note,
+.game-app--player .panel-head-note,
+.game-app--player .field-note,
+.game-app--player .composer-hint,
+.game-app--player .micro-status,
+.game-app--player .card-kicker,
+.game-app--player .drawer-note,
+.game-app--player .chat-composer label[for="chat-input"],
+.game-app--player #decision-context-card .panel-head {
+  display: none;
+}
+
+.game-app--player .briefing-grid {
+  gap: 0.56rem;
+  grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.66fr);
+  grid-template-areas:
+    "caseboard desk"
+    "caseboard briefing"
+    "wire wire";
+}
+
+.game-app--player .caseboard-stage,
+.game-app--player .desk-stage,
+.game-app--player .briefing-stage,
+.game-app--player .wire-stage,
+.game-app--player .decision-context-card,
+.game-app--player .action-panel,
+.game-app--player .action-controls,
+.game-app--player .chat-composer {
+  gap: 0.46rem;
+}
+
+.game-app--player .panel-head {
+  margin-bottom: 0.22rem;
+}
+
+.game-app--player .panel-head h2,
+.game-app--player .panel-head h3 {
+  font-size: 1.04rem;
+}
+
+.game-app--player .status-cluster--identity h1 {
+  font-size: 1.22rem;
+}
+
+.game-app--player .turn-banner {
+  min-height: 1.75rem;
+  padding: 0.34rem 0.64rem;
+}
+
+.game-app--player .info-card,
+.game-app--player .action-card {
+  padding: 0.52rem;
+  border-radius: 12px;
+}
+
+.game-app--player .action-drawer {
+  border-radius: 12px;
+}
+
+.game-app--player .action-drawer summary,
+.game-app--player .info-drawer-summary {
+  padding: 0.5rem 0.58rem;
+}
+
+.game-app--player .action-drawer-body,
+.game-app--player .info-drawer-body {
+  gap: 0.48rem;
+  padding: 0 0.58rem 0.58rem;
+}
+
+.game-app--player .decision-context {
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.game-app--player .wire-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.56rem;
+}
+
+.game-app--player .event-log {
+  gap: 0.42rem;
+  max-height: 13rem;
+}
+
+.game-app--player .private-log {
+  max-height: 10rem;
+}
+
+.game-app--player .log-item {
+  padding: 0.52rem 0.6rem;
+  border-radius: 12px;
+}
+
+.game-app--player .log-meta {
+  gap: 0.38rem;
+  margin-bottom: 0.28rem;
+}
+
+.game-app--player .log-badge {
+  display: none;
+}
+
+.game-app--player .log-type,
+.game-app--player .log-stamp,
+.game-app--player .log-time {
+  padding: 0.14rem 0.38rem;
+  font-size: 0.74rem;
+}
+
+.game-app--player #chat-input {
+  min-height: 3.2rem;
+}
+
+.game-app--player #notebook-text {
+  min-height: 4.8rem;
+}
+
+.game-app--player .hand-panel li {
+  padding: 0.38rem 0.08rem;
+}
+
+@media (max-width: 980px) {
+  .game-app--player .briefing-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "caseboard"
+      "desk"
+      "briefing"
+      "wire";
+  }
+
+  .game-app--player .wire-grid {
+    grid-template-columns: 1fr;
   }
 }

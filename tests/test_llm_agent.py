@@ -1,4 +1,4 @@
-"""LLM-seat tests for the v1.7.2 Agents SDK runtime wrapper."""
+"""LLM-seat tests for the v1.7.3 Agents SDK runtime wrapper."""
 
 from __future__ import annotations
 
