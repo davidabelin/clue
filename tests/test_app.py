@@ -250,9 +250,13 @@ def test_player_mode_board_movement_static_contract():
 
     assert "Move On Board" in js
     assert "clickable-edge" in js
+    assert "data-board-target" in js
+    assert "edge-hit-area" in js
     assert 'available.has("end_turn") && !playerBoardMove' in js
     assert 'available.has("accuse") && !playerBoardMove' in js
-    assert "calc(50vh * 1.286), 44rem" in css
+    assert "width: min(100%, 52rem)" in css
+    assert ".game-app--player .board-svg {\n  width: 100%;" in css
+    assert '"caseboard desk"' in css
 
 
 def test_idle_chat_limits_one_npc_message_per_sweep(client, monkeypatch):

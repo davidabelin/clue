@@ -427,7 +427,7 @@ if (app) {
   }
 
   async function submitBoardMove(nodeId) {
-    if (pendingMutation) {
+    if (pendingMutation || !nodeId) {
       return;
     }
     actionDrafts.set("move-target", nodeId);
@@ -463,7 +463,13 @@ if (app) {
     return "";
   }
 
-  function bindBoardMoveControl(node, nodeId, label) {
+  function bindBoardMoveControl(node, nodeId, label, options = {}) {
+    const focusable = options.focusable !== false;
+    node.dataset.boardTarget = nodeId;
+    if (!focusable) {
+      node.setAttribute("aria-hidden", "true");
+      return;
+    }
     node.setAttribute("role", "button");
     node.setAttribute("tabindex", pendingMutation ? "-1" : "0");
     node.setAttribute("aria-label", `Move to ${label}`);
@@ -471,15 +477,19 @@ if (app) {
       node.setAttribute("aria-disabled", "true");
       return;
     }
-    node.addEventListener("click", () => {
-      submitBoardMove(nodeId);
-    });
-    node.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        submitBoardMove(nodeId);
-      }
-    });
+    node.setAttribute("aria-disabled", "false");
+  }
+
+  function boardMoveTargetFromEvent(event) {
+    const rawTarget = event.target;
+    if (!rawTarget || typeof rawTarget.closest !== "function") {
+      return "";
+    }
+    const target = rawTarget.closest("[data-board-target]");
+    if (!target || !board.contains(target) || target.getAttribute("aria-disabled") === "true") {
+      return "";
+    }
+    return String(target.dataset.boardTarget || "");
   }
 
   function renderBoard(snapshot) {
@@ -491,7 +501,14 @@ if (app) {
     const nodesById = boardNodeById(snapshot);
     const seatPositions = {};
     const surface = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    const edgeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    const nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    const hitLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
     const viewBox = boardViewBox(snapshot);
+
+    edgeLayer.setAttribute("class", "board-edge-layer");
+    nodeLayer.setAttribute("class", "board-node-layer");
+    hitLayer.setAttribute("class", "board-hit-layer");
 
     snapshot.seats.forEach((seat) => {
       const position = seat.seat_id === snapshot.seat.seat_id && stagedMove ? stagedMove : seat.position;
@@ -523,7 +540,17 @@ if (app) {
       line.setAttribute("y1", from.y);
       line.setAttribute("x2", to.x);
       line.setAttribute("y2", to.y);
-      surface.appendChild(line);
+      edgeLayer.appendChild(line);
+      if (edgeTarget) {
+        const hitLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        hitLine.setAttribute("class", "edge-hit-area");
+        hitLine.setAttribute("x1", from.x);
+        hitLine.setAttribute("y1", from.y);
+        hitLine.setAttribute("x2", to.x);
+        hitLine.setAttribute("y2", to.y);
+        bindBoardMoveControl(hitLine, edgeTarget, nodesById.get(edgeTarget)?.label || edgeTarget, { focusable: false });
+        hitLayer.appendChild(hitLine);
+      }
     });
     snapshot.board_nodes.forEach((node) => {
       const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -582,27 +609,31 @@ if (app) {
       });
       if (highlights.has(node.id)) {
         g.classList.add("clickable-node");
+        let hitArea = null;
         if (node.kind === "room") {
-          const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          hitArea = document.createElementNS("http://www.w3.org/2000/svg", "rect");
           hitArea.setAttribute("class", "node-hit-area");
           hitArea.setAttribute("x", node.x - 76);
           hitArea.setAttribute("y", node.y - 48);
           hitArea.setAttribute("width", 152);
           hitArea.setAttribute("height", 96);
           hitArea.setAttribute("rx", 18);
-          g.appendChild(hitArea);
         } else {
-          const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          hitArea = document.createElementNS("http://www.w3.org/2000/svg", "circle");
           hitArea.setAttribute("class", "node-hit-area");
           hitArea.setAttribute("cx", node.x);
           hitArea.setAttribute("cy", node.y);
-          hitArea.setAttribute("r", node.kind === "hallway" ? 30 : 24);
-          g.appendChild(hitArea);
+          hitArea.setAttribute("r", node.kind === "hallway" ? 38 : 30);
         }
         bindBoardMoveControl(g, node.id, node.label);
+        bindBoardMoveControl(hitArea, node.id, node.label, { focusable: false });
+        hitLayer.appendChild(hitArea);
       }
-      surface.appendChild(g);
+      nodeLayer.appendChild(g);
     });
+    surface.appendChild(edgeLayer);
+    surface.appendChild(nodeLayer);
+    surface.appendChild(hitLayer);
     board.appendChild(surface);
   }
 
@@ -1144,7 +1175,7 @@ if (app) {
     saveNotebook.textContent = pendingMutation === "notebook" ? "Saving..." : "Save Notes";
     sendChat.textContent = pendingMutation === "chat" ? "Posting..." : "Send Chat";
     board.dataset.busy = busy ? "1" : "0";
-    board.querySelectorAll(".clickable-node, .clickable-edge").forEach((node) => {
+    board.querySelectorAll("[data-board-target]:not([aria-hidden='true'])").forEach((node) => {
       node.setAttribute("tabindex", busy ? "-1" : "0");
       node.setAttribute("aria-disabled", busy ? "true" : "false");
     });
@@ -1524,6 +1555,29 @@ if (app) {
       chatCount.dataset.state = "calm";
       chatFeedCount.dataset.state = "calm";
     }
+  });
+
+  board.addEventListener("click", (event) => {
+    const targetNode = boardMoveTargetFromEvent(event);
+    if (!targetNode) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    submitBoardMove(targetNode);
+  });
+
+  board.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    const targetNode = boardMoveTargetFromEvent(event);
+    if (!targetNode) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    submitBoardMove(targetNode);
   });
 
   document.addEventListener("visibilitychange", () => {

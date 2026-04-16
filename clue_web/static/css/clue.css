@@ -1777,19 +1777,31 @@ button:disabled {
   pointer-events: stroke;
 }
 
-.node-hit-area {
-  fill: transparent;
-  stroke: none;
-  pointer-events: all;
+.edge-hit-area {
+  cursor: pointer;
+  fill: none;
+  stroke: transparent;
+  stroke-linecap: round;
+  stroke-width: 38;
+  pointer-events: stroke;
 }
 
-.board-svg[data-busy="1"] .clickable-node {
+.node-hit-area {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.board-svg[data-busy="1"] .clickable-node,
+.board-svg[data-busy="1"] .node-hit-area {
   cursor: wait;
   opacity: 0.72;
   pointer-events: none;
 }
 
-.board-svg[data-busy="1"] .clickable-edge {
+.board-svg[data-busy="1"] .clickable-edge,
+.board-svg[data-busy="1"] .edge-hit-area {
   cursor: wait;
   opacity: 0.58;
   pointer-events: none;
@@ -2003,10 +2015,10 @@ button:disabled {
   gap: 0.56rem;
   grid-template-columns: minmax(0, 1fr) clamp(19rem, 27vw, 31rem);
   grid-template-areas:
-    "briefing briefing"
     "caseboard desk"
-    "wire desk";
-  align-items: stretch;
+    "briefing desk"
+    "wire wire";
+  align-items: start;
 }
 
 .game-app--player .caseboard-stage,
@@ -2027,19 +2039,21 @@ button:disabled {
 
 .game-app--player .caseboard-stage {
   justify-items: center;
+  justify-self: center;
+  width: min(100%, 52rem);
 }
 
 .game-app--player .desk-stage {
-  align-self: stretch;
+  align-self: start;
 }
 
 .game-app--player .board-svg {
-  width: min(100%, calc(50vh * 1.286), 44rem);
+  width: 100%;
   height: auto;
 }
 
 .game-app--player .briefing-stage {
-  grid-template-columns: minmax(12rem, 0.74fr) minmax(14rem, 0.84fr) minmax(18rem, 1fr);
+  grid-template-columns: minmax(0, 0.74fr) minmax(0, 0.84fr) minmax(0, 1fr);
   grid-template-areas:
     "briefing-head briefing-head briefing-head"
     "hand reveals notes";
