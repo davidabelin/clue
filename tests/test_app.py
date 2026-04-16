@@ -80,6 +80,32 @@ def test_create_game_and_snapshot_flow(client):
     assert snapshot["events"]
 
 
+def test_create_game_uses_fresh_setup_seed(client, app, monkeypatch):
+    """Game creation should not deal every table from one fixed setup seed."""
+
+    seeds = iter([101, 202])
+    monkeypatch.setattr("clue_web.runtime._new_game_seed", lambda: next(seeds))
+    seats = [
+        {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+        {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+        {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+    ]
+
+    first = client.post("/api/v1/games", json={"title": "Seed One", "seats": seats}).get_json()
+    second = client.post("/api/v1/games", json={"title": "Seed Two", "seats": seats}).get_json()
+
+    repository = app.extensions["game_service"]._repository
+    first_record = repository.get_game_record(first["game_id"])
+    second_record = repository.get_game_record(second["game_id"])
+
+    assert first_record["config"]["seed"] == 101
+    assert first_record["setup"]["seed"] == 101
+    assert first_record["state"]["hidden"]["seed"] == 101
+    assert second_record["config"]["seed"] == 202
+    assert second_record["setup"]["seed"] == 202
+    assert second_record["state"]["hidden"]["seed"] == 202
+
+
 def test_create_game_accepts_player_mode(client):
     """Player Mode should persist through game creation into seat snapshots."""
 
@@ -160,6 +186,8 @@ def test_game_page_renders_private_and_public_table_sections(client):
     assert "Witness Record" in html
     assert "Table Talk" in html
     assert "Chat Feed" in html
+    assert "Quit Game" in html
+    assert 'href="/"' in html
     assert "Seat Debug" in html
     assert "How LLM Seats Work" in html
     assert "Suspect Lineup" in html

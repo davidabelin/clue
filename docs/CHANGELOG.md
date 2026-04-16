@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.4 - 2026-04-16
+- Replaced the fixed table setup seed with a fresh per-game seed so repeated games no longer reuse the same deal and case file.
+- Added a UI-only `Quit Game` link on the in-game table that returns to Clue Home without changing game state.
+- Updated release markers, docs, and regression tests for `v1.7.4`.
+
 ## v1.7.3 - 2026-04-16
 - Added create-table UI modes with Beginner as the default, Player as a live lean table view, and Superplayer visible as a disabled placeholder.
 - Persisted `ui_mode` in game config/state and exposed it in filtered seat snapshots, with older games defaulting to Beginner.

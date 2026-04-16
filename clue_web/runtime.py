@@ -35,7 +35,6 @@ from clue_core.version import CLUE_RELEASE_LABEL, CLUE_VERSION
 from clue_storage import ClueRepository
 
 
-DEFAULT_GAME_SEED = 17
 DEFAULT_TOOL_SNAPSHOT_BUDGET_MS = 250
 TURN_METRIC_LIMIT = 256
 DEFAULT_UI_MODE = "beginner"
@@ -50,6 +49,12 @@ def _timestamp_slug() -> str:
     """Generate sortable timestamp ids for new game records."""
 
     return datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
+
+
+def _new_game_seed() -> int:
+    """Return a fresh setup seed for one game deal."""
+
+    return secrets.randbits(64)
 
 
 class GameService:
@@ -415,7 +420,7 @@ class GameService:
             seat_configs = self._default_seats()
         game_id = f"clue_{_timestamp_slug()}"
         self._apply_llm_profiles(game_id, seat_configs)
-        seed = DEFAULT_GAME_SEED
+        seed = _new_game_seed()
         hidden_setup = build_hidden_setup(seat_configs, seed=seed)
         state = build_initial_state(game_id, title, seat_configs, hidden_setup)
         state["ui_mode"] = ui_mode

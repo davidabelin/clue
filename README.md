@@ -1,6 +1,6 @@
 # clue
 
-Standalone Clue lab for AIX, currently labeled **v1.7.3**.
+Standalone Clue lab for AIX, currently labeled **v1.7.4**.
 
 ## What This Repo Is
 - Classic Clue rules implemented as a deterministic, event-sourced Python engine.
@@ -29,11 +29,13 @@ Standalone Clue lab for AIX, currently labeled **v1.7.3**.
 ### 1. Game creation
 - `clue_web.runtime.GameService.create_game()` validates seat payloads, normalizes legacy seat kinds, applies YAML-selected LLM profiles where needed, builds hidden setup, persists initial state, and may immediately run autonomous opening turns.
 - Table UI mode is persisted as `beginner` or `player`; omitted mode defaults to Beginner, and `superplayer` is reserved for a later release.
+- Each new table receives a fresh setup seed so deals and case files are not repeated from one global default.
 
 ### 2. Web request surface
 - `/` renders the create-game page.
 - `/join/<token>` marks a seat invite as used and redirects to `/game`.
 - `/game?token=...` renders the seat-specific shell; `clue.js` hydrates state from JSON.
+- `/game` includes a UI-only Quit Game link back to Clue Home; it does not mutate game state.
 - `/api/v1/games/current` returns the filtered snapshot, including the table UI mode, for the current signed seat token.
 - `/api/v1/games/current/actions` applies one action through the Game Master, persists state and events, and runs any follow-up autonomous turns.
 - `/api/v1/games/current/notebook` updates one seat-private notebook.
@@ -122,5 +124,5 @@ pytest -q
 - Use [`docs/ClueMLRuntime.md`](./docs/ClueMLRuntime.md) for OpenAI runtime, guardrail, and session behavior.
 - Use [`docs/ClueDeepDive.md`](./docs/ClueDeepDive.md) for the end-to-end architecture walkthrough.
 - Use [`docs/CLUE_PLAN_alpha.md`](./docs/CLUE_PLAN_alpha.md) for the implementation-history and architecture-decision record.
-- Use [`docs/clue_to_do.md`](./docs/clue_to_do.md) for the current post-`v1.7.3` backlog.
+- Use [`docs/clue_to_do.md`](./docs/clue_to_do.md) for the current post-`v1.7.4` backlog.
 - Use [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) for release history.

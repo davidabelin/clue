@@ -5,7 +5,10 @@
   <header class="panel marquee-panel marquee-panel--compact">
     <div class="status-cluster status-cluster--identity">
       <p class="eyebrow">{{ seat.display_name }}</p>
-      <h1 id="game-title">Clue Table</h1>
+      <div class="identity-row">
+        <h1 id="game-title">Clue Table</h1>
+        <a class="quit-game-link" href="{{ url_for('main.home') }}">Quit Game</a>
+      </div>
     </div>
     <div class="status-cluster status-cluster--banner">
       <div id="turn-banner" class="turn-banner" data-state="loading">Loading table state...</div>

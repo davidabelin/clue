@@ -1,6 +1,6 @@
 # Clue TO DO List
 - As of 4/16/26
-- Current version 1.7.3
+- Current version 1.7.4
 
 ## *Rolling List*
 
@@ -9,14 +9,14 @@
 - [x] Player Mode
   - [x] consult and complete docs\CLUE_player_mode_plan.md
 
-- [] Important: determinism and not-quite-random behavior.
-  - [] Am I dealt same hand every time, and what else is the same every time?
-  - [] Are calls to random() well-seeded and properly distributed?
+- [x] Important: determinism and not-quite-random behavior.
+  - [x] Am I dealt same hand every time, and what else is the same every time?
+  - [x] Are calls to random() well-seeded and properly distributed?
 
-- [] When can we have **LLM NPC**s? Because there is nothing but rote nonsense coming from this "placeholder" NPC's. Where is that implementation left hanging, and what can be done?!
+- [] When can we have **LLM NPC**s? Because there is nothing but rote nonsense coming from these "placeholder" NPC's. Where is that implementation left hanging, and what can be done?!
 
 - We need some exits from the game:
-  - [] Quit Game button (priority)
+  - [x] Quit Game button (priority)
   - [] Pause, Save, Resume Game buttons...? (not yet a priority)
 
 
@@ -61,13 +61,13 @@
 ### Tomorrow First
 - [] Review fresh cache-busted screenshots with special attention to header/pill/footer readability
 - [] Do Beginner Mode pass 2 for remaining dead space and final `Table Wire` vs `Caseboard` balance
-- [] Choose the next non-UX priority: `Quit Game`, determinism/randomness investigation, or LLM NPC follow-through
+- [x] Choose the next non-UX priority: `Quit Game`, determinism/randomness investigation, or LLM NPC follow-through
 
 ### Planned Shift to Multimodal Gameplay
 *Beginner Mode, Player Mode, Super Mode*: A Different UI for each!
   - Right now the game is excluseively in what we will now call *Beginner Mode*
   - *Player Mode* is now live as a stripped-down play surface
-  - *Supervisor Mode* (later)
+  - *Superplayer Mode* (later)
     - will require administrative privileges to access
     - will include knobs for settings, displays of status... essentially a DungeonMaster UX.
     - deferred until other two modes function smoothly and consistently
@@ -76,11 +76,11 @@
 ### Next up on the *rolling list*...
 - [] Repeat 'Improvement process' now with the focus on *Player Mode*
 - [] And then do a ground-up design and construction of *Super Mode* once
-- [] Clue will become version 1.8.0 when **all of the above** is in perfect working order and well-doccumented
+- [] Clue will become version 1.8.0 when all three Modes are in perfect working order and well-doccumented
 
 ## **TO DO Backlog and Follow-Up** (as of **pre-**4/13/26)
 
-### Current State **After** v1.7.3
+### Current State **After** v1.7.4
 - [x] Standalone Flask app plus AIX-mount-safe routing
 - [x] Deterministic Clue rules engine with filtered seat snapshots
 - [x] Mixed human and autonomous seats under one Game Master
@@ -89,7 +89,9 @@
 - [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and heuristic fallback
 - [x] Browser UI with polling synchronization and seat-private/public separation
 - [x] Beginner and Player table UI modes, with Superplayer reserved for later
-- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.3`
+- [x] Fresh setup seeds for new games, so deals and case files are no longer repeated from a fixed default
+- [x] UI-only Quit Game link back to Clue Home
+- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.4`
 
 ### Highest Priority Backlog
 - [ ] Add browser/API end-to-end coverage for a full human-only game, including reconnect after refresh or tab reopen.
