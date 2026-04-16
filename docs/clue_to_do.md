@@ -1,6 +1,6 @@
 # Clue TO DO List
 - As of 4/16/26
-- Current version 1.7.4
+- Current version 1.7.5
 
 ## *Rolling List*
 
@@ -22,7 +22,7 @@
 
 - [x] No more 'Moves' destinations at starting locations
 - [] Gameboard needs big-time redesign
-  - [] Make it scalable
+  - [x] Make it scalable
   - [x] Make it click-to-move
     - [x] and commit the move upon the click (don't wait for the Commit Move button anymore)
   - [] improved aesthetic
@@ -74,13 +74,13 @@
       - BUT all future planning must keep this mode's eventual implementation in mind (and even noted in docstrings, too)
 
 ### Next up on the *rolling list*...
-- [] Repeat 'Improvement process' now with the focus on *Player Mode*
+- [x] Repeat 'Improvement process' now with the focus on *Player Mode*
 - [] And then do a ground-up design and construction of *Super Mode* once
 - [] Clue will become version 1.8.0 when all three Modes are in perfect working order and well-doccumented
 
 ## **TO DO Backlog and Follow-Up** (as of **pre-**4/13/26)
 
-### Current State **After** v1.7.4
+### Current State **After** v1.7.5
 - [x] Standalone Flask app plus AIX-mount-safe routing
 - [x] Deterministic Clue rules engine with filtered seat snapshots
 - [x] Mixed human and autonomous seats under one Game Master
@@ -89,9 +89,11 @@
 - [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and heuristic fallback
 - [x] Browser UI with polling synchronization and seat-private/public separation
 - [x] Beginner and Player table UI modes, with Superplayer reserved for later
+- [x] Per-seat UI mode selection for active table seats
+- [x] Player Mode layout pass from fresh screenshots: briefing above board, desk beside board, wire below board
 - [x] Fresh setup seeds for new games, so deals and case files are no longer repeated from a fixed default
 - [x] UI-only Quit Game link back to Clue Home
-- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.4`
+- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.5`
 
 ### Highest Priority Backlog
 - [ ] Add browser/API end-to-end coverage for a full human-only game, including reconnect after refresh or tab reopen.

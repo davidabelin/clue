@@ -460,6 +460,7 @@ if (app) {
     });
 
     board.innerHTML = "";
+    board.dataset.hasMoves = highlights.size ? "1" : "0";
     board.setAttribute("viewBox", `${viewBox.minX} ${viewBox.minY} ${viewBox.width} ${viewBox.height}`);
     (snapshot.board_edges || []).forEach((edge) => {
       const from = nodesById.get(edge.from);
@@ -468,7 +469,11 @@ if (app) {
         return;
       }
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("class", `board-edge board-edge-${edge.kind || "walk"}`);
+      const edgeClasses = ["board-edge", `board-edge-${edge.kind || "walk"}`];
+      if (highlights.has(edge.from) || highlights.has(edge.to)) {
+        edgeClasses.push("board-edge-reachable");
+      }
+      line.setAttribute("class", edgeClasses.join(" "));
       line.setAttribute("x1", from.x);
       line.setAttribute("y1", from.y);
       line.setAttribute("x2", to.x);
@@ -535,15 +540,19 @@ if (app) {
         g.setAttribute("role", "button");
         g.setAttribute("tabindex", pendingMutation ? "-1" : "0");
         g.setAttribute("aria-label", `Move to ${node.label}`);
-        g.addEventListener("click", () => {
-          submitBoardMove(node.id);
-        });
-        g.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
+        if (pendingMutation) {
+          g.setAttribute("aria-disabled", "true");
+        } else {
+          g.addEventListener("click", () => {
             submitBoardMove(node.id);
-          }
-        });
+          });
+          g.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              submitBoardMove(node.id);
+            }
+          });
+        }
       }
       surface.appendChild(g);
     });
@@ -917,6 +926,7 @@ if (app) {
     const activeName = seatName(snapshot, snapshot.active_seat_id);
     const state = currentViewState(snapshot);
     const winnerName = snapshot.winner_seat_id ? seatName(snapshot, snapshot.winner_seat_id) : "Unknown";
+    const playerMode = isPlayerMode();
 
     setState(turnBanner, state);
     setState(phasePill, state);
@@ -933,48 +943,52 @@ if (app) {
       actionStatus.textContent = "Case Closed";
       decisionContext.textContent = `${winnerName} solved the case.`;
       turnBanner.textContent = `Case closed. Winner: ${winnerName}`;
-      turnGuidance.textContent = snapshot.winner_seat_id
+      turnGuidance.textContent = playerMode
+        ? "Case closed."
+        : snapshot.winner_seat_id
         ? "Review the wire, your notes, and the private intel feed."
         : "The case is closed.";
       return;
     }
     if (available.has("show_refute_card") || available.has("pass_refute")) {
       actionStatus.textContent = "Private Refute";
-      decisionContext.textContent = "Choose one private refute response.";
-      turnBanner.textContent = `${snapshot.seat.display_name}, resolve the private refute.`;
-      turnGuidance.textContent = "Any shown card stays private to the suggesting seat.";
+      decisionContext.textContent = playerMode ? "Refute." : "Choose one private refute response.";
+      turnBanner.textContent = playerMode ? `${snapshot.seat.display_name}: refute` : `${snapshot.seat.display_name}, resolve the private refute.`;
+      turnGuidance.textContent = playerMode ? "Show a card or pass." : "Any shown card stays private to the suggesting seat.";
       return;
     }
     if (snapshot.active_seat_id === snapshot.seat.seat_id) {
       actionStatus.textContent = "Your Turn";
-      decisionContext.textContent = `Turn ${Number(snapshot.turn_index || 0) + 1} is yours to resolve.`;
-      turnBanner.textContent = `${snapshot.seat.display_name}, you are up.`;
+      decisionContext.textContent = playerMode ? "Your turn." : `Turn ${Number(snapshot.turn_index || 0) + 1} is yours to resolve.`;
+      turnBanner.textContent = playerMode ? `${snapshot.seat.display_name}: your turn` : `${snapshot.seat.display_name}, you are up.`;
       if (available.has("roll")) {
-        turnGuidance.textContent = "Roll now, or use a passage if one is available.";
+        turnGuidance.textContent = playerMode ? "Roll or use a passage." : "Roll now, or use a passage if one is available.";
       } else if (available.has("move")) {
-        turnGuidance.textContent = isPlayerMode()
-          ? "Click a lit target on the board to move."
+        turnGuidance.textContent = playerMode
+          ? "Click a highlighted target."
           : "Click a lit target to move now, or use the selector.";
       } else if (available.has("suggest")) {
-        turnGuidance.textContent = "Make one room suggestion before you end the turn.";
+        turnGuidance.textContent = playerMode ? "Make a suggestion." : "Make one room suggestion before you end the turn.";
       } else if (available.has("accuse")) {
-        turnGuidance.textContent = "Only open Final Call if your evidence is strong.";
+        turnGuidance.textContent = playerMode ? "Accuse only if ready." : "Only open Final Call if your evidence is strong.";
       } else {
-        turnGuidance.textContent = "Review the table, then finish the turn when ready.";
+        turnGuidance.textContent = playerMode ? "End the turn when ready." : "Review the table, then finish the turn when ready.";
       }
       return;
     }
     if (activeSeat && activeSeat.seat_kind !== "human") {
       actionStatus.textContent = "AI Seat Acting";
-      decisionContext.textContent = `${activeName} is acting.`;
-      turnBanner.textContent = `${activeName} is resolving an autonomous turn.`;
-      turnGuidance.textContent = "Live updates will catch up automatically.";
+      decisionContext.textContent = playerMode ? `Waiting on ${activeName}.` : `${activeName} is acting.`;
+      turnBanner.textContent = playerMode ? `Waiting on ${activeName}` : `${activeName} is resolving an autonomous turn.`;
+      turnGuidance.textContent = playerMode ? "Waiting." : "Live updates will catch up automatically.";
       return;
     }
     actionStatus.textContent = "Waiting";
-    decisionContext.textContent = `${activeName} currently controls the table.`;
-    turnBanner.textContent = `Waiting on ${activeName}.`;
-    turnGuidance.textContent = activeSeat
+    decisionContext.textContent = playerMode ? `Waiting on ${activeName}.` : `${activeName} currently controls the table.`;
+    turnBanner.textContent = playerMode ? `Waiting on ${activeName}` : `Waiting on ${activeName}.`;
+    turnGuidance.textContent = playerMode
+      ? "Waiting."
+      : activeSeat
       ? "Your private areas stay live while you wait."
       : "Waiting on the next seat.";
   }

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.5 - 2026-04-16
+- Moved UI mode selection from table-level setup to per-seat setup while keeping top-level `ui_mode` as a legacy default.
+- Reworked Player Mode layout so Private Briefing sits above the board, Decision Desk stays right of the board, and Table Wire stays below the board column.
+- Made Your Hand collapsible, renamed private panels to Hand/Reveals/Notes, and reduced Player turn guidance copy.
+- Improved board scaling and replaced harsh movement highlights with dimmed non-targets, warm legal-target glow, and emphasized reachable edges.
+- Updated release markers and regression tests for `v1.7.5`.
+
 ## v1.7.4 - 2026-04-16
 - Replaced the fixed table setup seed with a fresh per-game seed so repeated games no longer reuse the same deal and case file.
 - Added a UI-only `Quit Game` link on the in-game table that returns to Clue Home without changing game state.

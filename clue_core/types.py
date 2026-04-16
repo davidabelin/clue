@@ -8,6 +8,17 @@ from typing import Any
 from clue_core.constants import CHARACTERS
 
 
+DEFAULT_UI_MODE = "beginner"
+LIVE_UI_MODES = {"beginner", "player"}
+UNAVAILABLE_UI_MODES = {"superplayer"}
+
+
+def normalize_ui_mode(value: Any, *, default: str = DEFAULT_UI_MODE) -> str:
+    """Return a normalized live UI mode, falling back to Beginner when absent."""
+
+    return str(value or default).strip().lower()
+
+
 @dataclass(slots=True)
 class SeatConfig:
     """Normalized seat configuration used by setup, storage, and web payloads."""
@@ -20,6 +31,7 @@ class SeatConfig:
     agent_profile: str = ""
     agent_chat_model: str = ""
     agent_chat_profile: str = ""
+    ui_mode: str = DEFAULT_UI_MODE
     notebook: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -31,6 +43,11 @@ class SeatConfig:
         if normalized not in {"human", "heuristic", "llm"}:
             raise ValueError("seat_kind must be one of: human, heuristic, llm.")
         self.seat_kind = normalized
+        ui_mode = normalize_ui_mode(self.ui_mode)
+        if ui_mode not in LIVE_UI_MODES:
+            allowed = ", ".join(sorted(LIVE_UI_MODES))
+            raise ValueError(f"ui_mode must be one of: {allowed}.")
+        self.ui_mode = ui_mode
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the config into the dict shape used across the app."""
@@ -50,5 +67,6 @@ class SeatConfig:
             agent_profile=str(payload.get("agent_profile", "")),
             agent_chat_model=str(payload.get("agent_chat_model", "")),
             agent_chat_profile=str(payload.get("agent_chat_profile", "")),
+            ui_mode=str(payload.get("ui_mode", DEFAULT_UI_MODE)),
             notebook=dict(payload.get("notebook") or {}),
         )

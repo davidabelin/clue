@@ -30,16 +30,13 @@ from clue_core.deduction import build_tool_snapshot
 from clue_core.engine import GameMaster, build_filtered_snapshot
 from clue_core.events import make_event
 from clue_core.setup import build_hidden_setup, build_initial_state
-from clue_core.types import SeatConfig
+from clue_core.types import DEFAULT_UI_MODE, LIVE_UI_MODES, UNAVAILABLE_UI_MODES, SeatConfig, normalize_ui_mode
 from clue_core.version import CLUE_RELEASE_LABEL, CLUE_VERSION
 from clue_storage import ClueRepository
 
 
 DEFAULT_TOOL_SNAPSHOT_BUDGET_MS = 250
 TURN_METRIC_LIMIT = 256
-DEFAULT_UI_MODE = "beginner"
-LIVE_UI_MODES = {"beginner", "player"}
-UNAVAILABLE_UI_MODES = {"superplayer"}
 SOCIAL_MOODS = {"calm", "amused", "annoyed", "guarded", "confident", "wounded"}
 SOCIAL_THREAD_KINDS = {"banter", "dispute", "alliance", "flirtation", "meta"}
 SOCIAL_THREAD_STATUSES = {"active", "cooling", "resolved"}
@@ -412,18 +409,18 @@ class GameService:
         """
 
         title = str(payload.get("title", "")).strip() or "Clue Table"
-        ui_mode = self._ui_mode_from_payload(payload)
+        default_ui_mode = self._ui_mode_from_payload(payload)
         requested_seats = list(payload.get("seats") or [])
         if requested_seats:
-            seat_configs = self._seat_configs_from_payload(requested_seats)
+            seat_configs = self._seat_configs_from_payload(requested_seats, default_ui_mode=default_ui_mode)
         else:
-            seat_configs = self._default_seats()
+            seat_configs = self._default_seats(ui_mode=default_ui_mode)
         game_id = f"clue_{_timestamp_slug()}"
         self._apply_llm_profiles(game_id, seat_configs)
         seed = _new_game_seed()
         hidden_setup = build_hidden_setup(seat_configs, seed=seed)
         state = build_initial_state(game_id, title, seat_configs, hidden_setup)
-        state["ui_mode"] = ui_mode
+        state["ui_mode"] = default_ui_mode
         state["analysis"] = self._build_analysis_defaults(state)
         tokens = []
         seat_links = []
@@ -444,6 +441,7 @@ class GameService:
                     "seat_kind": seat.seat_kind,
                     "agent_profile": seat.agent_profile,
                     "agent_chat_profile": seat.agent_chat_profile,
+                    "ui_mode": seat.ui_mode,
                     "url": f"join/{token}",
                 }
             )
@@ -470,7 +468,7 @@ class GameService:
             config={
                 "game_id": game_id,
                 "title": title,
-                "ui_mode": ui_mode,
+                "ui_mode": default_ui_mode,
                 "seed": seed,
                 "seats": [seat.to_dict() for seat in seat_configs],
             },
@@ -630,7 +628,7 @@ class GameService:
         return self.snapshot_for_token(token)
 
     @staticmethod
-    def _seat_configs_from_payload(requested_seats: list[dict[str, Any]]) -> list[SeatConfig]:
+    def _seat_configs_from_payload(requested_seats: list[dict[str, Any]], *, default_ui_mode: str = DEFAULT_UI_MODE) -> list[SeatConfig]:
         """Normalize create-game seat payloads and drop seats marked as not playing.
 
         ``heuristic`` remains a tolerated legacy alias in incoming payloads so old
@@ -646,16 +644,17 @@ class GameService:
                 continue
             if seat_kind == "heuristic":
                 seat_kind = "llm"
-            seat_payloads.append(item | {"seat_kind": seat_kind or "human"})
+            ui_mode = GameService._ui_mode_from_payload(item, default=default_ui_mode)
+            seat_payloads.append(item | {"seat_kind": seat_kind or "human", "ui_mode": ui_mode})
         if len(seat_payloads) < 3 or len(seat_payloads) > 6:
             raise ValueError("Clue requires between 3 and 6 active seats.")
         return [SeatConfig.from_dict(item) for item in seat_payloads]
 
     @staticmethod
-    def _ui_mode_from_payload(payload: dict[str, Any]) -> str:
+    def _ui_mode_from_payload(payload: dict[str, Any], *, default: str = DEFAULT_UI_MODE) -> str:
         """Normalize the create-table UI mode and reject unavailable modes."""
 
-        raw_mode = str(payload.get("ui_mode", DEFAULT_UI_MODE) or DEFAULT_UI_MODE).strip().lower()
+        raw_mode = normalize_ui_mode(payload.get("ui_mode", default), default=default)
         if raw_mode in UNAVAILABLE_UI_MODES:
             raise ValueError("Superplayer mode is not available yet.")
         if raw_mode not in LIVE_UI_MODES:
@@ -1420,7 +1419,7 @@ class GameService:
         return None
 
     @staticmethod
-    def _default_seats() -> list[SeatConfig]:
+    def _default_seats(ui_mode: str = DEFAULT_UI_MODE) -> list[SeatConfig]:
         """Return the default mixed-seat table used when no explicit payload is supplied."""
 
         defaults = [
@@ -1430,6 +1429,6 @@ class GameService:
             ("seat_plum", "Professor Plum", "Professor Plum", "human"),
         ]
         return [
-            SeatConfig(seat_id=seat_id, display_name=display_name, character=character, seat_kind=seat_kind)
+            SeatConfig(seat_id=seat_id, display_name=display_name, character=character, seat_kind=seat_kind, ui_mode=ui_mode)
             for seat_id, display_name, character, seat_kind in defaults
         ]

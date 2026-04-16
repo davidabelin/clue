@@ -39,9 +39,10 @@ def test_home_page_renders(client):
     assert "Mrs. Peacock" in html
     assert "Professor Plum" in html
     assert "Set unused seats to NP." in html
-    assert 'name="ui_mode" value="beginner" checked' in html
-    assert 'name="ui_mode" value="player"' in html
-    assert 'name="ui_mode" value="superplayer" disabled' in html
+    assert 'name="ui_mode_0"' in html
+    assert '<option value="beginner" selected>Beginner</option>' in html
+    assert '<option value="player">Player</option>' in html
+    assert '<option value="superplayer" disabled>Superplayer (later)</option>' in html
     assert f"Clue {CLUE_RELEASE_LABEL} runs as a standalone lab" in html
     assert "Seed" not in html
     assert ">Heuristic<" not in html
@@ -107,12 +108,46 @@ def test_create_game_uses_fresh_setup_seed(client, app, monkeypatch):
 
 
 def test_create_game_accepts_player_mode(client):
-    """Player Mode should persist through game creation into seat snapshots."""
+    """Player Mode should persist per seat through game creation into snapshots."""
 
     response = client.post(
         "/api/v1/games",
         json={
             "title": "Player Table",
+            "seats": [
+                {
+                    "seat_id": "seat_scarlet",
+                    "display_name": "Miss Scarlet",
+                    "character": "Miss Scarlet",
+                    "seat_kind": "human",
+                    "ui_mode": "player",
+                },
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    assert response.status_code == 201
+
+    payload = response.get_json()
+    scarlet_token = _token_from_join_url(payload["seat_links"][0]["url"])
+    mustard_token = _token_from_join_url(payload["seat_links"][1]["url"])
+    scarlet_snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": scarlet_token}).get_json()
+    mustard_snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": mustard_token}).get_json()
+
+    assert payload["seat_links"][0]["ui_mode"] == "player"
+    assert scarlet_snapshot["ui_mode"] == "player"
+    assert scarlet_snapshot["seat"]["ui_mode"] == "player"
+    assert mustard_snapshot["ui_mode"] == "beginner"
+
+
+def test_create_game_top_level_ui_mode_remains_a_default_for_legacy_clients(client):
+    """Legacy top-level mode payloads should still seed seats that omit ui_mode."""
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Legacy Player Table",
             "ui_mode": "player",
             "seats": [
                 {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
@@ -141,11 +176,24 @@ def test_create_game_rejects_invalid_or_unavailable_ui_modes(client):
         ],
     }
 
-    superplayer = client.post("/api/v1/games", json=base_payload | {"ui_mode": "superplayer"})
+    table_superplayer = client.post("/api/v1/games", json=base_payload | {"ui_mode": "superplayer"})
+    seat_superplayer = client.post(
+        "/api/v1/games",
+        json=base_payload
+        | {
+            "seats": [
+                base_payload["seats"][0] | {"ui_mode": "superplayer"},
+                base_payload["seats"][1],
+                base_payload["seats"][2],
+            ]
+        },
+    )
     invalid = client.post("/api/v1/games", json=base_payload | {"ui_mode": "expert"})
 
-    assert superplayer.status_code == 400
-    assert "Superplayer mode is not available yet" in superplayer.get_json()["error"]
+    assert table_superplayer.status_code == 400
+    assert "Superplayer mode is not available yet" in table_superplayer.get_json()["error"]
+    assert seat_superplayer.status_code == 400
+    assert "Superplayer mode is not available yet" in seat_superplayer.get_json()["error"]
     assert invalid.status_code == 400
     assert "ui_mode must be one of" in invalid.get_json()["error"]
 
@@ -179,9 +227,9 @@ def test_game_page_renders_private_and_public_table_sections(client):
     assert "Action Queue" in html
     assert "Private Briefing" in html
     assert "Seat Snapshot" in html
-    assert "Private Intel" in html
+    assert "Reveals" in html
     assert "Marker Grid" in html
-    assert "Case Notes" in html
+    assert "Notes" in html
     assert "Table Wire" in html
     assert "Witness Record" in html
     assert "Table Talk" in html

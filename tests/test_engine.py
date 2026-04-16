@@ -164,6 +164,22 @@ def test_filtered_snapshot_defaults_missing_ui_mode_to_beginner():
     assert snapshot["ui_mode"] == "beginner"
 
 
+def test_filtered_snapshot_uses_seat_ui_mode_before_table_default():
+    """Seat-specific UI mode should control the viewer's filtered snapshot."""
+
+    seats = _seats()
+    hidden_setup = build_hidden_setup(seats, seed=10)
+    state = build_initial_state("game_test", "Table", seats, hidden_setup)
+    state["ui_mode"] = "beginner"
+    state["seats"]["seat_scarlet"]["ui_mode"] = "player"
+
+    scarlet_snapshot = build_filtered_snapshot(state, seat_id="seat_scarlet", visible_events=[], notebook={})
+    mustard_snapshot = build_filtered_snapshot(state, seat_id="seat_mustard", visible_events=[], notebook={})
+
+    assert scarlet_snapshot["ui_mode"] == "player"
+    assert mustard_snapshot["ui_mode"] == "beginner"
+
+
 def test_move_targets_do_not_include_start_nodes():
     """Legal movement targets should never send a seat back onto a start node."""
 

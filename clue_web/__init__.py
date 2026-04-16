@@ -68,7 +68,7 @@ def _static_asset_token(static_root: Path, *, version: str) -> str:
 def create_app(config: dict | None = None) -> Flask:
     """Create the standalone Clue Flask app and wire storage, routes, and chrome links.
 
-    The app factory is also the central configuration bridge for v1.7.4. It
+    The app factory is also the central configuration bridge for v1.7.5. It
     keeps deployment defaults explicit so future maintainers can see which knobs
     belong to the OpenAI seat runtime versus the core Flask or storage layers,
     and where Secret Manager-backed values may override local defaults.

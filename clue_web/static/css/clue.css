@@ -600,8 +600,10 @@ button:disabled {
 }
 
 .board-svg {
+  display: block;
   width: 100%;
-  min-height: 32rem;
+  height: clamp(26rem, 62vh, 46rem);
+  min-height: 0;
   background:
     radial-gradient(circle at 30% 25%, rgba(255, 240, 208, 0.18), transparent 28%),
     radial-gradient(circle at 72% 68%, rgba(242, 189, 100, 0.12), transparent 22%),
@@ -653,8 +655,9 @@ button:disabled {
 
 .node.highlight rect,
 .node.highlight circle {
-  fill: rgba(142, 35, 49, 0.16);
-  stroke: rgba(122, 19, 31, 0.86);
+  stroke: rgba(216, 162, 65, 0.95);
+  stroke-width: 3.2;
+  filter: drop-shadow(0 0 10px rgba(236, 199, 109, 0.64));
 }
 
 .node.current-seat-node rect,
@@ -1246,7 +1249,7 @@ button:disabled {
   }
 
   .board-svg {
-    min-height: 24rem;
+    height: clamp(23rem, 58vh, 36rem);
   }
 
   .seat-summary-grid,
@@ -1662,7 +1665,7 @@ button:disabled {
 .board-svg {
   display: block;
   width: 100%;
-  height: auto;
+  height: clamp(26rem, 62vh, 44rem);
   min-height: 0;
   border-radius: 20px;
   border: 1px solid rgba(71, 44, 22, 0.46);
@@ -1697,6 +1700,30 @@ button:disabled {
   stroke: rgba(33, 97, 135, 0.52);
 }
 
+.board-svg[data-has-moves="1"] .board-edge {
+  opacity: 0.25;
+}
+
+.board-svg[data-has-moves="1"] .board-edge-reachable {
+  opacity: 0.92;
+  stroke: rgba(231, 178, 73, 0.82);
+  stroke-width: 8.5;
+  filter: drop-shadow(0 0 6px rgba(236, 199, 109, 0.55));
+}
+
+.board-svg[data-has-moves="1"] .board-edge-passage.board-edge-reachable {
+  stroke: rgba(78, 135, 165, 0.84);
+}
+
+.board-svg[data-has-moves="1"] .node:not(.highlight):not(.current-seat-node) {
+  opacity: 0.5;
+}
+
+.board-svg[data-has-moves="1"] .node.highlight,
+.board-svg[data-has-moves="1"] .node.current-seat-node {
+  opacity: 1;
+}
+
 .node.room rect {
   stroke: rgba(62, 40, 27, 0.82);
   stroke-width: 2.3;
@@ -1714,32 +1741,32 @@ button:disabled {
 
 .node.highlight-walk rect,
 .node.highlight-walk circle {
-  fill: rgba(168, 50, 63, 0.14);
-  stroke: rgba(145, 26, 39, 0.92);
-  stroke-width: 3;
+  stroke: rgba(221, 166, 55, 0.96);
+  stroke-width: 3.4;
+  filter: drop-shadow(0 0 12px rgba(236, 199, 109, 0.7));
 }
 
 .node.highlight-passage rect,
 .node.highlight-passage circle {
-  fill: rgba(47, 96, 130, 0.14);
-  stroke: rgba(35, 92, 126, 0.92);
-  stroke-width: 3;
+  stroke: rgba(221, 166, 55, 0.96);
+  stroke-width: 3.4;
+  filter: drop-shadow(0 0 12px rgba(236, 199, 109, 0.7));
 }
 
 .node.selected-target rect,
 .node.selected-target circle {
-  stroke: rgba(122, 19, 31, 0.96);
+  stroke: rgba(133, 90, 23, 0.98);
   stroke-width: 3.4;
   filter: drop-shadow(0 0 10px rgba(236, 199, 109, 0.95));
 }
 
 .node.selected-target text {
-  fill: #6d1020;
+  fill: #4f3511;
 }
 
 .clickable-node:hover rect,
 .clickable-node:hover circle {
-  filter: brightness(1.03);
+  filter: brightness(1.04) drop-shadow(0 0 14px rgba(236, 199, 109, 0.78));
 }
 
 .board-svg[data-busy="1"] .clickable-node {
@@ -1954,11 +1981,12 @@ button:disabled {
 
 .game-app--player .briefing-grid {
   gap: 0.56rem;
-  grid-template-columns: minmax(0, 1.45fr) minmax(250px, 0.66fr);
+  grid-template-columns: minmax(0, 1fr) clamp(19rem, 27vw, 31rem);
   grid-template-areas:
+    "briefing briefing"
     "caseboard desk"
-    "caseboard briefing"
-    "wire wire";
+    "wire desk";
+  align-items: stretch;
 }
 
 .game-app--player .caseboard-stage,
@@ -1970,6 +1998,43 @@ button:disabled {
 .game-app--player .action-controls,
 .game-app--player .chat-composer {
   gap: 0.46rem;
+}
+
+.game-app--player .caseboard-stage,
+.game-app--player .wire-stage {
+  align-self: start;
+}
+
+.game-app--player .desk-stage {
+  align-self: stretch;
+}
+
+.game-app--player .board-svg {
+  height: clamp(23rem, 52vh, 35rem);
+}
+
+.game-app--player .briefing-stage {
+  grid-template-columns: minmax(12rem, 0.74fr) minmax(14rem, 0.84fr) minmax(18rem, 1fr);
+  grid-template-areas:
+    "briefing-head briefing-head briefing-head"
+    "hand reveals notes";
+  align-items: start;
+}
+
+.game-app--player .briefing-stage > .panel-head {
+  grid-area: briefing-head;
+}
+
+.game-app--player .hand-panel {
+  grid-area: hand;
+}
+
+.game-app--player .private-intel-panel {
+  grid-area: reveals;
+}
+
+.game-app--player .notebook-panel {
+  grid-area: notes;
 }
 
 .game-app--player .panel-head {
@@ -2023,7 +2088,7 @@ button:disabled {
 }
 
 .game-app--player .wire-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.56rem;
 }
 
@@ -2073,10 +2138,23 @@ button:disabled {
   .game-app--player .briefing-grid {
     grid-template-columns: 1fr;
     grid-template-areas:
+      "briefing"
       "caseboard"
       "desk"
-      "briefing"
       "wire";
+  }
+
+  .game-app--player .briefing-stage {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "briefing-head"
+      "hand"
+      "reveals"
+      "notes";
+  }
+
+  .game-app--player .board-svg {
+    height: clamp(22rem, 58vh, 34rem);
   }
 
   .game-app--player .wire-grid {

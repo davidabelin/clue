@@ -23,6 +23,7 @@ from clue_core.board import (
 )
 from clue_core.constants import CARD_CATEGORIES, ROOMS, SUSPECTS, WEAPONS
 from clue_core.events import make_event
+from clue_core.types import DEFAULT_UI_MODE, LIVE_UI_MODES, normalize_ui_mode
 
 
 Action = dict[str, Any]
@@ -533,6 +534,7 @@ def build_filtered_snapshot(
                 "agent_profile": seat.get("agent_profile", ""),
                 "agent_chat_model": seat.get("agent_chat_model", ""),
                 "agent_chat_profile": seat.get("agent_chat_profile", ""),
+                "ui_mode": _ui_mode_for_seat(state, other_seat_id),
                 "position": seat["position"],
                 "can_win": bool(seat["can_win"]),
                 "hand_count": int(seat["hand_count"]),
@@ -541,7 +543,7 @@ def build_filtered_snapshot(
     return {
         "game_id": state["game_id"],
         "title": state["title"],
-        "ui_mode": _ui_mode_from_state(state),
+        "ui_mode": _ui_mode_for_seat(state, seat_id),
         "status": state["status"],
         "turn_index": state["turn_index"],
         "active_seat_id": state["active_seat_id"],
@@ -580,10 +582,18 @@ def build_filtered_snapshot(
 
 
 def _ui_mode_from_state(state: dict[str, Any]) -> str:
-    """Return the persisted UI mode, defaulting older games to Beginner."""
+    """Return the persisted table-default UI mode."""
 
-    ui_mode = str(state.get("ui_mode") or "beginner").strip().lower()
-    return ui_mode if ui_mode in {"beginner", "player"} else "beginner"
+    ui_mode = normalize_ui_mode(state.get("ui_mode"))
+    return ui_mode if ui_mode in LIVE_UI_MODES else DEFAULT_UI_MODE
+
+
+def _ui_mode_for_seat(state: dict[str, Any], seat_id: str) -> str:
+    """Return the UI mode for one seat, defaulting older games to Beginner."""
+
+    seat = dict((state.get("seats") or {}).get(seat_id) or {})
+    ui_mode = normalize_ui_mode(seat.get("ui_mode") or _ui_mode_from_state(state))
+    return ui_mode if ui_mode in LIVE_UI_MODES else DEFAULT_UI_MODE
 
 
 def _filtered_social_snapshot(state: dict[str, Any], social: dict[str, Any], seat_id: str) -> dict[str, Any]:

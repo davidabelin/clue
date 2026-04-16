@@ -119,16 +119,32 @@
         </div>
         <div id="seat-summary"></div>
       </section>
-      <section class="info-card hand-panel">
-        <div class="panel-head compact">
-          <h3>Your Hand</h3>
+      <details class="info-card info-drawer hand-panel" data-collapse-key="your-hand" data-default-open="1">
+        <summary class="info-drawer-summary">
+          <div class="drawer-head">
+            <h3>Your Hand</h3>
+          </div>
+        </summary>
+        <div class="info-drawer-body">
+          <ul id="hand-list"></ul>
         </div>
-        <ul id="hand-list"></ul>
-      </section>
+      </details>
+      <details class="info-card info-drawer private-intel-panel" data-collapse-key="private-intel" data-default-open="0" data-open-when-populated="1">
+        <summary class="info-drawer-summary">
+          <div class="drawer-head">
+            <h3>Reveals</h3>
+            <span id="private-count" class="status-chip">0</span>
+          </div>
+        </summary>
+        <div class="info-drawer-body">
+          <p class="field-note">Only you can see refutations, reveals, and seat-private prompts.</p>
+          <ul id="private-log" class="event-log private-log"></ul>
+        </div>
+      </details>
       <details class="info-card info-drawer notebook-panel" data-collapse-key="case-notes" data-default-open="0">
         <summary class="info-drawer-summary">
           <div class="drawer-head">
-            <h3>Case Notes</h3>
+            <h3>Notes</h3>
             <span id="notebook-status" class="status-chip">Synced</span>
           </div>
         </summary>
@@ -140,18 +156,6 @@
             <span class="composer-hint">Notebook drafts stay intact across refreshes until you save them.</span>
           </div>
           <button id="save-notebook" type="button">Save Notes</button>
-        </div>
-      </details>
-      <details class="info-card info-drawer private-intel-panel" data-collapse-key="private-intel" data-default-open="0" data-open-when-populated="1">
-        <summary class="info-drawer-summary">
-          <div class="drawer-head">
-            <h3>Private Intel</h3>
-            <span id="private-count" class="status-chip">0</span>
-          </div>
-        </summary>
-        <div class="info-drawer-body">
-          <p class="field-note">Only you can see refutations, reveals, and seat-private prompts.</p>
-          <ul id="private-log" class="event-log private-log"></ul>
         </div>
       </details>
     </aside>

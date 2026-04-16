@@ -58,6 +58,7 @@ def build_initial_state(game_id: str, title: str, seats: list[SeatConfig], hidde
             "agent_profile": seat.agent_profile,
             "agent_chat_model": seat.agent_chat_model,
             "agent_chat_profile": seat.agent_chat_profile,
+            "ui_mode": seat.ui_mode,
             "position": CHARACTER_START_NODES[seat.character],
             "hand_count": len(hidden_setup["hands"][seat.seat_id]),
             "can_win": True,
