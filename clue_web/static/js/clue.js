@@ -440,6 +440,48 @@ if (app) {
     });
   }
 
+  function movementEdgeTarget(edge, highlights, nodesById) {
+    const fromHighlighted = highlights.has(edge.from);
+    const toHighlighted = highlights.has(edge.to);
+    if (!fromHighlighted && !toHighlighted) {
+      return "";
+    }
+    if (fromHighlighted && !toHighlighted) {
+      return edge.from;
+    }
+    if (toHighlighted && !fromHighlighted) {
+      return edge.to;
+    }
+    const from = nodesById.get(edge.from);
+    const to = nodesById.get(edge.to);
+    if (from?.kind === "room" && to?.kind !== "room") {
+      return edge.from;
+    }
+    if (to?.kind === "room" && from?.kind !== "room") {
+      return edge.to;
+    }
+    return "";
+  }
+
+  function bindBoardMoveControl(node, nodeId, label) {
+    node.setAttribute("role", "button");
+    node.setAttribute("tabindex", pendingMutation ? "-1" : "0");
+    node.setAttribute("aria-label", `Move to ${label}`);
+    if (pendingMutation) {
+      node.setAttribute("aria-disabled", "true");
+      return;
+    }
+    node.addEventListener("click", () => {
+      submitBoardMove(nodeId);
+    });
+    node.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        submitBoardMove(nodeId);
+      }
+    });
+  }
+
   function renderBoard(snapshot) {
     const moveTargets = snapshot.legal_actions.move_targets || [];
     const highlights = new Set(moveTargets.map((item) => item.node_id));
@@ -470,8 +512,11 @@ if (app) {
       }
       const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
       const edgeClasses = ["board-edge", `board-edge-${edge.kind || "walk"}`];
-      if (highlights.has(edge.from) || highlights.has(edge.to)) {
+      const edgeTarget = movementEdgeTarget(edge, highlights, nodesById);
+      if (edgeTarget) {
         edgeClasses.push("board-edge-reachable");
+        edgeClasses.push("clickable-edge");
+        bindBoardMoveControl(line, edgeTarget, nodesById.get(edgeTarget)?.label || edgeTarget);
       }
       line.setAttribute("class", edgeClasses.join(" "));
       line.setAttribute("x1", from.x);
@@ -537,22 +582,24 @@ if (app) {
       });
       if (highlights.has(node.id)) {
         g.classList.add("clickable-node");
-        g.setAttribute("role", "button");
-        g.setAttribute("tabindex", pendingMutation ? "-1" : "0");
-        g.setAttribute("aria-label", `Move to ${node.label}`);
-        if (pendingMutation) {
-          g.setAttribute("aria-disabled", "true");
+        if (node.kind === "room") {
+          const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          hitArea.setAttribute("class", "node-hit-area");
+          hitArea.setAttribute("x", node.x - 76);
+          hitArea.setAttribute("y", node.y - 48);
+          hitArea.setAttribute("width", 152);
+          hitArea.setAttribute("height", 96);
+          hitArea.setAttribute("rx", 18);
+          g.appendChild(hitArea);
         } else {
-          g.addEventListener("click", () => {
-            submitBoardMove(node.id);
-          });
-          g.addEventListener("keydown", (event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              submitBoardMove(node.id);
-            }
-          });
+          const hitArea = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          hitArea.setAttribute("class", "node-hit-area");
+          hitArea.setAttribute("cx", node.x);
+          hitArea.setAttribute("cy", node.y);
+          hitArea.setAttribute("r", node.kind === "hallway" ? 30 : 24);
+          g.appendChild(hitArea);
         }
+        bindBoardMoveControl(g, node.id, node.label);
       }
       surface.appendChild(g);
     });
@@ -1097,8 +1144,9 @@ if (app) {
     saveNotebook.textContent = pendingMutation === "notebook" ? "Saving..." : "Save Notes";
     sendChat.textContent = pendingMutation === "chat" ? "Posting..." : "Send Chat";
     board.dataset.busy = busy ? "1" : "0";
-    board.querySelectorAll(".clickable-node").forEach((node) => {
+    board.querySelectorAll(".clickable-node, .clickable-edge").forEach((node) => {
       node.setAttribute("tabindex", busy ? "-1" : "0");
+      node.setAttribute("aria-disabled", busy ? "true" : "false");
     });
     actionControls.querySelectorAll("button[data-action-button='1'], select").forEach((control) => {
       control.disabled = busy;
@@ -1250,6 +1298,17 @@ if (app) {
     const playerBoardMove = isPlayerMode() && available.has("move") && (legal.move_targets || []).length;
     actionControls.innerHTML = "";
 
+    if (playerBoardMove) {
+      const targetCount = legal.move_targets.length;
+      const { card, body } = createActionCard({
+        eyebrow: "Movement",
+        title: "Move On Board",
+        detail: `${targetCount} ${targetCount === 1 ? "target" : "targets"} highlighted.`,
+        tone: "primary",
+      });
+      body.innerHTML = '<p class="empty-state">Click a highlighted room or route.</p>';
+      actionControls.appendChild(card);
+    }
     if (available.has("roll")) {
       const { card, body } = createActionCard({
         eyebrow: "Open Turn",
@@ -1314,7 +1373,7 @@ if (app) {
       }
       actionControls.appendChild(card);
     }
-    if (available.has("end_turn")) {
+    if (available.has("end_turn") && !playerBoardMove) {
       const { card, body } = createActionCard({
         eyebrow: "Wrap Up",
         title: "Close The Turn",
@@ -1324,7 +1383,7 @@ if (app) {
       addActionButton(body, "End Turn", () => ({ action: "end_turn" }), "secondary-action");
       actionControls.appendChild(card);
     }
-    if (available.has("accuse")) {
+    if (available.has("accuse") && !playerBoardMove) {
       const suspects = snapshot.case_file_categories.suspect.map((item) => ({ value: item, label: item }));
       const weapons = snapshot.case_file_categories.weapon.map((item) => ({ value: item, label: item }));
       const rooms = snapshot.case_file_categories.room.map((item) => ({ value: item, label: item }));

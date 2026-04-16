@@ -242,6 +242,19 @@ def test_game_page_renders_private_and_public_table_sections(client):
     assert "Advanced Diagnostics" in html
 
 
+def test_player_mode_board_movement_static_contract():
+    """Player Mode should keep board movement primary while move targets exist."""
+
+    js = Path("clue_web/static/js/clue.js").read_text(encoding="utf-8")
+    css = Path("clue_web/static/css/clue.css").read_text(encoding="utf-8")
+
+    assert "Move On Board" in js
+    assert "clickable-edge" in js
+    assert 'available.has("end_turn") && !playerBoardMove' in js
+    assert 'available.has("accuse") && !playerBoardMove' in js
+    assert "calc(50vh * 1.286), 44rem" in css
+
+
 def test_idle_chat_limits_one_npc_message_per_sweep(client, monkeypatch):
     """One snapshot refresh should append at most one NPC chat reply."""
 

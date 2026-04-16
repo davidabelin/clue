@@ -1,6 +1,6 @@
 # Clue TO DO List
 - As of 4/16/26
-- Current version 1.7.5
+- Current version 1.7.6
 
 ## *Rolling List*
 
@@ -80,7 +80,7 @@
 
 ## **TO DO Backlog and Follow-Up** (as of **pre-**4/13/26)
 
-### Current State **After** v1.7.5
+### Current State **After** v1.7.6
 - [x] Standalone Flask app plus AIX-mount-safe routing
 - [x] Deterministic Clue rules engine with filtered seat snapshots
 - [x] Mixed human and autonomous seats under one Game Master
@@ -91,9 +91,10 @@
 - [x] Beginner and Player table UI modes, with Superplayer reserved for later
 - [x] Per-seat UI mode selection for active table seats
 - [x] Player Mode layout pass from fresh screenshots: briefing above board, desk beside board, wire below board
+- [x] Player board movement fix: movement is primary after rolling, highlighted routes are clickable, and the Caseboard scales down more predictably
 - [x] Fresh setup seeds for new games, so deals and case files are no longer repeated from a fixed default
 - [x] UI-only Quit Game link back to Clue Home
-- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.5`
+- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.6`
 
 ### Highest Priority Backlog
 - [ ] Add browser/API end-to-end coverage for a full human-only game, including reconnect after refresh or tab reopen.

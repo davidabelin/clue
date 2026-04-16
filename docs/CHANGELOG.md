@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.7.6 - 2026-04-16
+- Fixed Player Mode movement UX after rolling by making board movement the primary visible action while legal move targets exist.
+- Made highlighted route segments clickable and expanded highlighted node hit areas so board movement clicks are less fragile.
+- Tightened Player Caseboard scaling so the board is constrained by both viewport height and available column width.
+- Updated cache-busting release markers for `v1.7.6`.
+
 ## v1.7.5 - 2026-04-16
 - Moved UI mode selection from table-level setup to per-seat setup while keeping top-level `ui_mode` as a legacy default.
 - Reworked Player Mode layout so Private Briefing sits above the board, Decision Desk stays right of the board, and Table Wire stays below the board column.

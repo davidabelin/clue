@@ -601,8 +601,9 @@ button:disabled {
 
 .board-svg {
   display: block;
-  width: 100%;
-  height: clamp(26rem, 62vh, 46rem);
+  width: min(100%, calc(62vh * 1.286), 58rem);
+  height: auto;
+  aspect-ratio: 720 / 560;
   min-height: 0;
   background:
     radial-gradient(circle at 30% 25%, rgba(255, 240, 208, 0.18), transparent 28%),
@@ -1249,7 +1250,8 @@ button:disabled {
   }
 
   .board-svg {
-    height: clamp(23rem, 58vh, 36rem);
+    width: min(100%, calc(58vh * 1.286));
+    height: auto;
   }
 
   .seat-summary-grid,
@@ -1664,8 +1666,9 @@ button:disabled {
 
 .board-svg {
   display: block;
-  width: 100%;
-  height: clamp(26rem, 62vh, 44rem);
+  width: min(100%, calc(60vh * 1.286), 56rem);
+  height: auto;
+  aspect-ratio: 720 / 560;
   min-height: 0;
   border-radius: 20px;
   border: 1px solid rgba(71, 44, 22, 0.46);
@@ -1769,9 +1772,26 @@ button:disabled {
   filter: brightness(1.04) drop-shadow(0 0 14px rgba(236, 199, 109, 0.78));
 }
 
+.clickable-edge {
+  cursor: pointer;
+  pointer-events: stroke;
+}
+
+.node-hit-area {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
+}
+
 .board-svg[data-busy="1"] .clickable-node {
   cursor: wait;
   opacity: 0.72;
+  pointer-events: none;
+}
+
+.board-svg[data-busy="1"] .clickable-edge {
+  cursor: wait;
+  opacity: 0.58;
   pointer-events: none;
 }
 
@@ -2005,12 +2025,17 @@ button:disabled {
   align-self: start;
 }
 
+.game-app--player .caseboard-stage {
+  justify-items: center;
+}
+
 .game-app--player .desk-stage {
   align-self: stretch;
 }
 
 .game-app--player .board-svg {
-  height: clamp(23rem, 52vh, 35rem);
+  width: min(100%, calc(50vh * 1.286), 44rem);
+  height: auto;
 }
 
 .game-app--player .briefing-stage {
@@ -2154,7 +2179,8 @@ button:disabled {
   }
 
   .game-app--player .board-svg {
-    height: clamp(22rem, 58vh, 34rem);
+    width: min(100%, calc(56vh * 1.286));
+    height: auto;
   }
 
   .game-app--player .wire-grid {
