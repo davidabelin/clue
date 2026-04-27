@@ -49,7 +49,7 @@ Standalone Clue lab for AIX, currently labeled **v1.7.6**.
 ### 4. Autonomous seats
 - `clue_agents.runtime.AgentRuntime` instantiates heuristic or LLM-backed seats behind one shared interface.
 - `clue_core.deduction.build_tool_snapshot()` prepares the seat-local deduction summary used by both heuristic and LLM policies.
-- `clue_agents.llm.LLMSeatAgent` uses the OpenAI Agents SDK with read-only tools, output guardrails, and deterministic fallback to the heuristic policy.
+- `clue_agents.llm.LLMSeatAgent` uses the OpenAI Agents SDK with read-only tools and output guardrails. If the live LLM path is unavailable or invalid, the seat fails loudly instead of using the heuristic policy.
 - Idle chat uses a separate chat profile path and a two-stage intent-plus-utterance run.
 - Completed games create durable LLM-authored memory jobs for each NHP. Ready memory is loaded into future NHP runtime snapshots; missing SDK/API credentials leave jobs pending for admin retry.
 
@@ -79,11 +79,11 @@ Standalone Clue lab for AIX, currently labeled **v1.7.6**.
 - `CLUE_LLM_REASONING_EFFORT`
   Default: `medium`
 - `CLUE_LLM_TIMEOUT_SECONDS`
-  Default: `12`
+  Default: `12` locally; `app.aix.yaml` sets `45`
 - `CLUE_LLM_MAX_TOOL_CALLS`
-  Default: `6`
+  Default: `6` locally; `app.aix.yaml` sets `12`
 - `CLUE_AGENT_MAX_TURNS`
-  Default: `8`
+  Default: `8` locally; `app.aix.yaml` sets `18`
 - `CLUE_AGENT_TRACING_ENABLED`
   Default: `0`
 - `CLUE_AGENT_TRACE_INCLUDE_SENSITIVE_DATA`

@@ -547,8 +547,17 @@ def test_create_game_can_reuse_same_seat_ids_across_multiple_games(client):
     assert first.get_json()["game_id"] != second.get_json()["game_id"]
 
 
-def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client):
+def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client, monkeypatch):
     """Autonomous turns should persist eval metrics plus seat-private debug payloads."""
+
+    heuristic = HeuristicSeatAgent()
+
+    def _mock_llm_decide(self, *, snapshot, tool_snapshot):
+        """Use the deterministic policy as an explicit test double for live LLM output."""
+
+        return heuristic.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
+
+    monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.decide_turn", _mock_llm_decide)
 
     response = client.post(
         "/api/v1/games",
@@ -576,6 +585,34 @@ def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client):
     assert snapshot["analysis"]["seat_debug"]["decision"]["action"]
     assert snapshot["analysis"]["seat_debug"]["tool_snapshot"]["top_hypotheses"]
     assert other_snapshot["analysis"]["seat_debug"] == {}
+
+
+def test_unavailable_llm_turn_does_not_use_heuristic_fallback(client):
+    """An LLM seat without credentials should stop and report the failure, not fake a turn."""
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "No Fake LLM",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "llm"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.get_json()
+    human_token = _token_from_join_url(payload["seat_links"][1]["url"])
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": human_token}).get_json()
+
+    assert snapshot["active_seat_id"] == "seat_scarlet"
+    assert any(event["event_type"] == "llm_unavailable" for event in snapshot["events"])
+    metric = snapshot["analysis"]["recent_turn_metrics"][-1]
+    assert metric["action"] == "llm_unavailable"
+    assert metric["fallback_used"] is False
+    assert metric["llm_error_reason"] == "missing_api_key"
 
 
 def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypatch):

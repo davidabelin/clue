@@ -1,9 +1,10 @@
-"""OpenAI Agents SDK-backed Clue seat runtime with deterministic fallback.
+"""OpenAI Agents SDK-backed Clue seat runtime.
 
 This module deliberately keeps the model-facing seat logic separate from the
 rules engine. The LLM may inspect seat-local context and produce one structured
 decision, but the Clue ``GameMaster`` remains the only component allowed to
-apply gameplay state changes.
+apply gameplay state changes. LLM seats fail loudly when the live model path is
+unavailable; they do not fall back to the deterministic heuristic policy.
 """
 
 from __future__ import annotations
@@ -13,8 +14,7 @@ from typing import Any
 
 from clue_agents.base import ChatDecision, MemorySummaryDecision, SeatAgent, TurnDecision
 from clue_agents.config import LLMRuntimeConfig, load_llm_runtime_config
-from clue_agents.heuristic import HeuristicSeatAgent
-from clue_agents.policy import accusation_window, stock_public_comment
+from clue_agents.policy import accusation_window
 from clue_agents.profile_loader import chat_model_profile, model_profile, model_runtime_defaults
 from clue_agents.sdk_runtime import (
     AGENTS_SDK_AVAILABLE,
@@ -50,6 +50,29 @@ class MemorySummaryError(RuntimeError):
         self.reason = str(reason or "memory_summary_error")
         self.error = error
         message = self.reason if error is None else f"{self.reason}: {error}"
+        super().__init__(message)
+
+
+class LLMDecisionError(RuntimeError):
+    """Raised when an LLM seat cannot produce a live turn or chat decision."""
+
+    def __init__(
+        self,
+        reason: str,
+        *,
+        mode: str,
+        error: Exception | None = None,
+        debug: dict[str, Any] | None = None,
+        runtime: dict[str, Any] | None = None,
+    ) -> None:
+        """Store a stable failure reason and private diagnostics for callers."""
+
+        self.reason = str(reason or "llm_decision_error")
+        self.mode = str(mode or "turn")
+        self.error = error
+        self.debug = dict(debug or {})
+        self.runtime = dict(runtime or {})
+        message = f"{self.mode}:{self.reason}" if error is None else f"{self.mode}:{self.reason}: {error}"
         super().__init__(message)
 
 
@@ -102,13 +125,13 @@ def _runtime_config_with_profile(
 
 
 class LLMSeatAgent(SeatAgent):
-    """OpenAI Agents SDK seat policy with a deterministic heuristic fallback.
+    """OpenAI Agents SDK seat policy that fails loudly when the model path fails.
 
     The LLM path is intentionally narrow:
     - read-only tools expose seat-local state
     - output guardrails validate legality and leakage risk
-    - the heuristic agent remains the fallback for any missing dependency,
-      missing API key, guardrail block, timeout, or model failure
+    - missing SDK/API credentials, guardrail blocks, timeouts, and model errors
+      raise ``LLMDecisionError`` instead of producing a deterministic fake move
 
     This class is where runtime config, profile selection, local session ids,
     and normalized SDK output are converted into the seat-agent contract used by
@@ -148,7 +171,6 @@ class LLMSeatAgent(SeatAgent):
         self._model = self._runtime_config.model
         self._chat_model = self._chat_runtime_config.model
         self._api_key = resolve_openai_api_key(api_key=api_key)
-        self._fallback = HeuristicSeatAgent()
 
     def clear_session(self, *, game_id: str, seat_id: str) -> None:
         """Best-effort cleanup for one seat's local encrypted agent session."""
@@ -217,51 +239,32 @@ class LLMSeatAgent(SeatAgent):
             "session_store": "local_encrypted_sqlalchemy_sqlite",
         }
 
-    def _fallback_decision(
+    def _raise_turn_error(
         self,
-        fallback: TurnDecision,
-        *,
-        snapshot: dict[str, Any],
         reason: str,
+        *,
         tool_snapshot: dict[str, Any],
+        accusation_gate: dict[str, Any] | None = None,
         error: Exception | None = None,
         extra_debug: dict[str, Any] | None = None,
-        extra_meta: dict[str, Any] | None = None,
-    ) -> TurnDecision:
-        """Attach LLM-runtime diagnostics to the heuristic fallback decision.
+    ) -> None:
+        """Raise one fail-loud turn error with private runtime diagnostics."""
 
-        Fallback decisions should still explain why the model path was rejected
-        so browser diagnostics and replay-style analysis remain actionable.
-        """
-
-        debug_private = dict(fallback.debug_private or {})
-        debug_private.setdefault("belief_summary", dict(tool_snapshot.get("belief_summary") or {}))
-        debug_private.setdefault("top_hypotheses", list(tool_snapshot.get("top_hypotheses") or [])[:3])
-        debug_private.setdefault("top_ranked_suggestions", list(tool_snapshot.get("suggestion_ranking") or [])[:3])
-        debug_private.setdefault("accusation_window", accusation_window(snapshot, tool_snapshot))
-        debug_private["llm_runtime"] = self._runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)
+        debug_private = {
+            "belief_summary": dict(tool_snapshot.get("belief_summary") or {}),
+            "top_hypotheses": list(tool_snapshot.get("top_hypotheses") or [])[:3],
+            "top_ranked_suggestions": list(tool_snapshot.get("suggestion_ranking") or [])[:3],
+            "accusation_window": dict(accusation_gate or {}),
+        }
         if extra_debug:
             debug_private["llm_debug"] = dict(extra_debug)
-        if error is not None:
-            debug_private["fallback_error"] = str(error)
-        return TurnDecision(
-            action=fallback.action,
-            target_node=fallback.target_node,
-            suspect=fallback.suspect,
-            weapon=fallback.weapon,
-            room=fallback.room,
-            card=fallback.card,
-            text=fallback.text,
-            rationale_private=fallback.rationale_private,
-            debug_private=debug_private,
-            agent_meta={
-                **dict(fallback.agent_meta or {}),
-                **self._turn_runtime_meta(),
-                "fallback_used": True,
-                "fallback_reason": reason,
-                **dict(extra_meta or {}),
-            },
-        )
+        raise LLMDecisionError(
+            reason,
+            mode="turn",
+            error=error,
+            debug=debug_private,
+            runtime=self._runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE),
+        ) from error
 
     def _silent_chat_decision(self, *, reason: str, extra_meta: dict[str, Any] | None = None) -> ChatDecision:
         """Return a deliberate no-post result for the chat path."""
@@ -279,36 +282,22 @@ class LLMSeatAgent(SeatAgent):
             },
         )
 
-    def _fallback_chat_decision(
+    def _raise_chat_error(
         self,
-        fallback: ChatDecision,
-        *,
         reason: str,
+        *,
         error: Exception | None = None,
         extra_debug: dict[str, Any] | None = None,
-        extra_meta: dict[str, Any] | None = None,
-    ) -> ChatDecision:
-        """Attach LLM-runtime diagnostics to the heuristic chat fallback."""
+    ) -> None:
+        """Raise one fail-loud idle-chat error with private runtime diagnostics."""
 
-        debug_private = dict(fallback.debug_private or {})
-        debug_private["llm_runtime"] = self._chat_runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)
-        if extra_debug:
-            debug_private["llm_debug"] = dict(extra_debug)
-        if error is not None:
-            debug_private["fallback_error"] = str(error)
-        return ChatDecision(
-            speak=bool(fallback.speak),
-            text=str(fallback.text or ""),
-            rationale_private=str(fallback.rationale_private or ""),
-            debug_private=debug_private,
-            agent_meta={
-                **dict(fallback.agent_meta or {}),
-                **self._chat_runtime_meta(),
-                "fallback_used": True,
-                "fallback_reason": reason,
-                **dict(extra_meta or {}),
-            },
-        )
+        raise LLMDecisionError(
+            reason,
+            mode="chat",
+            error=error,
+            debug=dict(extra_debug or {}),
+            runtime=self._chat_runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE),
+        ) from error
 
     @staticmethod
     def _decision_is_legal(decision: TurnDecision, legal: dict[str, Any]) -> bool:
@@ -380,19 +369,16 @@ class LLMSeatAgent(SeatAgent):
         }
 
     def decide_turn(self, *, snapshot: dict[str, Any], tool_snapshot: dict[str, Any]) -> TurnDecision:
-        """Ask the Agents SDK seat policy for one turn or fall back safely.
+        """Ask the Agents SDK seat policy for one turn.
 
-        The happy path is deliberately short. Any missing dependency, runtime
-        error, illegal output, or unsafe public text routes back through the
-        deterministic heuristic policy.
+        Any missing dependency, runtime error, illegal output, or unsafe public
+        text raises ``LLMDecisionError`` so the web runtime can stop and report
+        the real LLM failure instead of impersonating an LLM with heuristic play.
         """
 
-        fallback = self._fallback.decide_turn(snapshot=snapshot, tool_snapshot=tool_snapshot)
         if not AGENTS_SDK_AVAILABLE or not self._api_key:
-            return self._fallback_decision(
-                fallback,
-                snapshot=snapshot,
-                reason=("missing_agents_sdk" if not AGENTS_SDK_AVAILABLE else "missing_api_key"),
+            self._raise_turn_error(
+                "missing_agents_sdk" if not AGENTS_SDK_AVAILABLE else "missing_api_key",
                 tool_snapshot=tool_snapshot,
             )
 
@@ -410,59 +396,44 @@ class LLMSeatAgent(SeatAgent):
             decision = TurnDecision.from_dict(raw_output.model_dump())
             tool_call_count = len(list(artifacts.get("tool_calls") or []))
             if tool_call_count > self._runtime_config.max_tool_calls:
-                return self._fallback_decision(
-                    fallback,
-                    snapshot=snapshot,
-                    reason="tool_call_limit_exceeded",
+                self._raise_turn_error(
+                    "tool_call_limit_exceeded",
                     tool_snapshot=tool_snapshot,
+                    accusation_gate=accusation_gate,
                     extra_debug=artifacts,
-                    extra_meta={"trace_id": artifacts.get("trace_id", ""), "session_id": artifacts.get("session_id", "")},
                 )
             if not decision.action:
-                return self._fallback_decision(
-                    fallback,
-                    snapshot=snapshot,
-                    reason="empty_action",
+                self._raise_turn_error(
+                    "empty_action",
                     tool_snapshot=tool_snapshot,
+                    accusation_gate=accusation_gate,
                     extra_debug=artifacts,
                 )
             if not self._decision_is_legal(decision, legal):
-                return self._fallback_decision(
-                    fallback,
-                    snapshot=snapshot,
-                    reason="illegal_action",
+                self._raise_turn_error(
+                    "illegal_action",
                     tool_snapshot=tool_snapshot,
+                    accusation_gate=accusation_gate,
                     extra_debug=artifacts,
                 )
             if decision.action == "accuse" and not accusation_gate["ready"]:
-                return self._fallback_decision(
-                    fallback,
-                    snapshot=snapshot,
-                    reason="accusation_hold",
+                self._raise_turn_error(
+                    "accusation_hold",
                     tool_snapshot=tool_snapshot,
+                    accusation_gate=accusation_gate,
                     extra_debug=artifacts,
                 )
 
             original_text = decision.text or ""
             sanitized_text = sanitize_public_chat(original_text)
             if original_text and not sanitized_text:
-                return self._fallback_decision(
-                    fallback,
-                    snapshot=snapshot,
-                    reason="unsafe_public_chat",
+                self._raise_turn_error(
+                    "unsafe_public_chat",
                     tool_snapshot=tool_snapshot,
+                    accusation_gate=accusation_gate,
                     extra_debug=artifacts,
                 )
-            decision.text = sanitized_text or stock_public_comment(
-                snapshot,
-                {
-                    "action": decision.action,
-                    "target_node": decision.target_node,
-                    "suspect": decision.suspect,
-                    "weapon": decision.weapon,
-                    "room": decision.room,
-                },
-            )
+            decision.text = sanitized_text
             decision.debug_private = {
                 **dict(tool_snapshot.get("belief_summary") or {}),
                 "top_hypotheses": list(tool_snapshot.get("top_hypotheses") or [])[:3],
@@ -493,46 +464,43 @@ class LLMSeatAgent(SeatAgent):
                 "tool_calls": list(artifacts.get("tool_calls") or []),
             }
             return decision
+        except LLMDecisionError:
+            raise
         except OutputGuardrailTripwireTriggered as exc:
-            return self._fallback_decision(
-                fallback,
-                snapshot=snapshot,
-                reason="output_guardrail_blocked",
+            self._raise_turn_error(
+                "output_guardrail_blocked",
                 tool_snapshot=tool_snapshot,
+                accusation_gate=accusation_gate,
                 error=exc,
                 extra_debug=guardrail_exception_payload(exc),
             )
         except InputGuardrailTripwireTriggered as exc:
-            return self._fallback_decision(
-                fallback,
-                snapshot=snapshot,
-                reason="input_guardrail_blocked",
+            self._raise_turn_error(
+                "input_guardrail_blocked",
                 tool_snapshot=tool_snapshot,
+                accusation_gate=accusation_gate,
                 error=exc,
                 extra_debug=guardrail_exception_payload(exc),
             )
         except MaxTurnsExceeded as exc:
-            return self._fallback_decision(
-                fallback,
-                snapshot=snapshot,
-                reason="max_turns_exceeded",
+            self._raise_turn_error(
+                "max_turns_exceeded",
                 tool_snapshot=tool_snapshot,
+                accusation_gate=accusation_gate,
                 error=exc,
             )
         except TimeoutError as exc:
-            return self._fallback_decision(
-                fallback,
-                snapshot=snapshot,
-                reason="timeout",
+            self._raise_turn_error(
+                "timeout",
                 tool_snapshot=tool_snapshot,
+                accusation_gate=accusation_gate,
                 error=exc,
             )
         except Exception as exc:
-            return self._fallback_decision(
-                fallback,
-                snapshot=snapshot,
-                reason="model_error",
+            self._raise_turn_error(
+                "model_error",
                 tool_snapshot=tool_snapshot,
+                accusation_gate=accusation_gate,
                 error=exc,
             )
 
@@ -601,14 +569,10 @@ class LLMSeatAgent(SeatAgent):
             raise MemorySummaryError("model_error", error=exc) from exc
 
     def decide_chat(self, *, snapshot: dict[str, Any]) -> ChatDecision:
-        """Ask the Agents SDK seat policy for one idle-chat decision or fall back safely."""
+        """Ask the Agents SDK seat policy for one idle-chat decision."""
 
-        fallback = self._fallback.decide_chat(snapshot=snapshot)
         if not AGENTS_SDK_AVAILABLE or not self._api_key:
-            return self._fallback_chat_decision(
-                fallback,
-                reason=("missing_agents_sdk" if not AGENTS_SDK_AVAILABLE else "missing_api_key"),
-            )
+            self._raise_chat_error("missing_agents_sdk" if not AGENTS_SDK_AVAILABLE else "missing_api_key")
 
         intent_context = build_seat_context(
             snapshot=snapshot,
@@ -736,23 +700,23 @@ class LLMSeatAgent(SeatAgent):
                     **shared_meta,
                 },
             )
+        except LLMDecisionError:
+            raise
         except OutputGuardrailTripwireTriggered as exc:
-            return self._fallback_chat_decision(
-                fallback,
-                reason="output_guardrail_blocked",
+            self._raise_chat_error(
+                "output_guardrail_blocked",
                 error=exc,
                 extra_debug=guardrail_exception_payload(exc),
             )
         except InputGuardrailTripwireTriggered as exc:
-            return self._fallback_chat_decision(
-                fallback,
-                reason="input_guardrail_blocked",
+            self._raise_chat_error(
+                "input_guardrail_blocked",
                 error=exc,
                 extra_debug=guardrail_exception_payload(exc),
             )
         except MaxTurnsExceeded as exc:
-            return self._fallback_chat_decision(fallback, reason="max_turns_exceeded", error=exc)
+            self._raise_chat_error("max_turns_exceeded", error=exc)
         except TimeoutError as exc:
-            return self._fallback_chat_decision(fallback, reason="timeout", error=exc)
+            self._raise_chat_error("timeout", error=exc)
         except Exception as exc:
-            return self._fallback_chat_decision(fallback, reason="model_error", error=exc)
+            self._raise_chat_error("model_error", error=exc)

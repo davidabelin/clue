@@ -20,7 +20,7 @@ from clue_agents.policy import persona_prompt, public_chat_events, public_narrat
 from clue_agents.safety import sanitize_public_chat
 
 try:
-    from agents import Agent, ModelSettings, RunConfig, Runner, function_tool, output_guardrail
+    from agents import Agent, AgentOutputSchema, ModelSettings, RunConfig, Runner, function_tool, output_guardrail
     from agents.exceptions import (
         InputGuardrailTripwireTriggered,
         MaxTurnsExceeded,
@@ -41,6 +41,7 @@ try:
     AGENTS_SDK_AVAILABLE = True
 except Exception:  # pragma: no cover - import guard for local or CI environments
     Agent = None
+    AgentOutputSchema = None
     ModelSettings = None
     RunConfig = None
     Runner = None
@@ -797,7 +798,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
                 max_tokens=620,
                 reasoning={"effort": runtime_config.reasoning_effort},
                 verbosity="low",
-                store=False,
+                store=True,
                 extra_args={"timeout": runtime_config.timeout_seconds},
                 metadata={
                     "app": "clue",
@@ -805,7 +806,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
                     "release": runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
                 },
             ),
-            output_type=MemorySummaryOutput,
+            output_type=AgentOutputSchema(MemorySummaryOutput, strict_json_schema=False),
             output_guardrails=[clue_memory_summary_output_guardrail],
         )
     if mode_label == "chat_intent":
@@ -820,7 +821,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
                 max_tokens=280,
                 reasoning={"effort": runtime_config.reasoning_effort},
                 verbosity="low",
-                store=False,
+                store=True,
                 extra_args={"timeout": runtime_config.timeout_seconds},
                 metadata={
                     "app": "clue",
@@ -828,7 +829,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
                     "release": runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
                 },
             ),
-            output_type=ChatIntentOutput,
+            output_type=AgentOutputSchema(ChatIntentOutput, strict_json_schema=False),
             output_guardrails=[clue_chat_intent_output_guardrail],
         )
     if mode_label == "chat_utterance":
@@ -843,7 +844,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
                 max_tokens=220,
                 reasoning={"effort": runtime_config.reasoning_effort},
                 verbosity="low",
-                store=False,
+                store=True,
                 extra_args={"timeout": runtime_config.timeout_seconds},
                 metadata={
                     "app": "clue",
@@ -851,7 +852,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
                     "release": runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
                 },
             ),
-            output_type=ChatUtteranceOutput,
+            output_type=AgentOutputSchema(ChatUtteranceOutput, strict_json_schema=False),
             output_guardrails=[clue_chat_utterance_output_guardrail],
         )
     return Agent(
@@ -876,14 +877,14 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
             max_tokens=420,
             reasoning={"effort": runtime_config.reasoning_effort},
             verbosity="low",
-            store=False,
+            store=True,
             extra_args={"timeout": runtime_config.timeout_seconds},
             metadata={
                 "app": "clue",
                 "release": runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
             },
         ),
-        output_type=AgentTurnOutput,
+        output_type=AgentOutputSchema(AgentTurnOutput, strict_json_schema=False),
         output_guardrails=[clue_turn_output_guardrail],
     )
 

@@ -6,7 +6,7 @@ import types
 
 import pytest
 
-from clue_agents.llm import LLMSeatAgent, MemorySummaryError
+from clue_agents.llm import LLMDecisionError, LLMSeatAgent, MemorySummaryError
 from clue_agents.sdk_runtime import AgentChatOutput, AgentTurnOutput, ChatIntentOutput, ChatUtteranceOutput, MemorySummaryOutput
 from clue_agents.secrets import _access_secret_version, resolve_openai_api_key
 
@@ -45,15 +45,16 @@ def _artifacts(**overrides) -> dict:
     return base
 
 
-def test_llm_agent_falls_back_without_api_key(monkeypatch):
-    """Without an API key, the LLM seat should defer to the heuristic fallback."""
+def test_llm_agent_raises_without_api_key(monkeypatch):
+    """Without an API key, the LLM seat should fail loudly instead of faking a move."""
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY_SECRET_VERSION", raising=False)
     agent = LLMSeatAgent(api_key="")
-    decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
-    assert decision.action == "end_turn"
-    assert decision.agent_meta["fallback_reason"] == "missing_api_key"
+    with pytest.raises(LLMDecisionError) as excinfo:
+        agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
+    assert excinfo.value.reason == "missing_api_key"
+    assert excinfo.value.mode == "turn"
 
 
 def test_resolve_openai_api_key_reads_secret_manager(monkeypatch):
@@ -80,8 +81,8 @@ def test_resolve_openai_api_key_reads_secret_manager(monkeypatch):
     _access_secret_version.cache_clear()
 
 
-def test_llm_agent_falls_back_on_model_error(monkeypatch):
-    """Unexpected runner failures should trigger the deterministic fallback policy."""
+def test_llm_agent_raises_on_model_error(monkeypatch):
+    """Unexpected runner failures should not trigger a deterministic fake move."""
 
     monkeypatch.setattr(
         LLMSeatAgent,
@@ -90,13 +91,13 @@ def test_llm_agent_falls_back_on_model_error(monkeypatch):
     )
 
     agent = LLMSeatAgent(api_key="test-key")
-    decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
-    assert decision.action == "end_turn"
-    assert decision.agent_meta["fallback_reason"] == "model_error"
+    with pytest.raises(LLMDecisionError) as excinfo:
+        agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
+    assert excinfo.value.reason == "model_error"
 
 
 def test_llm_agent_rejects_illegal_actions(monkeypatch):
-    """Illegal model actions should be rejected in favor of the heuristic fallback."""
+    """Illegal model actions should fail the LLM decision instead of using heuristics."""
 
     monkeypatch.setattr(
         LLMSeatAgent,
@@ -108,13 +109,13 @@ def test_llm_agent_rejects_illegal_actions(monkeypatch):
     )
 
     agent = LLMSeatAgent(api_key="test-key")
-    decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
-    assert decision.action == "end_turn"
-    assert decision.agent_meta["fallback_reason"] == "illegal_action"
+    with pytest.raises(LLMDecisionError) as excinfo:
+        agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
+    assert excinfo.value.reason == "illegal_action"
 
 
-def test_llm_agent_falls_back_on_timeout(monkeypatch):
-    """Timeouts from the agent runner should fall back without crashing the turn."""
+def test_llm_agent_raises_on_timeout(monkeypatch):
+    """Timeouts from the agent runner should fail loudly without a heuristic move."""
 
     monkeypatch.setattr(
         LLMSeatAgent,
@@ -123,13 +124,13 @@ def test_llm_agent_falls_back_on_timeout(monkeypatch):
     )
 
     agent = LLMSeatAgent(api_key="test-key")
-    decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
-    assert decision.action == "end_turn"
-    assert decision.agent_meta["fallback_reason"] == "timeout"
+    with pytest.raises(LLMDecisionError) as excinfo:
+        agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
+    assert excinfo.value.reason == "timeout"
 
 
 def test_llm_agent_blocks_unsafe_public_leak(monkeypatch):
-    """Unsafe public ownership claims should cause the model path to fall back."""
+    """Unsafe public ownership claims should fail the LLM turn."""
 
     monkeypatch.setattr(
         LLMSeatAgent,
@@ -145,9 +146,9 @@ def test_llm_agent_blocks_unsafe_public_leak(monkeypatch):
     )
 
     agent = LLMSeatAgent(api_key="test-key")
-    decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
-    assert decision.action == "end_turn"
-    assert decision.agent_meta["fallback_reason"] == "unsafe_public_chat"
+    with pytest.raises(LLMDecisionError) as excinfo:
+        agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
+    assert excinfo.value.reason == "unsafe_public_chat"
 
 
 def test_llm_agent_uses_secret_manager_key_when_env_var_missing(monkeypatch):
@@ -190,8 +191,8 @@ def test_llm_agent_records_sdk_metadata_on_success(monkeypatch):
     assert decision.debug_private["sdk_trace_id"] == "trace_123"
 
 
-def test_llm_agent_holds_early_accusation_and_uses_safe_fallback(monkeypatch):
-    """Even legal model accusations should be deferred when the pacing gate is not ready."""
+def test_llm_agent_holds_early_accusation_without_heuristic_fallback(monkeypatch):
+    """Even legal model accusations should fail when the pacing gate is not ready."""
 
     monkeypatch.setattr(
         LLMSeatAgent,
@@ -209,27 +210,27 @@ def test_llm_agent_holds_early_accusation_and_uses_safe_fallback(monkeypatch):
     )
 
     agent = LLMSeatAgent(api_key="test-key")
-    decision = agent.decide_turn(
-        snapshot=_snapshot(legal_actions={"available": ["accuse", "end_turn"]}),
-        tool_snapshot={
-            "accusation": {
-                "should_accuse": True,
-                "confidence": 0.87,
-                "confidence_gap": 0.2,
-                "entropy_bits": 0.72,
-                "sample_count": 64,
-                "accusation": {"suspect": "Colonel Mustard", "weapon": "Knife", "room": "Hall"},
+    with pytest.raises(LLMDecisionError) as excinfo:
+        agent.decide_turn(
+            snapshot=_snapshot(legal_actions={"available": ["accuse", "end_turn"]}),
+            tool_snapshot={
+                "accusation": {
+                    "should_accuse": True,
+                    "confidence": 0.87,
+                    "confidence_gap": 0.2,
+                    "entropy_bits": 0.72,
+                    "sample_count": 64,
+                    "accusation": {"suspect": "Colonel Mustard", "weapon": "Knife", "room": "Hall"},
+                },
+                "belief_summary": {
+                    "joint_case_entropy_bits": 0.72,
+                    "resolved_cards": 5,
+                    "case_file_candidate_counts": {"suspect": 2, "weapon": 2, "room": 2},
+                },
             },
-            "belief_summary": {
-                "joint_case_entropy_bits": 0.72,
-                "resolved_cards": 5,
-                "case_file_candidate_counts": {"suspect": 2, "weapon": 2, "room": 2},
-            },
-        },
-    )
+        )
 
-    assert decision.action == "end_turn"
-    assert decision.agent_meta["fallback_reason"] == "accusation_hold"
+    assert excinfo.value.reason == "accusation_hold"
 
 
 def test_llm_agent_clear_session_uses_local_session_store(monkeypatch):
@@ -300,6 +301,20 @@ def test_llm_agent_chat_uses_separate_session_metadata(monkeypatch):
     assert decision.target_seat_id == "seat_mustard"
     assert decision.agent_meta["session_id"] == "game_test:seat_scarlet:chat"
     assert decision.debug_private["sdk_session_id"] == "game_test:seat_scarlet:chat"
+
+
+def test_llm_agent_chat_raises_without_api_key(monkeypatch):
+    """Idle chat should not use heuristic chat text when OpenAI credentials are absent."""
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY_SECRET_VERSION", raising=False)
+    agent = LLMSeatAgent(api_key="")
+
+    with pytest.raises(LLMDecisionError) as excinfo:
+        agent.decide_chat(snapshot=_snapshot())
+
+    assert excinfo.value.reason == "missing_api_key"
+    assert excinfo.value.mode == "chat"
 
 
 def test_llm_agent_chat_drops_unsafe_public_leak(monkeypatch):

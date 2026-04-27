@@ -1085,7 +1085,7 @@ if (app) {
       return;
     }
 
-    debugStatus.textContent = metric?.fallback_used ? "Fallback" : "Live";
+    debugStatus.textContent = metric?.action === "llm_unavailable" ? "LLM Failed" : (metric?.fallback_used ? "Fallback" : "Live");
     seatDebug.innerHTML = `
       <div class="debug-grid">
         <article class="summary-stat">
@@ -1122,11 +1122,11 @@ if (app) {
     const metrics = snapshot.analysis?.game_metrics || {};
     const targets = snapshot.analysis?.latency_targets_ms || {};
     aiExplainer.innerHTML = `
-      <p class="field-note">LLM seats get a private deduction snapshot, choose one legal action with structured output, and fall back to the deterministic heuristic policy if the model times out, emits malformed JSON, or proposes an illegal move.</p>
+      <p class="field-note">LLM seats get a private deduction snapshot and choose one legal action with structured output. If the live model path is unavailable or invalid, the turn is recorded as an LLM failure instead of using a heuristic move.</p>
       <div class="debug-grid">
         <article class="summary-stat">
-          <span class="card-kicker">Fallback Rate</span>
-          <strong>${escapeHtml(metrics.fallback_rate ?? 0)}</strong>
+          <span class="card-kicker">LLM Failures</span>
+          <strong>${escapeHtml(metrics.llm_unavailable_count ?? 0)}</strong>
         </article>
         <article class="summary-stat">
           <span class="card-kicker">Guardrail Blocks</span>

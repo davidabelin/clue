@@ -10,7 +10,7 @@ This directory is maintainer-facing. The documents below are all current for **v
 
 ## Runtime And Operations
 - [`ClueMLRuntime.md`](./ClueMLRuntime.md)
-  OpenAI seat runtime contract: model/profile selection, tools, guardrails, session memory, tracing, diagnostics, and fallback behavior.
+  OpenAI seat runtime contract: model/profile selection, tools, guardrails, session memory, tracing, diagnostics, and failure behavior.
 - [`CHANGELOG.md`](./CHANGELOG.md)
   Release history for the standalone `clue` repo.
 

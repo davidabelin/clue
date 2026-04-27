@@ -1,7 +1,7 @@
 # Clue ML Runtime Guide
 
 ## Purpose
-This document describes the shipped OpenAI seat runtime in **v1.7.6**. It is for the maintainer changing prompts, profiles, tools, tracing, fallback behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
+This document describes the shipped OpenAI seat runtime in **v1.7.6**. It is for the maintainer changing prompts, profiles, tools, tracing, failure behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
 
 ## Runtime Boundary
 - `clue_core` owns rules, hidden setup, legality, turn progression, refutation order, accusations, and filtered snapshots.
@@ -14,8 +14,8 @@ This document describes the shipped OpenAI seat runtime in **v1.7.6**. It is for
 
 ### Heuristic seats
 - Deterministic baseline policy
-- Used as a latency-safe and safety-safe fallback
-- Also acts as a regression oracle when the LLM path is unavailable or misbehaves
+- Used as an explicit autonomous policy only when a stored seat is truly configured as heuristic
+- Also acts as a regression oracle for tests and internal comparisons
 
 ### LLM seats
 - Implemented through the OpenAI Agents SDK
@@ -48,9 +48,9 @@ This document describes the shipped OpenAI seat runtime in **v1.7.6**. It is for
 Current defaults:
 - model: `gpt-5.4-mini-2026-03-17`
 - reasoning effort: `medium`
-- timeout: `12` seconds
-- max tool calls: `6`
-- max turns: `8`
+- base env timeout: `12` seconds locally; AIX deployment sets `45` seconds
+- YAML turn-profile default budget: `30` seconds, `12` tool calls, `18` SDK turns
+- YAML chat-profile default budget: `30` seconds, `10` tool calls, `16` SDK turns
 - tracing enabled: `false`
 - sensitive trace data: `false`
 - session TTL: `900` seconds
@@ -109,7 +109,7 @@ The output guardrails reject or trip on:
 - obviously fabricated public-fact references that contradict recent visible history
 - empty durable memory summaries or relationship updates without targets
 
-When output validation fails, the LLM decision is discarded and the runtime falls back to the heuristic policy or to deliberate silence in the chat path.
+When output validation fails for a turn, the LLM decision is discarded and the runtime records an explicit LLM failure instead of generating a heuristic move. The chat path may still choose deliberate silence for model-authored no-speak or unsafe-public-chat outcomes; it does not use heuristic chat text as a substitute.
 Memory-summary validation failures mark the durable memory job failed or pending; they do not synthesize replacement memory.
 
 ### Tool guardrails
@@ -126,10 +126,11 @@ These checks keep the model from probing outside the current legal envelope thro
 - Chat session id: `game_id:seat_id:chat`
 - Memory summary session id: `game_id:seat_id:memory`
 - Encryption key: `CLUE_AGENT_SESSION_ENCRYPTION_KEY`, then `CLUE_SECRET_KEY`, then a dev fallback
+- SDK response storage: enabled, because the Agents SDK session can reference prior response items across turn/chat calls
 
 Operational intent:
 - preserve seat-local short-term memory across autonomous turns
-- keep memory local to Clue by default
+- keep the canonical durable memory in Clue storage while allowing SDK response continuity for active sessions
 - make cleanup explicit when a game completes while TTL handles stale leftovers
 
 `GameService._cleanup_llm_sessions_if_complete()` is the post-game cleanup hook.
@@ -143,7 +144,7 @@ Important sections:
 - `analysis.agent_runtime`
   summarized runtime contract from `AgentRuntime.runtime_summary()`
 - `analysis.game_metrics`
-  aggregate counters such as fallback count, guardrail blocks, completion rate, and max latencies
+  aggregate counters such as explicit LLM failures, fallback count for legacy metrics, guardrail blocks, completion rate, and max latencies
 - `analysis.turn_metrics`
   bounded rolling record of recent turn-level metrics
 - `analysis.latest_private_debug_by_seat`
@@ -154,7 +155,7 @@ Useful browser-facing diagnostics include:
 - trace id
 - session id
 - tool-call count
-- fallback reason
+- LLM failure reason when the live model path cannot produce a turn
 - belief summary and top-ranked suggestions
 
 ## Social Memory Integration
@@ -176,10 +177,10 @@ Durable NHP memory lives in repository tables rather than the encrypted SDK sess
 - `pending` and `failed` rows are visible through Administrator Mode and can be retried.
 - Normal player snapshots never include durable memory; `GameService._build_internal_snapshot()` injects it only for autonomous runtime calls.
 
-## Failure Model And Fallbacks
-The LLM path is intentionally fail-soft.
+## Failure Model
+The LLM path is intentionally fail-loud.
 
-Fallback causes include:
+Failure causes include:
 - Agents SDK unavailable
 - missing API key
 - timeout
@@ -188,20 +189,20 @@ Fallback causes include:
 - unsafe public text
 - general model/runtime exceptions
 
-Turn fallback uses `HeuristicSeatAgent`.
-Chat fallback uses either the heuristic chat policy or deliberate silence, depending on which path is safer.
-Durable memory has no heuristic fallback: model/runtime failure leaves a retryable memory job.
+Turn failures raise `LLMDecisionError`. `GameService.maybe_run_agents()` catches that error, records an `llm_unavailable` public event plus a seat-private trace, and leaves the game on that NHP turn. No heuristic move is produced.
+Chat runtime failures also raise `LLMDecisionError`; idle-chat orchestration records a seat-private `trace_llm_unavailable` event and posts no substitute chat. Deliberate model silence remains a valid non-error outcome.
+Durable memory model/runtime failure leaves a retryable memory job.
 
 ## What To Check Before Changing This Runtime
 1. Does the change preserve the rule that only the Game Master mutates game state?
 2. Does the change keep tools read-only and seat-local?
 3. Does the change preserve filtered private/public visibility boundaries?
-4. Does the change preserve deterministic fallback behavior?
+4. Does the change preserve fail-loud LLM behavior without heuristic substitution?
 5. Do the env defaults, docs, and tests all still match?
 
 ## Acceptance Checklist For Runtime Changes
 - `pytest -q` stays green
-- heuristic behavior remains a valid fallback
+- heuristic behavior remains testable as an explicit policy, not as an LLM substitute
 - LLM seats cannot bypass legality or privacy checks
 - seat-private debug data remains private
 - session storage stays local-first unless explicitly redesigned

@@ -20,7 +20,7 @@ Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot m
 ### 1. Inventory Current NHP Runtime
 
 - [ ] Locate the current NHP turn/chat implementation and identify exactly where chatbot behavior is still heuristic, placeholder, stateless, or disconnected from persona profiles.
-- [ ] Confirm how YAML turn/chat profiles, persona-social guidance, OpenAI Agents SDK runtime, tools, guardrails, local encrypted sessions, and fallback paths currently connect.
+- [ ] Confirm how YAML turn/chat profiles, persona-social guidance, OpenAI Agents SDK runtime, tools, guardrails, local encrypted sessions, and explicit LLM failure paths currently connect.
 - [ ] Identify which data already exists in SQL persistence for games, seats, tokens, notebooks, events, and autonomous-player turns.
 - [ ] Document the gap between current persisted data and the durable memory/social state required for `v1.8.0`.
 
@@ -74,7 +74,7 @@ Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot m
   - selective helpfulness
   - rivalry escalation
   - alliance signaling
-- [ ] Ensure fallback behavior remains coherent and in character when live LLM calls fail.
+- [ ] Ensure live LLM failures are visible and actionable instead of replaced by heuristic dialogue or moves.
 
 ### 6. Save Games And Administrator Mode Foundation
 
@@ -91,7 +91,7 @@ Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot m
 
 - [ ] Add or update replay/eval coverage so prompt/profile changes can be tested against stored traces and expected outcomes.
 - [ ] Add targeted tests for memory creation, memory loading, relationship updates, and private/public information boundaries.
-- [ ] Re-verify fallback behavior under live timeout and malformed-output scenarios.
+- [ ] Re-verify fail-loud LLM behavior under live timeout and malformed-output scenarios.
 - [ ] Re-check local and deployed latency budgets after memory and social-state prompts are added.
 - [ ] Re-verify deployed Secret Manager resolution for `OPENAI_API_KEY`.
 - [ ] Re-test deployed Clue against the shared Cloud SQL backend before release.
@@ -162,7 +162,7 @@ Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot m
 - [x] Mixed human and autonomous seats under one Game Master.
 - [x] SQL-backed persistence for games, seats, tokens, notebooks, and events.
 - [x] YAML-driven turn/chat profiles and persona-social guidance.
-- [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and heuristic fallback.
+- [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and fail-loud LLM turn/chat handling.
 - [x] Browser UI with polling synchronization and seat-private/public separation.
 - [x] Beginner and Player table UI modes, with Superplayer reserved for later.
 - [x] Per-seat UI mode selection for active table seats.
@@ -179,7 +179,7 @@ Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot m
 
 ### Runtime And Gameplay
 
-- [ ] Re-verify fallback behavior under live timeout and malformed-output scenarios, not just mocked tests.
+- [ ] Re-verify fail-loud LLM behavior under live timeout and malformed-output scenarios, not just mocked tests.
 - [ ] Continue improving suggestion ranking and opponent-model hooks only if the change preserves the current rules/guardrail boundary.
 - [ ] Decide whether an optional planner baseline should be added behind the existing `SeatAgent` interface.
 

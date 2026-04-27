@@ -3,7 +3,7 @@
 This module is the orchestration layer above the pure rules engine. It is where
 storage, filtered snapshots, deduction summaries, telemetry, social memory, and
 seat-agent execution are stitched together. Future changes that touch privacy,
-fallback behavior, or request-to-action flow almost always pass through here.
+LLM failure behavior, or request-to-action flow almost always pass through here.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Any
 from itsdangerous import BadSignature, URLSafeSerializer
 
 from clue_agents import AgentRuntime
-from clue_agents.llm import MemorySummaryError
+from clue_agents.llm import LLMDecisionError, MemorySummaryError
 from clue_agents.profile_loader import (
     assign_chat_model_profiles,
     assign_model_profiles,
@@ -126,6 +126,7 @@ class GameService:
                 "illegal_action_rejects": 0,
                 "fallback_count": 0,
                 "fallback_rate": 0.0,
+                "llm_unavailable_count": 0,
                 "guardrail_blocks": 0,
                 "sampling_timeouts": 0,
                 "latency_budget_breaches": 0,
@@ -589,7 +590,8 @@ class GameService:
         aggregates = dict(analysis.get("game_metrics") or {})
         if metric.get("rejected"):
             aggregates["rejected_actions"] = int(aggregates.get("rejected_actions", 0)) + 1
-            aggregates["illegal_action_rejects"] = int(aggregates.get("illegal_action_rejects", 0)) + 1
+            if str(metric.get("rejection_kind") or "illegal_action") == "illegal_action":
+                aggregates["illegal_action_rejects"] = int(aggregates.get("illegal_action_rejects", 0)) + 1
         else:
             aggregates["actions_applied"] = int(aggregates.get("actions_applied", 0)) + 1
             actor = str(metric.get("actor", "human"))
@@ -599,6 +601,8 @@ class GameService:
                 aggregates["autonomous_actions"] = int(aggregates.get("autonomous_actions", 0)) + 1
         if metric.get("fallback_used"):
             aggregates["fallback_count"] = int(aggregates.get("fallback_count", 0)) + 1
+        if str(metric.get("rejection_kind") or "") == "llm_unavailable":
+            aggregates["llm_unavailable_count"] = int(aggregates.get("llm_unavailable_count", 0)) + 1
         if metric.get("guardrail_blocks"):
             aggregates["guardrail_blocks"] = int(aggregates.get("guardrail_blocks", 0)) + int(metric["guardrail_blocks"])
         if metric.get("sampling_timed_out"):
@@ -901,7 +905,8 @@ class GameService:
         ``heuristic`` remains a tolerated legacy alias in incoming payloads so old
         clients or tests can keep working, but newly created seats are normalized
         to ``llm`` at the config boundary. The deterministic heuristic policy still
-        exists internally as the LLM fallback/runtime baseline.
+        exists internally for focused tests and legacy stored state, not as an LLM
+        substitute.
         """
 
         seat_payloads = []
@@ -1369,22 +1374,45 @@ class GameService:
             seat_row = next(item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id)
             seat = dict(seat_row) | dict(state["seats"][seat_id]) | {"seat_id": seat_id, "notebook": seat_row["notebook"]}
             snapshot = self._build_internal_snapshot(game_id, seat_id)
-            decision = self._agents.decide_chat(seat=seat, snapshot=snapshot)
-            safe_text = sanitize_public_chat(str(decision.text or ""))
-            if decision.speak and safe_text:
-                next_public_index = self._repository.next_event_index(game_id) + 1
-                chat_game = GameMaster(state)
-                state, events = chat_game.apply_action(seat_id, {"action": "send_chat", "text": safe_text})
-                updated_social = self._ensure_social(state)
-                state["social"] = self._apply_chat_decision_to_social(
-                    state,
-                    updated_social,
-                    speaker_seat_id=seat_id,
-                    decision=decision,
-                    public_event_index=next_public_index,
-                    prior_public_event_index=latest_public_event_index,
+            try:
+                decision = self._agents.decide_chat(seat=seat, snapshot=snapshot)
+            except LLMDecisionError as exc:
+                events.append(
+                    self._trace_event(
+                        "trace_llm_unavailable",
+                        message=f"{seat['display_name']}'s LLM chat was unavailable and no heuristic chat was posted.",
+                        payload={
+                            "seat_id": seat_id,
+                            "seat_kind": seat.get("seat_kind", ""),
+                            "mode": exc.mode,
+                            "reason": exc.reason,
+                            "runtime": dict(exc.runtime or {}),
+                            "debug": dict(exc.debug or {}),
+                            "error": str(exc.error or ""),
+                        },
+                        visibility=f"seat:{seat_id}",
+                    )
                 )
                 state_changed = True
+                decision = None
+            if decision is None:
+                pass
+            else:
+                safe_text = sanitize_public_chat(str(decision.text or ""))
+                if decision.speak and safe_text:
+                    next_public_index = self._repository.next_event_index(game_id) + 1
+                    chat_game = GameMaster(state)
+                    state, events = chat_game.apply_action(seat_id, {"action": "send_chat", "text": safe_text})
+                    updated_social = self._ensure_social(state)
+                    state["social"] = self._apply_chat_decision_to_social(
+                        state,
+                        updated_social,
+                        speaker_seat_id=seat_id,
+                        decision=decision,
+                        public_event_index=next_public_index,
+                        prior_public_event_index=latest_public_event_index,
+                    )
+                    state_changed = True
 
         if state_changed:
             self._repository.save_state_and_events(game_id, state=state, events=events)
@@ -1417,7 +1445,88 @@ class GameService:
             tool_snapshot = self._tool_snapshot_for(state, seat_id, snapshot["events"])
             tool_snapshot_payload = asdict(tool_snapshot)
             decision_started = time.perf_counter()
-            decision = self._agents.decide(seat=seat, snapshot=snapshot, tool_snapshot=tool_snapshot_payload)
+            try:
+                decision = self._agents.decide(seat=seat, snapshot=snapshot, tool_snapshot=tool_snapshot_payload)
+            except LLMDecisionError as exc:
+                decision_latency_ms = round((time.perf_counter() - decision_started) * 1000.0, 2)
+                metric = {
+                    "recorded_at": datetime.now(UTC).isoformat(),
+                    "turn_index": int(state["turn_index"]),
+                    "seat_id": seat_id,
+                    "seat_kind": str(seat["seat_kind"]),
+                    "actor": str(seat["seat_kind"]),
+                    "action": "llm_unavailable",
+                    "latency_ms": round((time.perf_counter() - cycle_started) * 1000.0, 2),
+                    "tool_snapshot_latency_ms": float(tool_snapshot.generation.get("elapsed_ms", 0.0)),
+                    "agent_decision_latency_ms": decision_latency_ms,
+                    "fallback_used": False,
+                    "fallback_reason": "",
+                    "llm_error_reason": exc.reason,
+                    "rejection_kind": "llm_unavailable",
+                    "trace_id": "",
+                    "session_id": "",
+                    "last_response_id": "",
+                    "tool_call_count": 0,
+                    "reasoning_effort": str((exc.runtime or {}).get("reasoning_effort", "")),
+                    "model": str((exc.runtime or {}).get("default_model", "")),
+                    "guardrail_blocks": int(exc.reason in {"output_guardrail_blocked", "input_guardrail_blocked", "unsafe_public_chat"}),
+                    "sampling_timed_out": bool(
+                        exc.reason == "timeout" or tool_snapshot.generation.get("sampling_timed_out")
+                    ),
+                    "latency_budget_breached": False,
+                    "rejected": True,
+                    "error": str(exc),
+                }
+                private_debug = {
+                    "recorded_at": metric["recorded_at"],
+                    "decision": {
+                        "action": "llm_unavailable",
+                        "rationale_private": "The live LLM path failed; no heuristic turn was generated.",
+                        "agent_meta": {
+                            "policy": "llm",
+                            "fallback_used": False,
+                            "llm_error_reason": exc.reason,
+                        },
+                    },
+                    "tool_snapshot": {
+                        "belief_summary": dict(tool_snapshot.belief_summary or {}),
+                        "top_hypotheses": list(tool_snapshot.top_hypotheses or [])[:3],
+                        "suggestion_ranking": list(tool_snapshot.suggestion_ranking or [])[:3],
+                        "accusation": dict(tool_snapshot.accusation or {}),
+                        "opponent_model": dict(tool_snapshot.opponent_model or {}),
+                        "generation": dict(tool_snapshot.generation or {}),
+                    },
+                    "decision_debug": {
+                        "llm_runtime": dict(exc.runtime or {}),
+                        "llm_debug": dict(exc.debug or {}),
+                        "error": str(exc.error or ""),
+                    },
+                    "metric": metric,
+                }
+                self._record_turn_metric(state, metric, private_debug=private_debug)
+                self._repository.save_state_and_events(
+                    game_id,
+                    state=state,
+                    events=[
+                        make_event(
+                            "llm_unavailable",
+                            message=f"{seat['display_name']}'s LLM seat could not act ({exc.reason}); no heuristic move was used.",
+                            payload={
+                                "seat_id": seat_id,
+                                "seat_kind": seat["seat_kind"],
+                                "reason": exc.reason,
+                                "mode": exc.mode,
+                            },
+                        ),
+                        self._trace_event(
+                            "trace_llm_unavailable",
+                            message=f"Private LLM failure trace recorded for {seat['display_name']}.",
+                            payload=private_debug,
+                            visibility=f"seat:{seat_id}",
+                        ),
+                    ],
+                )
+                return
             decision_latency_ms = round((time.perf_counter() - decision_started) * 1000.0, 2)
             game = GameMaster(state)
             try:

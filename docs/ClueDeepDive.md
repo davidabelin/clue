@@ -161,7 +161,7 @@ That shared summary is deliberate. The repo keeps one code-owned reasoning subst
 ### Heuristic path
 The heuristic seat remains the simplest end-to-end autonomous path. It is deterministic enough to serve as:
 - baseline play behavior
-- safe fallback
+- an explicit internal policy where stored legacy state still names it
 - regression anchor when the LLM path changes
 
 ### LLM path
@@ -171,7 +171,7 @@ The heuristic seat remains the simplest end-to-end autonomous path. It is determ
 - read-only tools
 - output and tool guardrails
 - local encrypted session memory
-- deterministic fallback to heuristic play
+- fail-loud handling when the SDK, API key, model call, or structured output fails
 
 The LLM may recommend a move, suggestion, accusation, refutation, or optional public text. It does not apply the action itself.
 
@@ -257,7 +257,7 @@ This is why notebook text, chat text, and action dropdown drafts are tracked sep
 - tools are read-only and seat-local
 - public chat is sanitized
 - sensitive tracing is off by default
-- hosted session/storage paths are not the default production assumption
+- SDK response storage is enabled for active session continuity, while durable cross-game memory remains in Clue-owned storage
 - durable memory tools are internal to autonomous-seat runs and Administrator Mode
 
 ### Deployment secrets
@@ -294,5 +294,5 @@ The suite is strongest at backend correctness and runtime safety. The main remai
 - keep rules authority separate from model behavior
 - keep privacy boundaries explicit in code, not implicit in prompts
 - keep the browser thin and server-authoritative
-- keep heuristic behavior healthy so fallback remains trustworthy
+- keep heuristic behavior healthy as a separate regression baseline
 - keep runtime docs synchronized with actual env defaults and profile behavior

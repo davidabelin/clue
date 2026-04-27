@@ -206,5 +206,5 @@ def test_llm_agent_profile_overrides_runtime_settings():
 
     assert agent._runtime_config.model == "gpt-5.4"
     assert agent._runtime_config.reasoning_effort == "high"
-    assert agent._runtime_config.max_tool_calls == 7
+    assert agent._runtime_config.max_tool_calls == 14
     assert agent._profile_id == "gpt54_deep"

@@ -12,9 +12,9 @@ selection:
   fallback_profile: "gpt54_mini_balanced"
 
 runtime_defaults:
-  timeout_seconds: 12
-  max_tool_calls: 6
-  max_turns: 8
+  timeout_seconds: 30
+  max_tool_calls: 12
+  max_turns: 18
   tracing_enabled: false
   trace_include_sensitive_data: false
 
@@ -25,9 +25,9 @@ profiles:
     public_label: "GPT-5.4 Mini / Fast"
     model: "gpt-5.4-mini-2026-03-17"
     reasoning_effort: "low"
-    timeout_seconds: 10
-    max_tool_calls: 4
-    max_turns: 6
+    timeout_seconds: 24
+    max_tool_calls: 10
+    max_turns: 16
     context_grasp_score: 2
     latency_class: "fast"
     cost_class: "low"
@@ -41,9 +41,9 @@ profiles:
     public_label: "GPT-5.4 Mini / Balanced"
     model: "gpt-5.4-mini-2026-03-17"
     reasoning_effort: "medium"
-    timeout_seconds: 12
-    max_tool_calls: 6
-    max_turns: 8
+    timeout_seconds: 36
+    max_tool_calls: 12
+    max_turns: 18
     context_grasp_score: 3
     latency_class: "fast"
     cost_class: "low"
@@ -89,9 +89,9 @@ profiles:
     public_label: "GPT-5.4 / Deep"
     model: "gpt-5.4"
     reasoning_effort: "high"
-    timeout_seconds: 16
-    max_tool_calls: 7
-    max_turns: 9
+    timeout_seconds: 42
+    max_tool_calls: 14
+    max_turns: 20
     context_grasp_score: 5
     latency_class: "slow"
     cost_class: "medium"
@@ -105,9 +105,9 @@ profiles:
     public_label: "GPT-5.4 / XDeep"
     model: "gpt-5.4"
     reasoning_effort: "xhigh"
-    timeout_seconds: 20
-    max_tool_calls: 7
-    max_turns: 9
+    timeout_seconds: 50
+    max_tool_calls: 14
+    max_turns: 22
     context_grasp_score: 5
     latency_class: "slow"
     cost_class: "high"
@@ -168,9 +168,9 @@ character_bias:
       gpt54_xdeep: 1.2
 
 chat_runtime_defaults:
-  timeout_seconds: 10
-  max_tool_calls: 6
-  max_turns: 8
+  timeout_seconds: 30
+  max_tool_calls: 10
+  max_turns: 16
   tracing_enabled: false
   trace_include_sensitive_data: false
 
@@ -191,9 +191,9 @@ chat_profiles:
     public_label: "Chat GPT-5.4 Mini / Quick"
     model: "gpt-5.4-mini-2026-03-17"
     reasoning_effort: "low"
-    timeout_seconds: 8
-    max_tool_calls: 5
-    max_turns: 6
+    timeout_seconds: 24
+    max_tool_calls: 8
+    max_turns: 14
     context_grasp_score: 2
     latency_class: "fast"
     cost_class: "low"
@@ -206,9 +206,9 @@ chat_profiles:
     public_label: "Chat GPT-5.4 Mini / Balanced"
     model: "gpt-5.4-mini-2026-03-17"
     reasoning_effort: "medium"
-    timeout_seconds: 10
-    max_tool_calls: 6
-    max_turns: 8
+    timeout_seconds: 30
+    max_tool_calls: 10
+    max_turns: 16
     context_grasp_score: 3
     latency_class: "fast"
     cost_class: "low"
@@ -221,9 +221,9 @@ chat_profiles:
     public_label: "Chat GPT-5.4 / Expressive"
     model: "gpt-5.4"
     reasoning_effort: "medium"
-    timeout_seconds: 12
-    max_tool_calls: 6
-    max_turns: 8
+    timeout_seconds: 36
+    max_tool_calls: 10
+    max_turns: 16
     context_grasp_score: 4
     latency_class: "medium"
     cost_class: "medium"
@@ -236,9 +236,9 @@ chat_profiles:
     public_label: "Chat GPT-5.4 / Theatrical"
     model: "gpt-5.4"
     reasoning_effort: "high"
-    timeout_seconds: 14
-    max_tool_calls: 6
-    max_turns: 8
+    timeout_seconds: 42
+    max_tool_calls: 12
+    max_turns: 18
     context_grasp_score: 5
     latency_class: "slow"
     cost_class: "medium"

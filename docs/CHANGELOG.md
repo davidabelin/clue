@@ -6,6 +6,8 @@
 - Loaded ready durable memory into internal NHP runtime snapshots while keeping normal player snapshots free of memory context.
 - Added protected Administrator Mode APIs and a plain admin page for saved games, NHP memory, relationships, and memory retry.
 - Added focused tests for durable memory storage, runtime hooks, SDK memory mode, admin access, and snapshot privacy.
+- Changed LLM turn/chat failures to fail loudly with `llm_unavailable` diagnostics instead of silently using heuristic fallback behavior.
+- Enabled Agents SDK response storage and raised deployed/profile turn budgets so stateful LLM sessions can complete multi-tool decisions.
 
 ## v1.7.6 - 2026-04-16
 - Fixed Player Mode movement UX after rolling by making board movement the primary visible action while legal move targets exist.

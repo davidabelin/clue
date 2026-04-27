@@ -1,6 +1,6 @@
 runtime: python314
 service: clue
-entrypoint: gunicorn --worker-tmp-dir /tmp -b :$PORT run:app
+entrypoint: gunicorn --timeout 180 --graceful-timeout 30 --worker-tmp-dir /tmp -b :$PORT run:app
 
 beta_settings:
   cloud_sql_instances: aix-labs:us-west1:aix-sql
@@ -19,9 +19,9 @@ env_variables:
   CLUE_ADMIN_TOKEN: ""
   CLUE_LLM_MODEL: gpt-5.4-mini-2026-03-17
   CLUE_LLM_REASONING_EFFORT: medium
-  CLUE_LLM_TIMEOUT_SECONDS: "12"
-  CLUE_LLM_MAX_TOOL_CALLS: "6"
-  CLUE_AGENT_MAX_TURNS: "8"
+  CLUE_LLM_TIMEOUT_SECONDS: "45"
+  CLUE_LLM_MAX_TOOL_CALLS: "12"
+  CLUE_AGENT_MAX_TURNS: "18"
   CLUE_AGENT_TRACING_ENABLED: "0"
   CLUE_AGENT_TRACE_INCLUDE_SENSITIVE_DATA: "0"
   CLUE_AGENT_SESSION_TTL_SECONDS: "900"
