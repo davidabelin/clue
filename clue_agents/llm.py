@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from clue_agents.base import ChatDecision, SeatAgent, TurnDecision
+from clue_agents.base import ChatDecision, MemorySummaryDecision, SeatAgent, TurnDecision
 from clue_agents.config import LLMRuntimeConfig, load_llm_runtime_config
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_agents.policy import accusation_window, stock_public_comment
@@ -23,6 +23,7 @@ from clue_agents.sdk_runtime import (
     ChatUtteranceOutput,
     InputGuardrailTripwireTriggered,
     MaxTurnsExceeded,
+    MemorySummaryOutput,
     OutputGuardrailTripwireTriggered,
     Runner,
     build_agent,
@@ -38,6 +39,18 @@ from clue_agents.safety import sanitize_public_chat
 
 
 _VALID_REASONING_EFFORTS = {"none", "low", "medium", "high", "xhigh"}
+
+
+class MemorySummaryError(RuntimeError):
+    """Raised when the LLM-only durable memory summary path cannot complete."""
+
+    def __init__(self, reason: str, *, error: Exception | None = None) -> None:
+        """Store a stable failure reason plus optional underlying exception."""
+
+        self.reason = str(reason or "memory_summary_error")
+        self.error = error
+        message = self.reason if error is None else f"{self.reason}: {error}"
+        super().__init__(message)
 
 
 def _runtime_config_with_profile(
@@ -142,7 +155,11 @@ class LLMSeatAgent(SeatAgent):
 
         if not AGENTS_SDK_AVAILABLE:
             return
-        for session_id in (f"{str(game_id)}:{str(seat_id)}", f"{str(game_id)}:{str(seat_id)}:chat"):
+        for session_id in (
+            f"{str(game_id)}:{str(seat_id)}",
+            f"{str(game_id)}:{str(seat_id)}:chat",
+            f"{str(game_id)}:{str(seat_id)}:memory",
+        ):
             session = build_session_for_id(
                 session_id,
                 runtime_config=self._runtime_config,
@@ -168,6 +185,23 @@ class LLMSeatAgent(SeatAgent):
 
     def _chat_runtime_meta(self) -> dict[str, Any]:
         """Return the shared chat-runtime metadata surfaced on chat decisions."""
+
+        return {
+            "policy": "llm",
+            "backend": "openai_agents_sdk",
+            "model": self._chat_model,
+            "reasoning_effort": self._chat_runtime_config.reasoning_effort,
+            "timeout_s": self._chat_runtime_config.timeout_seconds,
+            "profile_id": self._chat_profile_id,
+            "profile_label": self._chat_profile_label,
+            "turn_model": self._model,
+            "turn_profile_id": self._profile_id,
+            "turn_profile_label": self._profile_label,
+            "session_store": "local_encrypted_sqlalchemy_sqlite",
+        }
+
+    def _memory_runtime_meta(self) -> dict[str, Any]:
+        """Return the shared durable-memory runtime metadata surfaced on summaries."""
 
         return {
             "policy": "llm",
@@ -313,7 +347,11 @@ class LLMSeatAgent(SeatAgent):
                 else (
                     "Write one safe, in-character public chat line for this autonomous Clue seat."
                     if mode_label == "chat_utterance"
-                    else "Inspect the current seat-local state and return the single best next Clue action."
+                    else (
+                        "Write the durable first-person memory summary for this completed Clue game."
+                        if mode_label == "memory_summary"
+                        else "Inspect the current seat-local state and return the single best next Clue action."
+                    )
                 )
             ),
             context=context,
@@ -324,7 +362,11 @@ class LLMSeatAgent(SeatAgent):
         output_type = (
             ChatIntentOutput
             if mode_label == "chat_intent"
-            else (ChatUtteranceOutput if mode_label == "chat_utterance" else AgentTurnOutput)
+            else (
+                ChatUtteranceOutput
+                if mode_label == "chat_utterance"
+                else (MemorySummaryOutput if mode_label == "memory_summary" else AgentTurnOutput)
+            )
         )
         output = result.final_output_as(output_type, raise_if_incorrect_type=True)
         artifacts = build_artifacts(result, context)
@@ -493,6 +535,70 @@ class LLMSeatAgent(SeatAgent):
                 tool_snapshot=tool_snapshot,
                 error=exc,
             )
+
+    def summarize_memory(self, *, snapshot: dict[str, Any]) -> MemorySummaryDecision:
+        """Ask the LLM to write durable first-person memory for a completed game.
+
+        This path deliberately has no heuristic summary fallback. Callers should
+        catch ``MemorySummaryError`` and leave the durable memory job queued for
+        Administrator Mode retry.
+        """
+
+        if not AGENTS_SDK_AVAILABLE:
+            raise MemorySummaryError("missing_agents_sdk")
+        if not self._api_key:
+            raise MemorySummaryError("missing_api_key")
+
+        context = build_seat_context(
+            snapshot=snapshot,
+            tool_snapshot={},
+            accusation_gate={"ready": False},
+            runtime_config=self._chat_runtime_config,
+            mode="memory_summary",
+        )
+        try:
+            raw_output, artifacts = self._run_agent(context)
+            decision = MemorySummaryDecision.from_dict(raw_output.model_dump())
+            if not str(decision.summary.get("first_person_summary") or "").strip():
+                raise MemorySummaryError("invalid_memory_summary")
+            tool_call_count = len(list(artifacts.get("tool_calls") or []))
+            decision.debug_private = {
+                "mode": "llm_memory_summary",
+                "llm_runtime": self._chat_runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE),
+                "selected_profile_id": self._chat_profile_id,
+                "selected_profile_label": self._chat_profile_label,
+                "selected_turn_profile_id": self._profile_id,
+                "selected_turn_profile_label": self._profile_label,
+                "sdk_trace_id": str(artifacts.get("trace_id") or ""),
+                "sdk_session_id": str(artifacts.get("session_id") or ""),
+                "sdk_last_response_id": str(artifacts.get("last_response_id") or ""),
+                "sdk_tool_calls": list(artifacts.get("tool_calls") or []),
+                "sdk_output_guardrails": list(artifacts.get("output_guardrails") or []),
+                "sdk_tool_input_guardrails": list(artifacts.get("tool_input_guardrails") or []),
+                "model_debug_private": dict(getattr(raw_output, "debug_private", {}) or {}),
+            }
+            decision.agent_meta = {
+                **self._memory_runtime_meta(),
+                "fallback_used": False,
+                "trace_id": str(artifacts.get("trace_id") or ""),
+                "session_id": str(artifacts.get("session_id") or ""),
+                "last_response_id": str(artifacts.get("last_response_id") or ""),
+                "tool_call_count": tool_call_count,
+                "tool_calls": list(artifacts.get("tool_calls") or []),
+            }
+            return decision
+        except MemorySummaryError:
+            raise
+        except OutputGuardrailTripwireTriggered as exc:
+            raise MemorySummaryError("output_guardrail_blocked", error=exc) from exc
+        except InputGuardrailTripwireTriggered as exc:
+            raise MemorySummaryError("input_guardrail_blocked", error=exc) from exc
+        except MaxTurnsExceeded as exc:
+            raise MemorySummaryError("max_turns_exceeded", error=exc) from exc
+        except TimeoutError as exc:
+            raise MemorySummaryError("timeout", error=exc) from exc
+        except Exception as exc:
+            raise MemorySummaryError("model_error", error=exc) from exc
 
     def decide_chat(self, *, snapshot: dict[str, Any]) -> ChatDecision:
         """Ask the Agents SDK seat policy for one idle-chat decision or fall back safely."""

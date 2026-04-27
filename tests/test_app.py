@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from clue_agents.base import ChatDecision
+from clue_agents.base import ChatDecision, MemorySummaryDecision
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_core.deduction import ToolSnapshot
 from clue_core.version import CLUE_RELEASE_LABEL
@@ -633,6 +633,155 @@ def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypa
     snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
     assert snapshot["status"] == "complete"
     assert snapshot["winner_seat_id"] == "seat_scarlet"
+
+
+def _create_table_without_agents(client, monkeypatch, *, title: str = "Memory Table") -> dict:
+    """Create one mixed table while suppressing automatic autonomous turns."""
+
+    monkeypatch.setattr("clue_web.runtime.GameService.maybe_run_agents", lambda self, game_id, max_cycles=32: None)
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": title,
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "llm"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    assert response.status_code == 201
+    return response.get_json()
+
+
+def _mark_game_complete(app, game_id: str, *, winner_seat_id: str = "seat_mustard") -> dict:
+    """Persist one game as complete for durable-memory runtime tests."""
+
+    repository = app.extensions["repository"]
+    state = repository.get_state(game_id)
+    state["status"] = "complete"
+    state["phase"] = "game_over"
+    state["winner_seat_id"] = winner_seat_id
+    repository.save_state_and_events(game_id, state=state, events=[])
+    return state
+
+
+def test_completed_game_writes_ready_nhp_memory_and_relationships(client, app, monkeypatch):
+    """Completed games should store successful LLM-authored NHP memory summaries."""
+
+    def _summary(self, *, snapshot):
+        return MemorySummaryDecision(
+            summary={
+                "first_person_summary": "I won by keeping Scarlet off balance.",
+                "strategic_lessons": ["Pressure early when the room is noisy."],
+                "social_observations": ["Miss Scarlet noticed the pressure."],
+                "relationship_updates": [
+                    {
+                        "target_kind": "hp",
+                        "target_identity": "Miss Scarlet",
+                        "target_display_name": "Miss Scarlet",
+                        "affinity_delta": 1,
+                        "trust_delta": -1,
+                        "friction_delta": 1,
+                        "note": "Scarlet pushed back after I won.",
+                    }
+                ],
+            },
+            agent_meta={"model": "memory-test", "session_id": "game:seat:memory"},
+        )
+
+    monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.summarize_memory", _summary)
+    payload = _create_table_without_agents(client, monkeypatch)
+    state = _mark_game_complete(app, payload["game_id"])
+
+    app.extensions["game_service"]._finalize_game_if_complete(payload["game_id"], state)
+
+    memory = app.extensions["repository"].list_nhp_memory(agent_identity="Colonel Mustard")
+    relationships = app.extensions["repository"].list_nhp_relationships(agent_identity="Colonel Mustard")
+    assert memory[0]["status"] == "ready"
+    assert memory[0]["summary"]["first_person_summary"].startswith("I won")
+    assert relationships[0]["target_kind"] == "hp"
+    assert relationships[0]["target_identity"] == "miss scarlet"
+
+
+def test_missing_api_key_leaves_completed_game_memory_pending(client, app, monkeypatch):
+    """Missing LLM credentials should queue memory without blocking completion."""
+
+    payload = _create_table_without_agents(client, monkeypatch, title="Pending Memory Table")
+    state = _mark_game_complete(app, payload["game_id"])
+
+    app.extensions["game_service"]._finalize_game_if_complete(payload["game_id"], state)
+
+    memory = app.extensions["repository"].list_nhp_memory(agent_identity="Colonel Mustard")
+    assert memory[0]["status"] == "pending"
+    assert memory[0]["failure_reason"] == "missing_api_key"
+    assert memory[0]["retry_count"] == 1
+
+
+def test_internal_nhp_snapshot_loads_memory_but_player_snapshot_does_not(client, app, monkeypatch):
+    """Durable memory should feed NHP runtimes without leaking to browser snapshots."""
+
+    payload = _create_table_without_agents(client, monkeypatch, title="Loaded Memory Table")
+    game_id = payload["game_id"]
+    repository = app.extensions["repository"]
+    job = repository.ensure_nhp_memory_job(
+        game_id=game_id,
+        seat_id="seat_mustard",
+        character="Colonel Mustard",
+        display_name="Colonel Mustard",
+    )
+    repository.mark_nhp_memory_ready(
+        job["id"],
+        summary={"first_person_summary": "I remember Scarlet bluffing."},
+        model_meta={"model": "test"},
+    )
+
+    internal = app.extensions["game_service"]._build_internal_snapshot(game_id, "seat_mustard")
+    human_token = _token_from_join_url(payload["seat_links"][0]["url"])
+    player = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": human_token}).get_json()
+
+    assert internal["memory_context"]["ready_memories"][0]["summary"]["first_person_summary"]
+    assert "memory_context" not in player
+
+
+def test_admin_endpoints_require_token_and_expose_memory(client, app, monkeypatch):
+    """Administrator APIs should reject missing tokens and accept the configured token."""
+
+    app.config["CLUE_ADMIN_TOKEN"] = "admin-test"
+    payload = _create_table_without_agents(client, monkeypatch, title="Admin Memory Table")
+    _mark_game_complete(app, payload["game_id"])
+
+    blocked = client.get("/api/v1/admin/games")
+    allowed = client.get("/api/v1/admin/games", headers={"X-Clue-Admin-Token": "admin-test"})
+    detail = client.get(f"/api/v1/admin/games/{payload['game_id']}", headers={"X-Clue-Admin-Token": "admin-test"})
+    page = client.get("/admin?admin_token=admin-test")
+
+    assert blocked.status_code == 403
+    assert allowed.status_code == 200
+    assert allowed.get_json()["games"]
+    assert detail.status_code == 200
+    assert detail.get_json()["id"] == payload["game_id"]
+    assert page.status_code == 200
+    assert "Administrator Mode" in page.get_data(as_text=True)
+
+
+def test_admin_memory_retry_uses_pending_jobs(client, app, monkeypatch):
+    """Admin retry should run pending memory jobs through the LLM summary path."""
+
+    app.config["CLUE_ADMIN_TOKEN"] = "admin-test"
+    payload = _create_table_without_agents(client, monkeypatch, title="Retry Memory Table")
+    state = _mark_game_complete(app, payload["game_id"])
+    app.extensions["game_service"]._finalize_game_if_complete(payload["game_id"], state)
+
+    def _summary(self, *, snapshot):
+        return MemorySummaryDecision(summary={"first_person_summary": "I remember the retry."}, agent_meta={"model": "retry-test"})
+
+    monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.summarize_memory", _summary)
+    retry = client.post("/api/v1/admin/nhp-memory/retry", headers={"X-Clue-Admin-Token": "admin-test"}, json={})
+
+    assert retry.status_code == 200
+    assert retry.get_json()["attempted"] == 1
+    assert app.extensions["repository"].list_nhp_memory(agent_identity="Colonel Mustard")[0]["status"] == "ready"
 
 
 def test_create_app_loads_database_url_from_secret(monkeypatch, tmp_path: Path):

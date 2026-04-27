@@ -31,3 +31,21 @@ def game_page() -> str:
         return redirect(url_for("main.home"))
     seat = current_app.extensions["game_service"].join_by_token(token)
     return render_template("pages/game.html", title="Clue Table", seat=seat, seat_token=token)
+
+
+def _admin_token_is_valid(token: str) -> bool:
+    """Return whether one provided Administrator Mode token matches config."""
+
+    expected = str(current_app.config.get("CLUE_ADMIN_TOKEN", "")).strip()
+    return bool(expected and str(token or "").strip() == expected)
+
+
+@main_bp.get("/admin")
+def admin_page():
+    """Render the protected plain Administrator Mode dashboard."""
+
+    token = str(request.args.get("admin_token", "")).strip()
+    if not _admin_token_is_valid(token):
+        return "Administrator token required.", 403
+    dashboard = current_app.extensions["game_service"].admin_dashboard()
+    return render_template("pages/admin.html", title="Clue Administrator", dashboard=dashboard, admin_token=token)

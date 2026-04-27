@@ -31,6 +31,12 @@ This document describes the shipped OpenAI seat runtime in **v1.7.6**. It is for
   2. `ChatUtteranceOutput`
 - Chat session ids are separate from turn session ids: `game_id:seat_id:chat`
 
+### Durable memory path
+- Completed games create one durable memory job per NHP seat.
+- The memory runtime uses `MemorySummaryOutput` and writes first-person, LLM-authored summaries only.
+- Memory-summary session ids are separate again: `game_id:seat_id:memory`.
+- Missing SDK/API credentials leave the job pending for Administrator Mode retry; there is no heuristic prose fallback.
+
 ## Runtime Configuration
 
 ### App-level defaults
@@ -65,6 +71,7 @@ Each SDK run gets a code-owned `SeatAgentContext` containing:
 - the accusation pacing gate
 - the trace id and local session id
 - chat-plan data for the second chat stage
+- durable memory context injected only for internal NHP runtime calls
 - tool-access logs for diagnostics
 
 The context is the source of truth for tools and guardrails. This avoids pushing seat-private logic into prompt strings and keeps the privacy boundary code-owned.
@@ -79,6 +86,8 @@ The current seat agent exposes only read-only tools. Examples include:
 - private notebook excerpt
 - move-target and refute-card inspection
 - social-memory summaries, active threads, and recent public history
+- durable cross-game memory and relationship context
+- final-game context for memory-summary runs
 
 Rules for future tools:
 - keep them read-only
@@ -98,8 +107,10 @@ The output guardrails reject or trip on:
 - unsafe public chat that looks like hidden-ownership leakage
 - invalid chat intent enums or target seat ids
 - obviously fabricated public-fact references that contradict recent visible history
+- empty durable memory summaries or relationship updates without targets
 
 When output validation fails, the LLM decision is discarded and the runtime falls back to the heuristic policy or to deliberate silence in the chat path.
+Memory-summary validation failures mark the durable memory job failed or pending; they do not synthesize replacement memory.
 
 ### Tool guardrails
 Parameterized tools are constrained before they execute:
@@ -113,6 +124,7 @@ These checks keep the model from probing outside the current legal envelope thro
 - Storage target: local SQLite file from `CLUE_AGENT_SESSION_DB_PATH`
 - Turn session id: `game_id:seat_id`
 - Chat session id: `game_id:seat_id:chat`
+- Memory summary session id: `game_id:seat_id:memory`
 - Encryption key: `CLUE_AGENT_SESSION_ENCRYPTION_KEY`, then `CLUE_SECRET_KEY`, then a dev fallback
 
 Operational intent:
@@ -155,6 +167,15 @@ Persisted social state includes:
 
 The model may propose structured relationship deltas and thread actions, but the canonical social state is normalized and bounded in `GameService` before persistence.
 
+## Durable Cross-Game Memory
+Durable NHP memory lives in repository tables rather than the encrypted SDK session store.
+
+- `nhp_memory` stores one memory job per completed game and NHP seat.
+- `nhp_relationships` stores bounded cross-game relationship posture keyed by canonical NHP character and either canonical NHP target or normalized HP display name.
+- Only `ready` memory rows are loaded into future NHP turn/chat/memory runs.
+- `pending` and `failed` rows are visible through Administrator Mode and can be retried.
+- Normal player snapshots never include durable memory; `GameService._build_internal_snapshot()` injects it only for autonomous runtime calls.
+
 ## Failure Model And Fallbacks
 The LLM path is intentionally fail-soft.
 
@@ -169,6 +190,7 @@ Fallback causes include:
 
 Turn fallback uses `HeuristicSeatAgent`.
 Chat fallback uses either the heuristic chat policy or deliberate silence, depending on which path is safer.
+Durable memory has no heuristic fallback: model/runtime failure leaves a retryable memory job.
 
 ## What To Check Before Changing This Runtime
 1. Does the change preserve the rule that only the Game Master mutates game state?

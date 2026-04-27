@@ -1,121 +1,203 @@
 # Clue TO DO List
-- As of 4/16/26
-- Current version 1.7.6
 
-## *Rolling List*
+- As of 2026-04-26
+- Current version: 1.7.6
+- Next target: 1.8.0
 
-- [] Superplayer Mode
+## 1.8.0 Milestone Definition
 
-- [x] Player Mode
-  - [x] consult and complete docs\CLUE_player_mode_plan.md
+Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot mode:
 
-- [x] Important: determinism and not-quite-random behavior.
-  - [x] Am I dealt same hand every time, and what else is the same every time?
-  - [x] Are calls to random() well-seeded and properly distributed?
+- [ ] Every NHP has durable state across games and never feels stateless or unsure about what they are doing or why.
+- [ ] Every NHP retains character, voice, personal goals, relationships, grudges, favors, and relevant table history.
+- [ ] NHPs play to win strategically while also using social behavior to influence, mislead, help, bargain with, or pressure other NHPs and HPs.
+- [ ] NHP-to-NHP and NHP-to-HP relationships can develop progressively across repeated games.
+- [ ] Game history, player history, and interaction history are persisted, retrievable, and organized enough to support both gameplay and Administrator Mode.
+- [ ] The shipped behavior is covered by targeted tests or replay/eval checks so future prompt/profile/runtime changes can be judged against saved traces.
 
-- [] When can we have **LLM NPC**s? Because there is nothing but rote nonsense coming from these "placeholder" NPC's. Where is that implementation left hanging, and what can be done?!
+## 1.8.0 Priority Plan: Full-Bore Cluebot Mode
 
-- We need some exits from the game:
-  - [x] Quit Game button (priority)
-  - [] Pause, Save, Resume Game buttons...? (not yet a priority)
+### 1. Inventory Current NHP Runtime
 
+- [ ] Locate the current NHP turn/chat implementation and identify exactly where chatbot behavior is still heuristic, placeholder, stateless, or disconnected from persona profiles.
+- [ ] Confirm how YAML turn/chat profiles, persona-social guidance, OpenAI Agents SDK runtime, tools, guardrails, local encrypted sessions, and fallback paths currently connect.
+- [ ] Identify which data already exists in SQL persistence for games, seats, tokens, notebooks, events, and autonomous-player turns.
+- [ ] Document the gap between current persisted data and the durable memory/social state required for `v1.8.0`.
 
-- [x] No more 'Moves' destinations at starting locations
-- [] Gameboard needs big-time redesign
-  - [x] Make it scalable
-  - [x] Make it click-to-move
-    - [x] and commit the move upon the click (don't wait for the Commit Move button anymore)
-  - [] improved aesthetic
-    - [] no jagged, irregular lines
-- [x] feed scrolls are all latest-at-the-top
+### 2. Durable NHP Memory
 
-### Ongoing and Immediate UX Improvement Effort
-- SCOPE -- we are only speaking right now about *Beginner Mode* (on the new introduction of "Modes", see below)
-- [] DECLUTTER -- do a thorough decluttering of player displays
-  - [x] Collapse secondary sections by default in Beginner Mode
-  - [x] Tuck `Accuse` into a collapsed `Final Call` drawer
-  - [] Keep trimming remaining low-value copy and vertical bulk
-- [] CONDENSE -- remove "filler" text and leave only what is most relevant to playing the game 
-  - be *liberal* with the condensation for Beginner Mode but if *better* information is required or helpful to new players, this is the mode in which it should appear!
-	  - ie. err on the side of *declutter and condensation*, and we will add more back to it later if need be
-    - *Player Mode* will be even further stripped down to bare essentials, whereas
-    - *Super Mode* on the other hand will expand beyond even what is there right now
-  - [x] Replace the hero-style marquee with a compact status strip
-  - [x] Condense `Decision Desk` and other turn-state copy
-  - [] Re-check whether more helper text can still be removed after fresh screenshots
-- [] TIGHTEN -- with clutter removed, shrink and excise dead space around what remains
-  - [x] Tighten panel spacing and reduce editor heights
-  - [x] Strengthen pill, helper-note, and footer contrast
-  - [x] Add cache-busting for CSS/JS so refreshed screenshots show current frontend code
-  - [] Reduce remaining dead space at zoomed-out desktop sizes
-- [] REARRANGE -- *Use legit gameplay UX-design best-practices from reputable sources*
-  - [x] Implement the first Beginner Mode layout pass using the current research anchors
-  - [] Decide whether `Table Wire` should move or compress further relative to `Caseboard`
-- [x] REDESIGN -- create a formal /Plan of specific code changes to make
-  - [x] thoroughly study the literature before hard "arrangement" of anything 
-  - [x] every choice about placement, visibility, accessibility, etc. should have a sound and justifiable reason for it
-- [x] IMPLEMENT -- execute the approved initial Beginner Mode redesign /Plan
-- [] VERIFY -- review fresh screenshots after cache-busting and use that evidence for Beginner Mode pass 2
-- [x] FINISH -- after /Plan has been approved and implemented, compose a summary of all the changes made in md-format text that I can easily paste into the Commit window in the Source Control panel in VSC
+- [ ] Define the memory record shape for each NHP after every game:
+  - game outcome and personal performance
+  - clues learned, deductions made, and strategic mistakes
+  - promises, favors, betrayals, alliances, rivalries, and social impressions
+  - notable interactions with HPs and NHPs
+  - persona-relevant emotional or behavioral takeaways
+- [ ] Add storage for per-NHP memory summaries and relationship state.
+- [ ] Require each NHP to compose or update a memory summary at game end.
+- [ ] Load relevant memory summaries into each NHP's starting state in future games.
+- [ ] Add retention controls so memory stays useful instead of becoming unbounded prompt clutter.
 
-### Tomorrow First
-- [] Review fresh cache-busted screenshots with special attention to header/pill/footer readability
-- [] Do Beginner Mode pass 2 for remaining dead space and final `Table Wire` vs `Caseboard` balance
-- [x] Choose the next non-UX priority: `Quit Game`, determinism/randomness investigation, or LLM NPC follow-through
+### 3. Social Relationship Model
 
-### Planned Shift to Multimodal Gameplay
-*Beginner Mode, Player Mode, Super Mode*: A Different UI for each!
-  - Right now the game is excluseively in what we will now call *Beginner Mode*
-  - *Player Mode* is now live as a stripped-down play surface
-  - *Superplayer Mode* (later)
-    - will require administrative privileges to access
-    - will include knobs for settings, displays of status... essentially a DungeonMaster UX.
-    - deferred until other two modes function smoothly and consistently
-      - BUT all future planning must keep this mode's eventual implementation in mind (and even noted in docstrings, too)
+- [ ] Add relationship state between every pair of seats or recurring named players:
+  - trust
+  - suspicion
+  - owed favors
+  - grudges
+  - alliance tendency
+  - recent interaction notes
+- [ ] Make the relationship state visible to NHP reasoning without exposing private information illegally.
+- [ ] Update relationship state from suggestions, disprovals, accusations, chat, negotiations, and game outcomes.
+- [ ] Ensure social behavior can target HPs as well as other NHPs.
 
-### Next up on the *rolling list*...
-- [x] Repeat 'Improvement process' now with the focus on *Player Mode*
-- [] And then do a ground-up design and construction of *Super Mode* once
-- [] Clue will become version 1.8.0 when all three Modes are in perfect working order and well-doccumented
+### 4. NHP Tools And Required Tool Use
 
-## **TO DO Backlog and Follow-Up** (as of **pre-**4/13/26)
+- [ ] Identify the missing tools NHPs need for full chatbot mode.
+- [ ] Add read tools for personal memory, relationship state, public table history, and legal current-turn context.
+- [ ] Add write tools for memory summaries, relationship updates, and social intent notes where appropriate.
+- [ ] Define when tool use is mandatory before an NHP responds or acts.
+- [ ] Keep all tools inside the existing rules/guardrail boundary so NHPs cannot access hidden information they should not know.
 
-### Current State **After** v1.7.6
-- [x] Standalone Flask app plus AIX-mount-safe routing
-- [x] Deterministic Clue rules engine with filtered seat snapshots
-- [x] Mixed human and autonomous seats under one Game Master
-- [x] SQL-backed persistence for games, seats, tokens, notebooks, and events
-- [x] YAML-driven turn/chat profiles and persona-social guidance
-- [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and heuristic fallback
-- [x] Browser UI with polling synchronization and seat-private/public separation
-- [x] Beginner and Player table UI modes, with Superplayer reserved for later
-- [x] Per-seat UI mode selection for active table seats
-- [x] Player Mode layout pass from fresh screenshots: briefing above board, desk beside board, wire below board
-- [x] Player board movement fix: movement is primary after rolling, highlighted routes are clickable, and the Caseboard scales down more predictably
-- [x] Fresh setup seeds for new games, so deals and case files are no longer repeated from a fixed default
-- [x] UI-only Quit Game link back to Clue Home
-- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.6`
+### 5. In-Character Strategic And Social Turns
 
-### Highest Priority Backlog
+- [ ] Rewrite or extend NHP prompts/profiles so each turn combines:
+  - legal Clue strategy
+  - persona voice
+  - memory-aware continuity
+  - relationship-aware social behavior
+  - clear intent for public chat, private reasoning, and game action
+- [ ] Replace rote placeholder NPC dialogue with table-aware, character-specific chat.
+- [ ] Add social tactics that are legal within the game:
+  - pressure
+  - bluffing
+  - favor trading
+  - selective helpfulness
+  - rivalry escalation
+  - alliance signaling
+- [ ] Ensure fallback behavior remains coherent and in character when live LLM calls fail.
+
+### 6. Save Games And Administrator Mode Foundation
+
+- [ ] Save all games with important game stats, player histories, and interaction histories.
+- [ ] Make saved games retrievable and functionally organized for Administrator Mode.
+- [ ] Add Administrator Mode views or API endpoints for:
+  - game statistics and accumulated analysis
+  - saved game browsing and inspection
+  - NHP histories, configurations, rankings, and relationship records
+  - HP histories organized by the names human players give to the table
+- [ ] Keep Administrator Mode planning aligned with eventual Superplayer Mode.
+
+### 7. Verification And Release Readiness
+
+- [ ] Add or update replay/eval coverage so prompt/profile changes can be tested against stored traces and expected outcomes.
+- [ ] Add targeted tests for memory creation, memory loading, relationship updates, and private/public information boundaries.
+- [ ] Re-verify fallback behavior under live timeout and malformed-output scenarios.
+- [ ] Re-check local and deployed latency budgets after memory and social-state prompts are added.
+- [ ] Re-verify deployed Secret Manager resolution for `OPENAI_API_KEY`.
+- [ ] Re-test deployed Clue against the shared Cloud SQL backend before release.
+- [ ] Update README, runtime docs, and version-sensitive tests before bumping `VERSION` to `1.8.0`.
+
+## Immediate Work Queue
+
+1. [ ] Audit the current NHP implementation and persistence schema.
+2. [ ] Design the minimum durable memory + relationship schema needed for `v1.8.0`.
+3. [ ] Implement memory write at game end and memory load at game start.
+4. [ ] Add NHP read/write tools for memory and relationship state.
+5. [ ] Update NHP prompts/profiles to require memory-aware, in-character, social play.
+6. [ ] Replace remaining placeholder NPC dialogue paths.
+7. [ ] Add focused tests/replay checks.
+8. [ ] Add Administrator Mode access to saved games and NHP/player history data.
+9. [ ] Run local verification, then deploy/backend checks.
+10. [ ] Update docs and bump `VERSION` to `1.8.0`.
+
+## UI Modes And Gameplay Backlog
+
+### Beginner Mode
+
+- [x] Collapse secondary sections by default in Beginner Mode.
+- [x] Tuck `Accuse` into a collapsed `Final Call` drawer.
+- [x] Replace the hero-style marquee with a compact status strip.
+- [x] Condense `Decision Desk` and other turn-state copy.
+- [x] Tighten panel spacing and reduce editor heights.
+- [x] Strengthen pill, helper-note, and footer contrast.
+- [x] Add cache-busting for CSS/JS so refreshed screenshots show current frontend code.
+- [x] Implement the first Beginner Mode layout pass using the current research anchors.
+- [x] Complete the approved initial Beginner Mode redesign plan.
+- [ ] Keep trimming remaining low-value copy and vertical bulk.
+- [ ] Re-check whether more helper text can still be removed after fresh screenshots.
+- [ ] Reduce remaining dead space at zoomed-out desktop sizes.
+- [ ] Decide whether `Table Wire` should move or compress further relative to `Caseboard`.
+- [ ] Review fresh cache-busted screenshots with special attention to header/pill/footer readability.
+- [ ] Do Beginner Mode pass 2 for remaining dead space and final `Table Wire` vs `Caseboard` balance.
+
+### Player Mode
+
+- [x] Complete `docs/CLUE_player_mode_plan.md`.
+- [x] Repeat the improvement process with focus on Player Mode.
+- [x] Player Mode layout pass from fresh screenshots: briefing above board, desk beside board, wire below board.
+- [x] Player board movement fix: movement is primary after rolling, highlighted routes are clickable, and the Caseboard scales down more predictably.
+
+### Superplayer And Administrator Modes
+
+- [ ] Prepare Superplayer Mode, but keep implementation behind the NHP/chatbot priority.
+- [ ] Reorganize Superplayer prep materials when Administrator Mode data surfaces are clearer.
+- [ ] Design Superplayer Mode as an administrative / Dungeon Master style UX with settings, status displays, saved-game inspection, and NHP/player controls.
+- [ ] Preserve future Superplayer hooks in planning and docstrings where relevant.
+
+### Board And Flow
+
+- [x] No more `Moves` destinations at starting locations.
+- [x] Make the gameboard scalable.
+- [x] Make board movement click-to-move.
+- [x] Commit movement on click instead of waiting for the `Commit Move` button.
+- [x] Feed scrolls show latest entries at the top.
+- [x] Add UI-only `Quit Game` link back to Clue Home.
+- [ ] Improve board aesthetics, especially jagged or irregular lines.
+- [ ] Add Pause, Save, and Resume game controls after persistence semantics are complete.
+
+## Current Shipped State After v1.7.6
+
+- [x] Standalone Flask app plus AIX-mount-safe routing.
+- [x] Deterministic Clue rules engine with filtered seat snapshots.
+- [x] Mixed human and autonomous seats under one Game Master.
+- [x] SQL-backed persistence for games, seats, tokens, notebooks, and events.
+- [x] YAML-driven turn/chat profiles and persona-social guidance.
+- [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and heuristic fallback.
+- [x] Browser UI with polling synchronization and seat-private/public separation.
+- [x] Beginner and Player table UI modes, with Superplayer reserved for later.
+- [x] Per-seat UI mode selection for active table seats.
+- [x] Fresh setup seeds for new games, so deals and case files are no longer repeated from a fixed default.
+- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.6`.
+
+## Engineering Backlog
+
+### Test Coverage
+
 - [ ] Add browser/API end-to-end coverage for a full human-only game, including reconnect after refresh or tab reopen.
 - [ ] Add a multi-browser regression that proves separate seat tokens always restore the correct private view.
-- [ ] Re-test deployed Clue against the shared Cloud SQL backend and then reassess whether the single-instance App Engine cap can be relaxed safely.
-- [ ] Re-verify deployed Secret Manager resolution for `OPENAI_API_KEY` after each release.
 - [ ] Add a small replay/eval harness so prompt or profile changes can be tested against stored traces and expected outcomes.
 
-### Runtime And Gameplay Follow-Up
+### Runtime And Gameplay
+
 - [ ] Re-verify fallback behavior under live timeout and malformed-output scenarios, not just mocked tests.
-- [ ] Re-check local and deployed latency budgets for deduction sampling plus LLM turns after future prompt/profile changes.
 - [ ] Continue improving suggestion ranking and opponent-model hooks only if the change preserves the current rules/guardrail boundary.
 - [ ] Decide whether an optional planner baseline should be added behind the existing `SeatAgent` interface.
 
+### Deployment
+
+- [ ] Re-test deployed Clue against the shared Cloud SQL backend and then reassess whether the single-instance App Engine cap can be relaxed safely.
+- [ ] Re-verify deployed Secret Manager resolution for `OPENAI_API_KEY` after each release.
+
 ### Research / Future Exploration
+
 - [ ] Evaluate an optional ISMCTS baseline only after the replay/eval harness is in place.
 - [ ] Consider POMCP or related belief-search work only if ISMCTS proves useful enough to justify the complexity.
 - [ ] Export clean training traces only after browser E2E coverage and replay evaluation are stable.
 - [ ] Consider supervised, DAgger, or population-style experiments only after the non-ML baseline and evaluation loop are trustworthy.
 
 ### Documentation And Process Defaults
+
 - [x] Keep README plus `docs/` aligned with the shipped code rather than with an old plan.
 - [x] Keep new public modules, classes, and functions maintainer-documented when added.
 - [ ] When env defaults or runtime contracts change, update `README.md`, `docs/ClueMLRuntime.md`, and any version-sensitive tests in the same change.
+- [ ] After any non-trivial repo change, compose a copy-paste-ready uncompiled Markdown commit summary.

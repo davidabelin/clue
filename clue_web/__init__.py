@@ -88,6 +88,7 @@ def create_app(config: dict | None = None) -> Flask:
         DB_PATH=os.getenv("CLUE_DB_PATH", str(data_dir / "clue.db")),
         AIX_HUB_URL=os.getenv("AIX_HUB_URL", "/"),
         INTERNAL_WORKER_TOKEN=os.getenv("CLUE_INTERNAL_WORKER_TOKEN", ""),
+        CLUE_ADMIN_TOKEN=os.getenv("CLUE_ADMIN_TOKEN", ""),
         APP_BASE_PATH=os.getenv("APP_BASE_PATH", ""),
         CLUE_LLM_MODEL=os.getenv("CLUE_LLM_MODEL", "gpt-5.4-mini-2026-03-17"),
         CLUE_LLM_REASONING_EFFORT=os.getenv("CLUE_LLM_REASONING_EFFORT", "medium"),

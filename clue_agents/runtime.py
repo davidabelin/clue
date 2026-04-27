@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from clue_agents.base import ChatDecision, SeatAgent, TurnDecision
+from clue_agents.base import ChatDecision, MemorySummaryDecision, SeatAgent, TurnDecision
 from clue_agents.config import load_llm_runtime_config
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_agents.llm import LLMSeatAgent
@@ -52,6 +52,21 @@ class AgentRuntime:
 
         agent = self.agent_for_seat(seat)
         return agent.decide_chat(snapshot=snapshot)
+
+    def summarize_memory(self, *, seat: dict[str, Any], snapshot: dict[str, Any]) -> MemorySummaryDecision:
+        """Ask an LLM seat to compose its durable completed-game memory summary."""
+
+        seat_kind = str(seat.get("seat_kind", "human")).strip().lower()
+        if seat_kind != "llm":
+            raise RuntimeError("memory_summary_requires_llm_seat")
+        agent = LLMSeatAgent(
+            model=str(seat.get("agent_model", "")),
+            profile_id=str(seat.get("agent_profile", "")),
+            chat_model=str(seat.get("agent_chat_model", "")),
+            chat_profile_id=str(seat.get("agent_chat_profile", "")),
+            runtime_config=self._llm_runtime_config,
+        )
+        return agent.summarize_memory(snapshot=snapshot)
 
     def runtime_summary(self) -> dict[str, object]:
         """Return the public-safe autonomous-seat runtime summary for diagnostics."""

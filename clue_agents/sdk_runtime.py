@@ -132,6 +132,36 @@ class ChatUtteranceOutput(BaseModel):
     debug_private: dict[str, Any] = Field(default_factory=dict)
 
 
+class MemoryRelationshipUpdateOutput(BaseModel):
+    """One durable relationship update emitted by a completed-game memory run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_kind: Literal["nhp", "hp"]
+    target_identity: str
+    target_display_name: str = ""
+    affinity_delta: int = Field(default=0, ge=-2, le=2)
+    trust_delta: int = Field(default=0, ge=-2, le=2)
+    friction_delta: int = Field(default=0, ge=-2, le=2)
+    note: str = ""
+
+
+class MemorySummaryOutput(BaseModel):
+    """Structured durable memory summary emitted after a game completes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    first_person_summary: str
+    strategic_lessons: list[str] = Field(default_factory=list)
+    social_observations: list[str] = Field(default_factory=list)
+    grudges: list[str] = Field(default_factory=list)
+    favors: list[str] = Field(default_factory=list)
+    future_play_cues: list[str] = Field(default_factory=list)
+    relationship_updates: list[MemoryRelationshipUpdateOutput] = Field(default_factory=list)
+    rationale_private: str = Field(default="")
+    debug_private: dict[str, Any] = Field(default_factory=dict)
+
+
 @dataclass(slots=True)
 class SeatAgentContext:
     """Code-owned per-turn context passed into the Agents SDK run.
@@ -200,6 +230,12 @@ class SeatAgentContext:
         """Return the currently visible social threads involving this seat."""
 
         return list((self.snapshot.get("social") or {}).get("active_threads") or [])[-6:]
+
+    @property
+    def memory_context(self) -> dict[str, Any]:
+        """Return durable cross-game memory context injected by the game service."""
+
+        return dict(self.snapshot.get("memory_context") or {})
 
     @property
     def public_seat_map(self) -> dict[str, dict[str, Any]]:
@@ -272,9 +308,13 @@ def build_seat_context(
     seat_id = str(seat.get("seat_id") or "unknown_seat")
     turn_index = int(snapshot.get("turn_index") or 0)
     requested_mode = str(mode).strip().lower()
-    mode_label = requested_mode if requested_mode in {"chat", "chat_intent", "chat_utterance"} else "turn"
+    mode_label = requested_mode if requested_mode in {"chat", "chat_intent", "chat_utterance", "memory_summary"} else "turn"
     trace_id = f"clue-{game_id}-{seat_id}-{mode_label}-{turn_index}-{uuid.uuid4().hex[:10]}"
-    session_id = f"{game_id}:{seat_id}:chat" if mode_label.startswith("chat") else f"{game_id}:{seat_id}"
+    session_id = (
+        f"{game_id}:{seat_id}:chat"
+        if mode_label.startswith("chat")
+        else (f"{game_id}:{seat_id}:memory" if mode_label == "memory_summary" else f"{game_id}:{seat_id}")
+    )
     return SeatAgentContext(
         runtime_config=runtime_config,
         snapshot=snapshot,
@@ -523,6 +563,51 @@ if AGENTS_SDK_AVAILABLE:
         return list(context.context.public_narrative_history)[-safe_limit:]
 
 
+    @function_tool
+    def get_durable_memory_context(context: RunContextWrapper[SeatAgentContext]) -> dict[str, Any]:
+        """Return ready cross-game memory and durable relationship context for this NHP."""
+
+        context.context.record_tool_call("get_durable_memory_context")
+        return dict(context.context.memory_context)
+
+
+    @function_tool
+    def get_final_game_context(context: RunContextWrapper[SeatAgentContext]) -> dict[str, Any]:
+        """Return a compact completed-game summary for memory-authoring runs."""
+
+        context.context.record_tool_call("get_final_game_context")
+        snapshot = context.context.snapshot
+        seat = dict(snapshot.get("seat") or {})
+        seats = [
+            {
+                "seat_id": item.get("seat_id"),
+                "display_name": item.get("display_name"),
+                "character": item.get("character"),
+                "seat_kind": item.get("seat_kind"),
+                "can_win": item.get("can_win"),
+            }
+            for item in list(snapshot.get("seats") or [])
+        ]
+        return {
+            "game_id": snapshot.get("game_id"),
+            "title": snapshot.get("title"),
+            "status": snapshot.get("status"),
+            "turn_index": snapshot.get("turn_index"),
+            "winner_seat_id": snapshot.get("winner_seat_id"),
+            "seat": {
+                "seat_id": seat.get("seat_id"),
+                "display_name": seat.get("display_name"),
+                "character": seat.get("character"),
+                "seat_kind": seat.get("seat_kind"),
+                "can_win": seat.get("can_win"),
+                "hand": list(seat.get("hand") or []),
+            },
+            "seats": seats,
+            "recent_public_narrative": list(context.context.public_narrative_history)[-12:],
+            "recent_public_chat": list(context.context.public_chat_history)[-12:],
+        }
+
+
     @output_guardrail(name="clue_turn_output_guardrail")
     def clue_turn_output_guardrail(
         context: RunContextWrapper[SeatAgentContext],
@@ -645,6 +730,30 @@ if AGENTS_SDK_AVAILABLE:
         )
 
 
+    @output_guardrail(name="clue_memory_summary_output_guardrail")
+    def clue_memory_summary_output_guardrail(
+        context: RunContextWrapper[SeatAgentContext],
+        _agent: Agent[SeatAgentContext],
+        agent_output: MemorySummaryOutput,
+    ) -> GuardrailFunctionOutput:
+        """Reject empty or targetless durable memory summaries before persistence."""
+
+        issues: list[str] = []
+        if not str(agent_output.first_person_summary or "").strip():
+            issues.append("empty_memory_summary")
+        for update in list(agent_output.relationship_updates or []):
+            if not str(update.target_identity or "").strip():
+                issues.append("empty_relationship_target")
+                break
+        return GuardrailFunctionOutput(
+            output_info={
+                "issues": issues,
+                "relationship_update_count": len(list(agent_output.relationship_updates or [])),
+            },
+            tripwire_triggered=bool(issues),
+        )
+
+
 def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agent[SeatAgentContext]:
     """Construct the Clue seat agent definition for one turn or chat run.
 
@@ -663,9 +772,42 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
         get_relationship_posture,
         get_recent_public_chat_turns,
         get_recent_public_narrative_turns,
+        get_durable_memory_context,
+    ]
+    memory_tools = [
+        get_final_game_context,
+        get_durable_memory_context,
+        get_social_state_summary,
+        get_active_chat_threads,
+        get_relationship_posture,
+        get_recent_public_chat_turns,
+        get_recent_public_narrative_turns,
     ]
     if mode_label == "chat":
         mode_label = "chat_intent"
+    if mode_label == "memory_summary":
+        return Agent(
+            name="Clue Seat Durable Memory Agent",
+            instructions=_memory_summary_agent_instructions,
+            tools=memory_tools,
+            model=runtime_config.model,
+            model_settings=ModelSettings(
+                tool_choice="required",
+                parallel_tool_calls=False,
+                max_tokens=620,
+                reasoning={"effort": runtime_config.reasoning_effort},
+                verbosity="low",
+                store=False,
+                extra_args={"timeout": runtime_config.timeout_seconds},
+                metadata={
+                    "app": "clue",
+                    "mode": "memory_summary",
+                    "release": runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
+                },
+            ),
+            output_type=MemorySummaryOutput,
+            output_guardrails=[clue_memory_summary_output_guardrail],
+        )
     if mode_label == "chat_intent":
         return Agent(
             name="Clue Seat Chat Intent Agent",
@@ -765,6 +907,7 @@ def _agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Ag
         f"Notebook has content: {bool(context.context.notebook_text.strip())}.\n"
         f"Accusation gate ready: {bool(context.context.accusation_gate.get('ready'))}.\n"
         "Use the social-state tools when they help break ties, pressure a specific opponent, or shape safe public text.\n"
+        "Use durable memory when it is available, especially to honor grudges, favors, alliances, and prior strategic lessons.\n"
         "Call at least one relevant tool before returning. Keep rationale_private short and useful for maintainers."
     )
 
@@ -777,6 +920,7 @@ def _chat_intent_agent_instructions(context: RunContextWrapper[SeatAgentContext]
         "You are the social-intent planner for one autonomous Clue seat.\n"
         "You are not choosing a rules action. Decide only whether the seat should speak right now and, if so, what social move it is making.\n"
         "Use the read-only social tools to inspect current mood, relationships, active threads, recent public chat, and recent narrative.\n"
+        "Use durable memory when it is available, especially for recurring grudges, favors, alliances, and known social history.\n"
         "You may banter, tease, challenge, ally with, reconcile with, or meta-observe the table, but never reveal private card knowledge, invent public facts, or claim hidden certainty.\n"
         f"Seat: {seat.get('display_name', 'Unknown')} ({seat.get('character', 'Unknown')}).\n"
         f"Chat persona guidance:\n{social_prompt(str(seat.get('character') or ''))}\n"
@@ -807,6 +951,23 @@ def _chat_utterance_agent_instructions(context: RunContextWrapper[SeatAgentConte
     )
 
 
+def _memory_summary_agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Agent[SeatAgentContext]) -> str:
+    """Build the completed-game durable-memory instructions for one NHP."""
+
+    seat = dict(context.context.snapshot.get("seat") or {})
+    return (
+        "You are writing durable first-person memory for one autonomous Clue seat after a completed game.\n"
+        "This memory will be loaded into future games for the same canonical character. It is not public table chat.\n"
+        "Use the read-only tools to inspect the final game context, visible history, current social state, prior durable memory, and relationships.\n"
+        "Write as the character, but keep the summary compact and useful for future strategic and social decisions.\n"
+        "Capture what mattered: outcome, useful deductions, strategic mistakes, social pressure, favors, grudges, alliances, betrayals, and future play cues.\n"
+        "Relationship updates should target canonical NHP character names or normalized human display-name identities from the provided context.\n"
+        f"Seat: {seat.get('display_name', 'Unknown')} ({seat.get('character', 'Unknown')}).\n"
+        f"Persona guidance:\n{social_prompt(str(seat.get('character') or ''))}\n"
+        "Return a structured durable memory summary and a short rationale_private for maintainers."
+    )
+
+
 def _history_block(events: list[dict[str, Any]], *, empty: str) -> str:
     """Render a compact prompt block from recent public events."""
 
@@ -828,11 +989,12 @@ def build_run_config(context: SeatAgentContext, api_key: str) -> RunConfig:
     if not AGENTS_SDK_AVAILABLE:
         raise RuntimeError("OpenAI Agents SDK is not available in this environment.")
     is_chat = str(context.mode).startswith("chat")
+    is_memory = str(context.mode) == "memory_summary"
     return RunConfig(
         model_provider=OpenAIProvider(api_key=api_key, use_responses=True),
         tracing_disabled=not context.runtime_config.tracing_enabled,
         trace_include_sensitive_data=context.runtime_config.trace_include_sensitive_data,
-        workflow_name=("Clue Seat Chat" if is_chat else "Clue Seat Decision"),
+        workflow_name=("Clue Seat Chat" if is_chat else ("Clue Seat Memory" if is_memory else "Clue Seat Decision")),
         trace_id=context.trace_id,
         group_id=context.game_id,
         trace_metadata={

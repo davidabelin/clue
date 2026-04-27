@@ -37,6 +37,7 @@ Owns persistence:
 - notebook persistence
 - append-only event history
 - loading and saving the current state snapshot
+- durable NHP memory jobs and cross-game relationship rows
 
 ### `clue_web`
 Owns app assembly and request orchestration:
@@ -105,6 +106,12 @@ Humans do not log in with full accounts in v1. A signed seat token maps to one p
 - updates only the seat's notebook JSON
 - returns a fresh filtered snapshot
 
+### Administrator flow
+`/admin?admin_token=...` and `/api/v1/admin/...`
+- require `CLUE_ADMIN_TOKEN`
+- expose saved games, full game detail, durable NHP memory, durable relationships, and memory-job retry
+- are maintainer surfaces, not normal player views
+
 ## Rules Engine And Snapshot Boundary
 
 ### `GameMaster`
@@ -129,6 +136,7 @@ The filtered snapshot includes:
 - social-memory slices that are safe for the current seat to see
 
 This function is where public/private routing must remain explicit and easy to audit.
+Durable cross-game memory is intentionally not part of normal filtered snapshots. `GameService` injects `memory_context` only after building internal NHP runtime snapshots.
 
 ## Deduction Layer
 `clue_core.deduction.ClueBeliefTracker` maintains seat-local constraints over card ownership.
@@ -190,6 +198,21 @@ Tracked concepts include:
 
 The model can influence this layer only through structured chat output. The persisted social state is normalized and bounded in code before it is written back to the game state.
 
+## Durable NHP Memory
+Completed games create a durable memory job for each non-human seat.
+
+Memory identity rules:
+- NHP memory is keyed by canonical Clue character name.
+- Human-player relationship targets are keyed by normalized display name.
+- Seat ids remain game-scoped source references.
+
+Memory lifecycle:
+- `pending`: queued or waiting for an available LLM runtime.
+- `ready`: LLM-authored memory is available to future NHP runs.
+- `failed`: model/runtime output failed and can be retried from Administrator Mode.
+
+Ready memory and durable relationship posture are loaded into future NHP turn, chat, and memory-summary runs. New games also use durable relationships as small social-posture nudges while preserving the YAML persona relationship hints.
+
 ## Storage Model
 `ClueRepository` is a thin SQLAlchemy facade that supports both:
 - local SQLite
@@ -201,6 +224,7 @@ Important persistence properties:
 - notebook state is stored per seat
 - events are appended with a monotonically increasing `event_index`
 - the repository stores opaque JSON payloads for config, setup, state, and notebooks rather than enforcing a relational gameplay schema
+- durable NHP memory and relationships are relational enough for admin lookup and cross-game agent context
 
 That tradeoff keeps the application logic in Python, where the privacy and rules semantics already live.
 
@@ -227,16 +251,19 @@ This is why notebook text, chat text, and action dropdown drafts are tracked sep
 ### Browser privacy
 - browser snapshots are pre-filtered server-side
 - another seat's private hand or notebook is never sent to the client
+- durable NHP memory is not sent to normal player snapshots
 
 ### LLM privacy
 - tools are read-only and seat-local
 - public chat is sanitized
 - sensitive tracing is off by default
 - hosted session/storage paths are not the default production assumption
+- durable memory tools are internal to autonomous-seat runs and Administrator Mode
 
 ### Deployment secrets
 - `CLUE_DATABASE_URL_SECRET` can fill the database URL from Secret Manager
 - `OPENAI_API_KEY_SECRET_VERSION` can fill the OpenAI API key from Secret Manager
+- `CLUE_ADMIN_TOKEN` protects Administrator Mode and admin APIs
 
 ## Testing Strategy
 Current tests cover:

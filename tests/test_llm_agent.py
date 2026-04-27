@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import types
 
-from clue_agents.llm import LLMSeatAgent
-from clue_agents.sdk_runtime import AgentChatOutput, AgentTurnOutput, ChatIntentOutput, ChatUtteranceOutput
+import pytest
+
+from clue_agents.llm import LLMSeatAgent, MemorySummaryError
+from clue_agents.sdk_runtime import AgentChatOutput, AgentTurnOutput, ChatIntentOutput, ChatUtteranceOutput, MemorySummaryOutput
 from clue_agents.secrets import _access_secret_version, resolve_openai_api_key
 
 
@@ -259,7 +261,7 @@ def test_llm_agent_clear_session_uses_local_session_store(monkeypatch):
     )
     agent.clear_session(game_id="game_test", seat_id="seat_scarlet")
 
-    assert called["session_ids"] == ["game_test:seat_scarlet", "game_test:seat_scarlet:chat"]
+    assert called["session_ids"] == ["game_test:seat_scarlet", "game_test:seat_scarlet:chat", "game_test:seat_scarlet:memory"]
 
 
 def test_llm_agent_chat_uses_separate_session_metadata(monkeypatch):
@@ -333,3 +335,71 @@ def test_llm_agent_chat_drops_unsafe_public_leak(monkeypatch):
     assert decision.speak is False
     assert decision.text == ""
     assert decision.agent_meta["fallback_reason"] == "unsafe_public_chat"
+
+
+def test_llm_agent_memory_summary_records_metadata(monkeypatch):
+    """Successful memory-summary runs should return durable summary data and SDK metadata."""
+
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (
+            MemorySummaryOutput(
+                first_person_summary="I remember how the Colonel hesitated.",
+                strategic_lessons=["Push earlier."],
+                social_observations=["Mustard dislikes hesitation."],
+                relationship_updates=[
+                    {
+                        "target_kind": "nhp",
+                        "target_identity": "Colonel Mustard",
+                        "affinity_delta": -1,
+                        "trust_delta": -1,
+                        "friction_delta": 1,
+                        "note": "He looked too certain.",
+                    }
+                ],
+                rationale_private="memory",
+            ),
+            _artifacts(session_id="game_test:seat_scarlet:memory", trace_id="trace_memory"),
+        ),
+    )
+
+    agent = LLMSeatAgent(api_key="test-key")
+    decision = agent.summarize_memory(snapshot=_snapshot())
+
+    assert decision.summary["first_person_summary"].startswith("I remember")
+    assert decision.relationship_updates[0]["target_identity"] == "Colonel Mustard"
+    assert decision.agent_meta["session_id"] == "game_test:seat_scarlet:memory"
+    assert decision.debug_private["sdk_trace_id"] == "trace_memory"
+
+
+def test_llm_agent_memory_summary_has_no_missing_api_fallback(monkeypatch):
+    """The durable memory path should raise instead of using heuristic prose fallback."""
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY_SECRET_VERSION", raising=False)
+    agent = LLMSeatAgent(api_key="")
+
+    with pytest.raises(MemorySummaryError) as excinfo:
+        agent.summarize_memory(snapshot=_snapshot())
+
+    assert excinfo.value.reason == "missing_api_key"
+
+
+def test_llm_agent_rejects_empty_memory_summary(monkeypatch):
+    """Malformed memory output should fail the job cleanly for runtime queuing."""
+
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (
+            MemorySummaryOutput(first_person_summary="", rationale_private="bad"),
+            _artifacts(session_id="game_test:seat_scarlet:memory"),
+        ),
+    )
+
+    agent = LLMSeatAgent(api_key="test-key")
+    with pytest.raises(MemorySummaryError) as excinfo:
+        agent.summarize_memory(snapshot=_snapshot())
+
+    assert excinfo.value.reason == "invalid_memory_summary"

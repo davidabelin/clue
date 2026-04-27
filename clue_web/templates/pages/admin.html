@@ -1,0 +1,40 @@
+{# Plain maintainer-facing Administrator Mode dashboard. #}
+{% extends "base.html" %}
+{% block content %}
+<section class="home admin-home">
+  <div class="hero panel">
+    <p class="eyebrow">Administrator Mode</p>
+    <h1>Saved games and durable NHP memory.</h1>
+    <p class="lede">This page is intentionally data-first while Superplayer UX decisions remain separate.</p>
+  </div>
+
+  <section class="panel">
+    <h2>Saved Games</h2>
+    <ul class="seat-links">
+      {% for game in dashboard.games %}
+      <li>
+        <a href="{{ url_for('api.admin_game_detail', game_id=game.id, admin_token=admin_token) }}">{{ game.title }}</a>
+        <span>{{ game.status }} · {{ game.updated_at }}</span>
+      </li>
+      {% else %}
+      <li>No saved games yet.</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>Pending Memory Jobs</h2>
+    <pre>{{ dashboard.pending_memory | tojson(indent=2) }}</pre>
+  </section>
+
+  <section class="panel">
+    <h2>NHP Memory</h2>
+    <pre>{{ dashboard.nhp_memory | tojson(indent=2) }}</pre>
+  </section>
+
+  <section class="panel">
+    <h2>Durable Relationships</h2>
+    <pre>{{ dashboard.relationships | tojson(indent=2) }}</pre>
+  </section>
+</section>
+{% endblock %}

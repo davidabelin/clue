@@ -7,8 +7,10 @@ import types
 from clue_agents.config import load_llm_runtime_config
 from clue_agents.sdk_runtime import (
     ChatIntentOutput,
+    MemorySummaryOutput,
     build_seat_context,
     clue_chat_intent_output_guardrail,
+    clue_memory_summary_output_guardrail,
     move_target_scope_guardrail,
     refute_card_scope_guardrail,
 )
@@ -44,6 +46,7 @@ def _snapshot(*, legal_actions: dict | None = None) -> dict:
             "refute_cards": ["Candlestick"],
         },
         "events": [],
+        "memory_context": {"agent_identity": "Miss Scarlet", "ready_memories": [{"summary": {"first_person_summary": "Prior table."}}]},
     }
 
 
@@ -148,6 +151,24 @@ def test_chat_context_uses_separate_session_id(monkeypatch, tmp_path):
     assert context.session_id == "game_cfg:seat_scarlet:chat"
 
 
+def test_memory_summary_context_uses_separate_session_id(monkeypatch, tmp_path):
+    """Memory-summary contexts should use their own local session namespace."""
+
+    monkeypatch.setenv("CLUE_AGENT_SESSION_DB_PATH", str(tmp_path / "agent_sessions.db"))
+    load_llm_runtime_config.cache_clear()
+    context = build_seat_context(
+        snapshot=_snapshot(),
+        tool_snapshot={},
+        accusation_gate={"ready": False},
+        runtime_config=load_llm_runtime_config(),
+        mode="memory_summary",
+    )
+
+    assert context.mode == "memory_summary"
+    assert context.session_id == "game_cfg:seat_scarlet:memory"
+    assert context.memory_context["agent_identity"] == "Miss Scarlet"
+
+
 def test_chat_intent_guardrail_rejects_unknown_target_seat(monkeypatch, tmp_path):
     """Chat-intent guardrails should block target seat ids outside the visible seat map."""
 
@@ -176,3 +197,26 @@ def test_chat_intent_guardrail_rejects_unknown_target_seat(monkeypatch, tmp_path
 
     assert result.tripwire_triggered is True
     assert "invalid_target_seat_id" in result.output_info["issues"]
+
+
+def test_memory_summary_guardrail_rejects_empty_summary(monkeypatch, tmp_path):
+    """Memory-summary guardrails should reject empty durable summaries."""
+
+    monkeypatch.setenv("CLUE_AGENT_SESSION_DB_PATH", str(tmp_path / "agent_sessions.db"))
+    load_llm_runtime_config.cache_clear()
+    context = build_seat_context(
+        snapshot=_snapshot(),
+        tool_snapshot={},
+        accusation_gate={"ready": False},
+        runtime_config=load_llm_runtime_config(),
+        mode="memory_summary",
+    )
+
+    result = clue_memory_summary_output_guardrail.guardrail_function(
+        types.SimpleNamespace(context=context),
+        None,
+        MemorySummaryOutput(first_person_summary=""),
+    )
+
+    assert result.tripwire_triggered is True
+    assert "empty_memory_summary" in result.output_info["issues"]

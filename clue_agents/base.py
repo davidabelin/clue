@@ -88,6 +88,43 @@ class ChatDecision:
         )
 
 
+@dataclass(slots=True)
+class MemorySummaryDecision:
+    """Normalized durable memory summary returned by an LLM seat agent."""
+
+    summary: dict[str, Any]
+    rationale_private: str = ""
+    relationship_updates: list[dict[str, Any]] = field(default_factory=list)
+    debug_private: dict[str, Any] = field(default_factory=dict)
+    agent_meta: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "MemorySummaryDecision":
+        """Build one durable memory decision from structured model output."""
+
+        relationship_updates = [
+            dict(item)
+            for item in list(payload.get("relationship_updates") or [])
+            if isinstance(item, dict)
+        ]
+        summary = {
+            "first_person_summary": str(payload.get("first_person_summary", "") or ""),
+            "strategic_lessons": [str(item) for item in list(payload.get("strategic_lessons") or []) if str(item).strip()],
+            "social_observations": [str(item) for item in list(payload.get("social_observations") or []) if str(item).strip()],
+            "grudges": [str(item) for item in list(payload.get("grudges") or []) if str(item).strip()],
+            "favors": [str(item) for item in list(payload.get("favors") or []) if str(item).strip()],
+            "future_play_cues": [str(item) for item in list(payload.get("future_play_cues") or []) if str(item).strip()],
+            "relationship_updates": relationship_updates,
+        }
+        return cls(
+            summary=summary,
+            relationship_updates=relationship_updates,
+            rationale_private=str(payload.get("rationale_private", "") or ""),
+            debug_private=dict(payload.get("debug_private") or {}),
+            agent_meta=dict(payload.get("agent_meta") or {}),
+        )
+
+
 class SeatAgent(ABC):
     """Common interface for any non-human Clue seat policy."""
 

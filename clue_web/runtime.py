@@ -19,6 +19,7 @@ from typing import Any
 from itsdangerous import BadSignature, URLSafeSerializer
 
 from clue_agents import AgentRuntime
+from clue_agents.llm import MemorySummaryError
 from clue_agents.profile_loader import (
     assign_chat_model_profiles,
     assign_model_profiles,
@@ -33,6 +34,7 @@ from clue_core.setup import build_hidden_setup, build_initial_state
 from clue_core.types import DEFAULT_UI_MODE, LIVE_UI_MODES, UNAVAILABLE_UI_MODES, SeatConfig, normalize_ui_mode
 from clue_core.version import CLUE_RELEASE_LABEL, CLUE_VERSION
 from clue_storage import ClueRepository
+from clue_storage.repository import normalize_player_identity
 
 
 DEFAULT_TOOL_SNAPSHOT_BUDGET_MS = 250
@@ -40,6 +42,7 @@ TURN_METRIC_LIMIT = 256
 SOCIAL_MOODS = {"calm", "amused", "annoyed", "guarded", "confident", "wounded"}
 SOCIAL_THREAD_KINDS = {"banter", "dispute", "alliance", "flirtation", "meta"}
 SOCIAL_THREAD_STATUSES = {"active", "cooling", "resolved"}
+MEMORY_FAILURES_LEFT_PENDING = {"missing_agents_sdk", "missing_api_key"}
 
 
 def _timestamp_slug() -> str:
@@ -309,6 +312,238 @@ class GameService:
         except (TypeError, ValueError):
             return minimum
 
+    @staticmethod
+    def _durable_relationship_signal(value: Any) -> int:
+        """Map durable relationship memory onto a small per-game social nudge."""
+
+        numeric = GameService._clamp_value(value, minimum=-5, maximum=5)
+        if numeric >= 2:
+            return 1
+        if numeric <= -2:
+            return -1
+        return 0
+
+    @staticmethod
+    def _seat_id_for_durable_target(state: dict[str, Any], *, target_kind: str, target_identity: str) -> str:
+        """Resolve a durable relationship target identity into this game's seat id."""
+
+        normalized_kind = str(target_kind or "").strip().lower()
+        normalized_target = str(target_identity or "").strip()
+        if not normalized_target:
+            return ""
+        for seat_id, seat in dict(state.get("seats") or {}).items():
+            if normalized_kind == "nhp" and str(seat.get("character") or "") == normalized_target:
+                return str(seat_id)
+            if normalized_kind == "hp" and normalize_player_identity(str(seat.get("display_name") or "")) == normalized_target:
+                return str(seat_id)
+        return ""
+
+    def _apply_durable_relationships_to_social(self, state: dict[str, Any]) -> None:
+        """Seed per-game social posture from durable cross-game relationships."""
+
+        social = self._ensure_social(state)
+        social_seats = dict(social.get("seats") or {})
+        for seat_id, seat in dict(state.get("seats") or {}).items():
+            if str(seat.get("seat_kind", "")).strip().lower() == "human":
+                continue
+            seat_social = dict(social_seats.get(seat_id) or {})
+            relationships = dict(seat_social.get("relationships") or {})
+            for durable in self._repository.list_nhp_relationships(agent_identity=str(seat.get("character") or "")):
+                target_seat_id = self._seat_id_for_durable_target(
+                    state,
+                    target_kind=str(durable.get("target_kind") or ""),
+                    target_identity=str(durable.get("target_identity") or ""),
+                )
+                if not target_seat_id or target_seat_id == seat_id:
+                    continue
+                current = dict(relationships.get(target_seat_id) or {"affinity": 0, "trust": 0, "friction": 0})
+                current["affinity"] = self._clamp_value(
+                    int(current.get("affinity", 0) or 0) + self._durable_relationship_signal(durable.get("affinity")),
+                    minimum=-2,
+                    maximum=2,
+                )
+                current["trust"] = self._clamp_value(
+                    int(current.get("trust", 0) or 0) + self._durable_relationship_signal(durable.get("trust")),
+                    minimum=-2,
+                    maximum=2,
+                )
+                current["friction"] = self._clamp_value(
+                    int(current.get("friction", 0) or 0) + (1 if int(durable.get("friction") or 0) >= 2 else 0),
+                    minimum=0,
+                    maximum=3,
+                )
+                relationships[target_seat_id] = current
+            seat_social["relationships"] = relationships
+            social_seats[seat_id] = self._normalize_social_seat_state(seat_social)
+        social["seats"] = social_seats
+        state["social"] = social
+
+    def _memory_context_for_seat(self, state: dict[str, Any], seat_id: str) -> dict[str, Any]:
+        """Build durable memory context for internal NHP runtime snapshots only."""
+
+        seat = dict((state.get("seats") or {}).get(seat_id) or {})
+        agent_identity = str(seat.get("character") or "")
+        if not agent_identity or str(seat.get("seat_kind", "")).strip().lower() == "human":
+            return {}
+        relationships = []
+        for item in self._repository.list_nhp_relationships(agent_identity=agent_identity):
+            relationship = dict(item)
+            relationship["current_target_seat_id"] = self._seat_id_for_durable_target(
+                state,
+                target_kind=str(item.get("target_kind") or ""),
+                target_identity=str(item.get("target_identity") or ""),
+            )
+            relationships.append(relationship)
+        return {
+            "agent_identity": agent_identity,
+            "ready_memories": self._repository.ready_nhp_memory_for_agent(agent_identity, limit=5),
+            "relationships": relationships,
+        }
+
+    @staticmethod
+    def _normalize_memory_relationship_update(
+        state: dict[str, Any],
+        *,
+        source_seat_id: str,
+        update: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Normalize one model-authored relationship update for durable storage."""
+
+        raw_kind = str(update.get("target_kind") or "").strip().lower()
+        raw_identity = str(update.get("target_identity") or "").strip()
+        raw_display = str(update.get("target_display_name") or raw_identity).strip()
+        source_character = str(dict((state.get("seats") or {}).get(source_seat_id) or {}).get("character") or "")
+        matched_seat: dict[str, Any] = {}
+        for candidate_id, candidate in dict(state.get("seats") or {}).items():
+            aliases = {
+                str(candidate_id).casefold(),
+                str(candidate.get("display_name") or "").casefold(),
+                str(candidate.get("character") or "").casefold(),
+            }
+            if raw_identity.casefold() in aliases or raw_display.casefold() in aliases:
+                matched_seat = dict(candidate)
+                break
+        if raw_kind not in {"nhp", "hp"}:
+            raw_kind = "hp" if str(matched_seat.get("seat_kind") or "") == "human" else "nhp"
+        if raw_kind == "nhp":
+            target_identity = str(matched_seat.get("character") or raw_identity)
+            target_display = str(matched_seat.get("display_name") or raw_display or target_identity)
+            if target_identity == source_character:
+                return {}
+        else:
+            display = str(matched_seat.get("display_name") or raw_display or raw_identity)
+            target_identity = normalize_player_identity(display or raw_identity)
+            target_display = display
+        if not target_identity:
+            return {}
+        return {
+            "target_kind": raw_kind,
+            "target_identity": target_identity,
+            "target_display_name": target_display,
+            "affinity_delta": GameService._clamp_value(update.get("affinity_delta"), minimum=-2, maximum=2),
+            "trust_delta": GameService._clamp_value(update.get("trust_delta"), minimum=-2, maximum=2),
+            "friction_delta": GameService._clamp_value(update.get("friction_delta"), minimum=-2, maximum=2),
+            "note": str(update.get("note") or "").strip(),
+        }
+
+    @staticmethod
+    def _normalize_memory_summary(state: dict[str, Any], *, seat_id: str, summary: dict[str, Any]) -> dict[str, Any]:
+        """Clamp the LLM-authored durable memory payload into the persisted shape."""
+
+        normalized_updates = []
+        for update in list(summary.get("relationship_updates") or []):
+            if not isinstance(update, dict):
+                continue
+            normalized = GameService._normalize_memory_relationship_update(state, source_seat_id=seat_id, update=update)
+            if normalized:
+                normalized_updates.append(normalized)
+        return {
+            "first_person_summary": str(summary.get("first_person_summary") or "").strip(),
+            "strategic_lessons": [str(item).strip() for item in list(summary.get("strategic_lessons") or []) if str(item).strip()][:8],
+            "social_observations": [str(item).strip() for item in list(summary.get("social_observations") or []) if str(item).strip()][:8],
+            "grudges": [str(item).strip() for item in list(summary.get("grudges") or []) if str(item).strip()][:8],
+            "favors": [str(item).strip() for item in list(summary.get("favors") or []) if str(item).strip()][:8],
+            "future_play_cues": [str(item).strip() for item in list(summary.get("future_play_cues") or []) if str(item).strip()][:8],
+            "relationship_updates": normalized_updates[:12],
+        }
+
+    def _ensure_memory_jobs_for_completed_game(self, state: dict[str, Any]) -> list[dict[str, Any]]:
+        """Create durable memory jobs for every NHP seat in a completed game."""
+
+        if str(state.get("status") or "") != "complete":
+            return []
+        game_id = str(state.get("game_id") or "")
+        jobs = []
+        for seat_id, seat in dict(state.get("seats") or {}).items():
+            if str(seat.get("seat_kind", "")).strip().lower() == "human":
+                continue
+            jobs.append(
+                self._repository.ensure_nhp_memory_job(
+                    game_id=game_id,
+                    seat_id=str(seat_id),
+                    character=str(seat.get("character") or ""),
+                    display_name=str(seat.get("display_name") or seat.get("character") or seat_id),
+                )
+            )
+        return jobs
+
+    def _attempt_memory_job(self, job: dict[str, Any], *, allow_retry: bool = False) -> dict[str, Any]:
+        """Attempt one LLM-authored durable memory job and persist its outcome."""
+
+        status = str(job.get("status") or "")
+        if status == "ready":
+            return {"memory_id": job.get("id"), "status": "skipped", "reason": "already_ready"}
+        if not allow_retry and (status != "pending" or int(job.get("retry_count") or 0) > 0):
+            return {"memory_id": job.get("id"), "status": "skipped", "reason": "not_fresh_pending"}
+        game_id = str(job.get("source_game_id") or "")
+        seat_id = str(job.get("source_seat_id") or "")
+        state = self._repository.get_state(game_id)
+        self._ensure_analysis(state)
+        self._ensure_social(state)
+        seat_row = next((item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id), {})
+        if not seat_row or seat_id not in dict(state.get("seats") or {}):
+            failed = self._repository.mark_nhp_memory_failure(str(job["id"]), reason="memory_source_seat_missing", status="failed")
+            return {"memory_id": failed["id"], "status": failed["status"], "reason": failed["failure_reason"]}
+        seat = dict(seat_row) | dict(state["seats"][seat_id]) | {"seat_id": seat_id, "notebook": dict(seat_row.get("notebook") or {})}
+        snapshot = self._build_internal_snapshot(game_id, seat_id)
+        try:
+            decision = self._agents.summarize_memory(seat=seat, snapshot=snapshot)
+            summary = self._normalize_memory_summary(state, seat_id=seat_id, summary=decision.summary)
+            if not summary["first_person_summary"]:
+                raise MemorySummaryError("invalid_memory_summary")
+            ready = self._repository.mark_nhp_memory_ready(
+                str(job["id"]),
+                summary=summary,
+                model_meta={
+                    "rationale_private": decision.rationale_private,
+                    "agent_meta": dict(decision.agent_meta or {}),
+                    "debug_private": dict(decision.debug_private or {}),
+                },
+            )
+            for update in summary["relationship_updates"]:
+                self._repository.upsert_nhp_relationship(
+                    agent_identity=str(ready["agent_identity"]),
+                    source_game_id=game_id,
+                    **update,
+                )
+            return {"memory_id": ready["id"], "status": ready["status"], "relationship_updates": len(summary["relationship_updates"])}
+        except MemorySummaryError as exc:
+            next_status = "pending" if exc.reason in MEMORY_FAILURES_LEFT_PENDING else "failed"
+            failed = self._repository.mark_nhp_memory_failure(str(job["id"]), reason=exc.reason, status=next_status)
+            return {"memory_id": failed["id"], "status": failed["status"], "reason": failed["failure_reason"]}
+        except Exception as exc:
+            failed = self._repository.mark_nhp_memory_failure(str(job["id"]), reason=f"memory_summary_error: {exc}", status="failed")
+            return {"memory_id": failed["id"], "status": failed["status"], "reason": failed["failure_reason"]}
+
+    def _finalize_game_if_complete(self, game_id: str, state: dict[str, Any]) -> None:
+        """Run completed-game durable memory hooks and then clean up LLM sessions."""
+
+        if str(state.get("status") or "") != "complete":
+            return
+        for job in self._ensure_memory_jobs_for_completed_game(state):
+            self._attempt_memory_job(job)
+        self._cleanup_llm_sessions_if_complete(state)
+
     def _cleanup_llm_sessions_if_complete(self, state: dict[str, Any]) -> None:
         """Clear local LLM seat sessions after a game reaches a terminal state."""
 
@@ -422,6 +657,8 @@ class GameService:
         state = build_initial_state(game_id, title, seat_configs, hidden_setup)
         state["ui_mode"] = default_ui_mode
         state["analysis"] = self._build_analysis_defaults(state)
+        self._ensure_social(state)
+        self._apply_durable_relationships_to_social(state)
         tokens = []
         seat_links = []
         for seat in seat_configs:
@@ -515,6 +752,7 @@ class GameService:
         state = self._repository.get_state(seat["game_id"])
         self._ensure_analysis(state)
         self._ensure_social(state)
+        self._finalize_game_if_complete(seat["game_id"], state)
         visible_events = self._repository.visible_events(seat["game_id"], seat_id=seat["seat_id"], since_event_index=since_event_index)
         return build_filtered_snapshot(
             state,
@@ -570,7 +808,7 @@ class GameService:
                     )
                 ],
             )
-            self._cleanup_llm_sessions_if_complete(state)
+            self._finalize_game_if_complete(seat["game_id"], state)
             raise
         public_chat = sanitize_public_chat(str(action.get("text", "")).strip()) if action.get("action") != "send_chat" else ""
         guardrail_blocks = 0
@@ -616,7 +854,7 @@ class GameService:
             ]
         )
         self._repository.save_state_and_events(seat["game_id"], state=new_state, events=events)
-        self._cleanup_llm_sessions_if_complete(new_state)
+        self._finalize_game_if_complete(seat["game_id"], new_state)
         self.maybe_run_agents(seat["game_id"])
         return self.snapshot_for_token(token)
 
@@ -626,6 +864,35 @@ class GameService:
         seat = self.resolve_token(token)
         self._repository.update_notebook(seat["game_id"], seat["seat_id"], notebook)
         return self.snapshot_for_token(token)
+
+    def admin_dashboard(self) -> dict[str, Any]:
+        """Return Administrator Mode data for saved games and durable NHP memory."""
+
+        return {
+            "games": self._repository.list_games(limit=50),
+            "nhp_memory": self._repository.list_nhp_memory(limit=100),
+            "pending_memory": self._repository.list_pending_nhp_memory_jobs(include_failed=True, limit=100),
+            "relationships": self._repository.list_nhp_relationships(limit=250),
+        }
+
+    def admin_game_detail(self, game_id: str) -> dict[str, Any]:
+        """Return a full admin-authorized saved-game detail payload."""
+
+        return self._repository.admin_game_detail(game_id)
+
+    def admin_retry_nhp_memory(self, memory_ids: list[str] | None = None) -> dict[str, Any]:
+        """Retry pending or failed durable NHP memory jobs for Administrator Mode."""
+
+        if memory_ids:
+            jobs = [
+                job
+                for memory_id in memory_ids
+                if (job := self._repository.get_nhp_memory_job(str(memory_id))) is not None
+            ]
+        else:
+            jobs = self._repository.list_pending_nhp_memory_jobs(include_failed=True, limit=100)
+        results = [self._attempt_memory_job(job, allow_retry=True) for job in jobs]
+        return {"attempted": len(results), "results": results}
 
     @staticmethod
     def _seat_configs_from_payload(requested_seats: list[dict[str, Any]], *, default_ui_mode: str = DEFAULT_UI_MODE) -> list[SeatConfig]:
@@ -1138,7 +1405,7 @@ class GameService:
             self._ensure_analysis(state)
             self._ensure_social(state)
             if state["status"] != "active":
-                self._cleanup_llm_sessions_if_complete(state)
+                self._finalize_game_if_complete(game_id, state)
                 return
             seat_id = self._autonomous_seat_to_act(state)
             if seat_id is None:
@@ -1193,7 +1460,7 @@ class GameService:
                         )
                     ],
                 )
-                self._cleanup_llm_sessions_if_complete(state)
+                self._finalize_game_if_complete(game_id, state)
                 return
             guardrail_blocks = 0
             if decision.text:
@@ -1294,7 +1561,7 @@ class GameService:
                 ]
             )
             self._repository.save_state_and_events(game_id, state=new_state, events=events)
-            self._cleanup_llm_sessions_if_complete(new_state)
+            self._finalize_game_if_complete(game_id, new_state)
             cycles += 1
 
     def _player_facing_public_events(self, game_id: str, *, since_event_index: int = 0) -> list[dict[str, Any]]:
@@ -1378,9 +1645,13 @@ class GameService:
         """
 
         state = self._repository.get_state(game_id)
+        self._ensure_analysis(state)
+        self._ensure_social(state)
         seat_row = next(item for item in self._repository.list_seats(game_id) if item["seat_id"] == seat_id)
         visible_events = self._repository.visible_events(game_id, seat_id=seat_id, since_event_index=0)
-        return build_filtered_snapshot(state, seat_id=seat_id, visible_events=visible_events, notebook=seat_row["notebook"])
+        snapshot = build_filtered_snapshot(state, seat_id=seat_id, visible_events=visible_events, notebook=seat_row["notebook"])
+        snapshot["memory_context"] = self._memory_context_for_seat(state, seat_id)
+        return snapshot
 
     @staticmethod
     def _apply_llm_profiles(game_id: str, seat_configs: list[SeatConfig]) -> None:

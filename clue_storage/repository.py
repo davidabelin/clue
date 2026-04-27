@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 from threading import RLock
 from typing import Any
 
@@ -16,6 +17,16 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, MappingResult
 
 from clue_core.events import utcnow_iso
+
+
+NHP_MEMORY_STATUSES = {"pending", "ready", "failed"}
+"""Persisted lifecycle states for durable non-human-player memory jobs."""
+
+
+def normalize_player_identity(value: str) -> str:
+    """Normalize one human-facing display name for cross-game memory lookup."""
+
+    return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
 
 
 def _looks_like_database_url(value: str) -> bool:
@@ -30,6 +41,27 @@ def _to_sqlite_url(path_value: str) -> str:
     path = Path(path_value).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     return f"sqlite+pysqlite:///{path.as_posix()}"
+
+
+def _memory_job_id(game_id: str, seat_id: str) -> str:
+    """Return the stable durable-memory job id for one completed game seat."""
+
+    return f"{str(game_id)}:{str(seat_id)}"
+
+
+def _relationship_id(agent_identity: str, target_kind: str, target_identity: str) -> str:
+    """Return the stable durable relationship id for one agent-target pair."""
+
+    return f"{str(agent_identity)}|{str(target_kind)}|{str(target_identity)}"
+
+
+def _clamp_int(value: Any, *, minimum: int, maximum: int) -> int:
+    """Clamp an integer-like value into an inclusive range."""
+
+    try:
+        return min(max(int(value), minimum), maximum)
+    except (TypeError, ValueError):
+        return minimum
 
 
 class ClueRepository:
@@ -126,10 +158,48 @@ class ClueRepository:
                 FOREIGN KEY(game_id) REFERENCES games(id)
             );
 
+            CREATE TABLE IF NOT EXISTS nhp_memory (
+                id TEXT PRIMARY KEY,
+                agent_identity TEXT NOT NULL,
+                status TEXT NOT NULL,
+                source_game_id TEXT NOT NULL,
+                source_seat_id TEXT NOT NULL,
+                source_character TEXT NOT NULL,
+                source_display_name TEXT NOT NULL,
+                summary_json TEXT NOT NULL DEFAULT '{}',
+                model_meta_json TEXT NOT NULL DEFAULT '{}',
+                failure_reason TEXT NOT NULL DEFAULT '',
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                completed_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(source_game_id) REFERENCES games(id),
+                UNIQUE(source_game_id, source_seat_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS nhp_relationships (
+                id TEXT PRIMARY KEY,
+                agent_identity TEXT NOT NULL,
+                target_kind TEXT NOT NULL,
+                target_identity TEXT NOT NULL,
+                target_display_name TEXT NOT NULL DEFAULT '',
+                affinity INTEGER NOT NULL DEFAULT 0,
+                trust INTEGER NOT NULL DEFAULT 0,
+                friction INTEGER NOT NULL DEFAULT 0,
+                notes_json TEXT NOT NULL DEFAULT '[]',
+                last_source_game_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(agent_identity, target_kind, target_identity)
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_events_game_index ON events(game_id, event_index);
             CREATE INDEX IF NOT EXISTS idx_seats_game ON seats(game_id);
             CREATE INDEX IF NOT EXISTS idx_events_game_id ON events(game_id, id);
             CREATE INDEX IF NOT EXISTS idx_tokens_game ON seat_tokens(game_id);
+            CREATE INDEX IF NOT EXISTS idx_nhp_memory_agent ON nhp_memory(agent_identity, status, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_nhp_memory_status ON nhp_memory(status, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_nhp_relationships_agent ON nhp_relationships(agent_identity);
         """
 
         postgres_schema = """
@@ -176,10 +246,47 @@ class ClueRepository:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS nhp_memory (
+                id TEXT PRIMARY KEY,
+                agent_identity TEXT NOT NULL,
+                status TEXT NOT NULL,
+                source_game_id TEXT NOT NULL REFERENCES games(id),
+                source_seat_id TEXT NOT NULL,
+                source_character TEXT NOT NULL,
+                source_display_name TEXT NOT NULL,
+                summary_json TEXT NOT NULL DEFAULT '{}',
+                model_meta_json TEXT NOT NULL DEFAULT '{}',
+                failure_reason TEXT NOT NULL DEFAULT '',
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                completed_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(source_game_id, source_seat_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS nhp_relationships (
+                id TEXT PRIMARY KEY,
+                agent_identity TEXT NOT NULL,
+                target_kind TEXT NOT NULL,
+                target_identity TEXT NOT NULL,
+                target_display_name TEXT NOT NULL DEFAULT '',
+                affinity INTEGER NOT NULL DEFAULT 0,
+                trust INTEGER NOT NULL DEFAULT 0,
+                friction INTEGER NOT NULL DEFAULT 0,
+                notes_json TEXT NOT NULL DEFAULT '[]',
+                last_source_game_id TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(agent_identity, target_kind, target_identity)
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_events_game_index ON events(game_id, event_index);
             CREATE INDEX IF NOT EXISTS idx_seats_game ON seats(game_id);
             CREATE INDEX IF NOT EXISTS idx_events_game_id ON events(game_id, id);
             CREATE INDEX IF NOT EXISTS idx_tokens_game ON seat_tokens(game_id);
+            CREATE INDEX IF NOT EXISTS idx_nhp_memory_agent ON nhp_memory(agent_identity, status, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_nhp_memory_status ON nhp_memory(status, updated_at);
+            CREATE INDEX IF NOT EXISTS idx_nhp_relationships_agent ON nhp_relationships(agent_identity);
         """
         self._run_script(sqlite_schema if self._dialect == "sqlite" else postgres_schema)
         self._ensure_seat_key_column()
@@ -539,3 +646,396 @@ class ClueRepository:
                 }
                 for row in rows
             ]
+
+    @staticmethod
+    def _memory_row(row: dict[str, Any]) -> dict[str, Any]:
+        """Normalize one durable NHP memory database row into app-facing shape."""
+
+        return {
+            "id": row["id"],
+            "agent_identity": row["agent_identity"],
+            "status": row["status"],
+            "source_game_id": row["source_game_id"],
+            "source_seat_id": row["source_seat_id"],
+            "source_character": row["source_character"],
+            "source_display_name": row["source_display_name"],
+            "summary": json.loads(row["summary_json"] or "{}"),
+            "model_meta": json.loads(row["model_meta_json"] or "{}"),
+            "failure_reason": row["failure_reason"],
+            "retry_count": int(row["retry_count"] or 0),
+            "completed_at": row["completed_at"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    @staticmethod
+    def _relationship_row(row: dict[str, Any]) -> dict[str, Any]:
+        """Normalize one durable relationship database row into app-facing shape."""
+
+        return {
+            "id": row["id"],
+            "agent_identity": row["agent_identity"],
+            "target_kind": row["target_kind"],
+            "target_identity": row["target_identity"],
+            "target_display_name": row["target_display_name"],
+            "affinity": int(row["affinity"] or 0),
+            "trust": int(row["trust"] or 0),
+            "friction": int(row["friction"] or 0),
+            "notes": json.loads(row["notes_json"] or "[]"),
+            "last_source_game_id": row["last_source_game_id"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+
+    def list_games(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        """Return recent saved games for Administrator Mode."""
+
+        safe_limit = min(max(int(limit), 1), 250)
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, title, status, created_at, updated_at
+                    FROM games
+                    ORDER BY updated_at DESC, created_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": safe_limit},
+            ).mappings()
+            return [dict(row) for row in rows]
+
+    def events_for_game(self, game_id: str) -> list[dict[str, Any]]:
+        """Return the complete event stream for an admin-authorized game detail view."""
+
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT id, event_index, visibility, event_type, message, payload_json, created_at
+                    FROM events
+                    WHERE game_id = :game_id
+                    ORDER BY event_index
+                    """
+                ),
+                {"game_id": game_id},
+            ).mappings()
+            return [
+                {
+                    "id": int(row["id"]),
+                    "event_index": int(row["event_index"]),
+                    "visibility": row["visibility"],
+                    "event_type": row["event_type"],
+                    "message": row["message"],
+                    "payload": json.loads(row["payload_json"] or "{}"),
+                    "created_at": row["created_at"],
+                }
+                for row in rows
+            ]
+
+    def ensure_nhp_memory_job(self, *, game_id: str, seat_id: str, character: str, display_name: str) -> dict[str, Any]:
+        """Create or return the durable memory job for one completed NHP seat."""
+
+        memory_id = _memory_job_id(game_id, seat_id)
+        now = utcnow_iso()
+        with self._lock, self.engine.begin() as conn:
+            existing = self._first_or_none(
+                conn.execute(text("SELECT * FROM nhp_memory WHERE id = :id"), {"id": memory_id}).mappings()
+            )
+            if existing is None:
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO nhp_memory (
+                            id, agent_identity, status, source_game_id, source_seat_id,
+                            source_character, source_display_name, summary_json, model_meta_json,
+                            failure_reason, retry_count, completed_at, created_at, updated_at
+                        )
+                        VALUES (
+                            :id, :agent_identity, 'pending', :source_game_id, :source_seat_id,
+                            :source_character, :source_display_name, '{}', '{}',
+                            '', 0, NULL, :created_at, :updated_at
+                        )
+                        """
+                    ),
+                    {
+                        "id": memory_id,
+                        "agent_identity": str(character),
+                        "source_game_id": str(game_id),
+                        "source_seat_id": str(seat_id),
+                        "source_character": str(character),
+                        "source_display_name": str(display_name),
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+                existing = self._first_or_none(
+                    conn.execute(text("SELECT * FROM nhp_memory WHERE id = :id"), {"id": memory_id}).mappings()
+                )
+        if existing is None:
+            raise RuntimeError(f"Could not create durable NHP memory job: {memory_id}")
+        return self._memory_row(existing)
+
+    def get_nhp_memory_job(self, memory_id: str) -> dict[str, Any] | None:
+        """Return one durable NHP memory job by id."""
+
+        with self.engine.begin() as conn:
+            row = self._first_or_none(
+                conn.execute(text("SELECT * FROM nhp_memory WHERE id = :id"), {"id": str(memory_id)}).mappings()
+            )
+        return self._memory_row(row) if row is not None else None
+
+    def list_nhp_memory(self, *, status: str = "", agent_identity: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        """Return durable NHP memory rows for Administrator Mode and runtime loading."""
+
+        clauses: list[str] = []
+        params: dict[str, Any] = {"limit": min(max(int(limit), 1), 500)}
+        if str(status).strip():
+            clauses.append("status = :status")
+            params["status"] = str(status).strip()
+        if str(agent_identity).strip():
+            clauses.append("agent_identity = :agent_identity")
+            params["agent_identity"] = str(agent_identity).strip()
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT *
+                    FROM nhp_memory
+                    {where}
+                    ORDER BY updated_at DESC, created_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings()
+            return [self._memory_row(dict(row)) for row in rows]
+
+    def ready_nhp_memory_for_agent(self, agent_identity: str, *, limit: int = 5) -> list[dict[str, Any]]:
+        """Return the recent ready memory summaries for one canonical NHP identity."""
+
+        return self.list_nhp_memory(status="ready", agent_identity=agent_identity, limit=limit)
+
+    def list_pending_nhp_memory_jobs(self, *, include_failed: bool = False, limit: int = 100) -> list[dict[str, Any]]:
+        """Return queued durable memory jobs that still need an LLM summary."""
+
+        statuses = ("'pending', 'failed'" if include_failed else "'pending'")
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT *
+                    FROM nhp_memory
+                    WHERE status IN ({statuses})
+                    ORDER BY updated_at ASC, created_at ASC
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": min(max(int(limit), 1), 500)},
+            ).mappings()
+            return [self._memory_row(dict(row)) for row in rows]
+
+    def mark_nhp_memory_ready(self, memory_id: str, *, summary: dict[str, Any], model_meta: dict[str, Any]) -> dict[str, Any]:
+        """Persist a completed LLM-authored durable memory summary."""
+
+        now = utcnow_iso()
+        with self._lock, self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE nhp_memory
+                    SET status = 'ready',
+                        summary_json = :summary_json,
+                        model_meta_json = :model_meta_json,
+                        failure_reason = '',
+                        completed_at = :completed_at,
+                        updated_at = :updated_at
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": str(memory_id),
+                    "summary_json": json.dumps(summary),
+                    "model_meta_json": json.dumps(model_meta),
+                    "completed_at": now,
+                    "updated_at": now,
+                },
+            )
+        job = self.get_nhp_memory_job(memory_id)
+        if job is None:
+            raise KeyError(f"Unknown durable NHP memory job: {memory_id}")
+        return job
+
+    def mark_nhp_memory_failure(self, memory_id: str, *, reason: str, status: str = "failed") -> dict[str, Any]:
+        """Record a failed or queued memory-summary attempt without losing the job."""
+
+        next_status = str(status or "failed").strip().lower()
+        if next_status not in {"pending", "failed"}:
+            next_status = "failed"
+        now = utcnow_iso()
+        with self._lock, self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE nhp_memory
+                    SET status = :status,
+                        failure_reason = :failure_reason,
+                        retry_count = retry_count + 1,
+                        updated_at = :updated_at
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": str(memory_id),
+                    "status": next_status,
+                    "failure_reason": str(reason or ""),
+                    "updated_at": now,
+                },
+            )
+        job = self.get_nhp_memory_job(memory_id)
+        if job is None:
+            raise KeyError(f"Unknown durable NHP memory job: {memory_id}")
+        return job
+
+    def upsert_nhp_relationship(
+        self,
+        *,
+        agent_identity: str,
+        target_kind: str,
+        target_identity: str,
+        target_display_name: str = "",
+        affinity_delta: int = 0,
+        trust_delta: int = 0,
+        friction_delta: int = 0,
+        note: str = "",
+        source_game_id: str = "",
+    ) -> dict[str, Any]:
+        """Apply one durable bounded relationship update for an NHP identity."""
+
+        agent = str(agent_identity).strip()
+        kind = str(target_kind).strip().lower()
+        target = str(target_identity).strip()
+        if not agent or kind not in {"nhp", "hp"} or not target:
+            raise ValueError("Durable relationship updates require agent, target kind, and target identity.")
+        relationship_id = _relationship_id(agent, kind, target)
+        now = utcnow_iso()
+        clean_note = str(note or "").strip()
+        with self._lock, self.engine.begin() as conn:
+            existing = self._first_or_none(
+                conn.execute(text("SELECT * FROM nhp_relationships WHERE id = :id"), {"id": relationship_id}).mappings()
+            )
+            if existing is None:
+                notes = [clean_note] if clean_note else []
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO nhp_relationships (
+                            id, agent_identity, target_kind, target_identity, target_display_name,
+                            affinity, trust, friction, notes_json, last_source_game_id, created_at, updated_at
+                        )
+                        VALUES (
+                            :id, :agent_identity, :target_kind, :target_identity, :target_display_name,
+                            :affinity, :trust, :friction, :notes_json, :last_source_game_id, :created_at, :updated_at
+                        )
+                        """
+                    ),
+                    {
+                        "id": relationship_id,
+                        "agent_identity": agent,
+                        "target_kind": kind,
+                        "target_identity": target,
+                        "target_display_name": str(target_display_name or target),
+                        "affinity": _clamp_int(affinity_delta, minimum=-5, maximum=5),
+                        "trust": _clamp_int(trust_delta, minimum=-5, maximum=5),
+                        "friction": _clamp_int(friction_delta, minimum=0, maximum=5),
+                        "notes_json": json.dumps(notes[-8:]),
+                        "last_source_game_id": str(source_game_id or ""),
+                        "created_at": now,
+                        "updated_at": now,
+                    },
+                )
+            else:
+                notes = [str(item) for item in json.loads(existing["notes_json"] or "[]") if str(item).strip()]
+                if clean_note:
+                    notes.append(clean_note)
+                conn.execute(
+                    text(
+                        """
+                        UPDATE nhp_relationships
+                        SET target_display_name = :target_display_name,
+                            affinity = :affinity,
+                            trust = :trust,
+                            friction = :friction,
+                            notes_json = :notes_json,
+                            last_source_game_id = :last_source_game_id,
+                            updated_at = :updated_at
+                        WHERE id = :id
+                        """
+                    ),
+                    {
+                        "id": relationship_id,
+                        "target_display_name": str(target_display_name or existing["target_display_name"] or target),
+                        "affinity": _clamp_int(int(existing["affinity"] or 0) + affinity_delta, minimum=-5, maximum=5),
+                        "trust": _clamp_int(int(existing["trust"] or 0) + trust_delta, minimum=-5, maximum=5),
+                        "friction": _clamp_int(int(existing["friction"] or 0) + friction_delta, minimum=0, maximum=5),
+                        "notes_json": json.dumps(notes[-8:]),
+                        "last_source_game_id": str(source_game_id or existing["last_source_game_id"] or ""),
+                        "updated_at": now,
+                    },
+                )
+            row = self._first_or_none(
+                conn.execute(text("SELECT * FROM nhp_relationships WHERE id = :id"), {"id": relationship_id}).mappings()
+            )
+        if row is None:
+            raise RuntimeError(f"Could not upsert durable NHP relationship: {relationship_id}")
+        return self._relationship_row(row)
+
+    def list_nhp_relationships(self, *, agent_identity: str = "", limit: int = 250) -> list[dict[str, Any]]:
+        """Return durable NHP relationship rows for runtime context or admin inspection."""
+
+        clauses: list[str] = []
+        params: dict[str, Any] = {"limit": min(max(int(limit), 1), 500)}
+        if str(agent_identity).strip():
+            clauses.append("agent_identity = :agent_identity")
+            params["agent_identity"] = str(agent_identity).strip()
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT *
+                    FROM nhp_relationships
+                    {where}
+                    ORDER BY updated_at DESC, agent_identity, target_kind, target_identity
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings()
+            return [self._relationship_row(dict(row)) for row in rows]
+
+    def admin_game_detail(self, game_id: str) -> dict[str, Any]:
+        """Return a full admin-authorized game record with seats, events, and memory jobs."""
+
+        record = self.get_game_record(game_id)
+        if record is None:
+            raise KeyError(f"Unknown game: {game_id}")
+        with self.engine.begin() as conn:
+            memory_rows = conn.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM nhp_memory
+                    WHERE source_game_id = :game_id
+                    ORDER BY updated_at DESC, created_at DESC
+                    """
+                ),
+                {"game_id": game_id},
+            ).mappings()
+        return {
+            **record,
+            "seats": self.list_seats(game_id),
+            "events": self.events_for_game(game_id),
+            "nhp_memory": [self._memory_row(dict(row)) for row in memory_rows],
+        }

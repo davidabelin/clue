@@ -14,11 +14,12 @@ Standalone Clue lab for AIX, currently labeled **v1.7.6**.
 - Seat-private information is filtered server-side before it reaches the browser.
 - Public chat is sanitized and guardrailed before LLM-authored text is accepted.
 - Local encrypted session memory is seat-scoped and separate from the persisted game-state database.
+- Durable NHP memory is persisted cross-game for agent runtime use and Administrator Mode, never normal player snapshots.
 
 ## Repo Layout
 - `clue_core/`: board model, constants, setup, events, deterministic rules engine, deduction-facing types, release metadata
 - `clue_agents/`: seat interfaces, heuristic policy, Agents SDK integration, prompt/policy helpers, YAML profile loading, runtime config, safety helpers, secret resolution
-- `clue_storage/`: SQLAlchemy-backed persistence for games, seats, notebooks, tokens, and event history
+- `clue_storage/`: SQLAlchemy-backed persistence for games, seats, notebooks, tokens, event history, durable NHP memory, and relationships
 - `clue_web/`: Flask app factory, runtime service, routes, templates, and browser assets
 - `tests/`: unit and integration-style coverage for engine, profiles, runtime config, app/API flow, heuristic play, and LLM wrappers
 - `docs/`: maintainer documentation, architecture notes, backlog, and release history
@@ -39,6 +40,7 @@ Standalone Clue lab for AIX, currently labeled **v1.7.6**.
 - `/api/v1/games/current` returns the filtered snapshot, including the table UI mode, for the current signed seat token.
 - `/api/v1/games/current/actions` applies one action through the Game Master, persists state and events, and runs any follow-up autonomous turns.
 - `/api/v1/games/current/notebook` updates one seat-private notebook.
+- `/admin?admin_token=...` and `/api/v1/admin/...` expose protected saved-game, NHP memory, and relationship inspection for maintainers.
 
 ### 3. Rules authority
 - `clue_core.engine.GameMaster` validates every action and emits public or seat-private events.
@@ -49,6 +51,7 @@ Standalone Clue lab for AIX, currently labeled **v1.7.6**.
 - `clue_core.deduction.build_tool_snapshot()` prepares the seat-local deduction summary used by both heuristic and LLM policies.
 - `clue_agents.llm.LLMSeatAgent` uses the OpenAI Agents SDK with read-only tools, output guardrails, and deterministic fallback to the heuristic policy.
 - Idle chat uses a separate chat profile path and a two-stage intent-plus-utterance run.
+- Completed games create durable LLM-authored memory jobs for each NHP. Ready memory is loaded into future NHP runtime snapshots; missing SDK/API credentials leave jobs pending for admin retry.
 
 ## Environment Contract
 
@@ -67,6 +70,8 @@ Standalone Clue lab for AIX, currently labeled **v1.7.6**.
   Base URL used to build shared AIX chrome links.
 - `CLUE_INTERNAL_WORKER_TOKEN`
   Optional shared token for the internal run-agents endpoint.
+- `CLUE_ADMIN_TOKEN`
+  Required token for `/admin` and `/api/v1/admin/...` saved-game and NHP-memory surfaces.
 
 ### LLM runtime
 - `CLUE_LLM_MODEL`

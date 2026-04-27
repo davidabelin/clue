@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- Added durable cross-game NHP memory jobs and relationship persistence for stateful chatbot behavior.
+- Added LLM-only completed-game memory summaries with pending/failed retry lifecycle and no heuristic prose fallback.
+- Loaded ready durable memory into internal NHP runtime snapshots while keeping normal player snapshots free of memory context.
+- Added protected Administrator Mode APIs and a plain admin page for saved games, NHP memory, relationships, and memory retry.
+- Added focused tests for durable memory storage, runtime hooks, SDK memory mode, admin access, and snapshot privacy.
+
 ## v1.7.6 - 2026-04-16
 - Fixed Player Mode movement UX after rolling by making board movement the primary visible action while legal move targets exist.
 - Made highlighted route segments clickable and expanded highlighted node hit areas so board movement clicks are less fragile.
