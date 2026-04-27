@@ -38,6 +38,14 @@ def _create_saved_game(repository: ClueRepository) -> None:
                 "seat_kind": "llm",
                 "agent_model": "",
                 "notebook": {},
+            },
+            {
+                "seat_id": "seat_orchid",
+                "display_name": "Dr. Orchid",
+                "character": "Colonel Mustard",
+                "seat_kind": "human",
+                "agent_model": "",
+                "notebook": {},
             }
         ],
         seat_tokens=[],
@@ -131,3 +139,36 @@ def test_admin_game_listing_and_detail_include_memory(tmp_path: Path):
     assert games[0]["id"] == "game_repo"
     assert detail["id"] == "game_repo"
     assert detail["nhp_memory"][0]["id"] == job["id"]
+
+
+def test_durable_notes_and_history_queries(tmp_path: Path):
+    """Durable note/audit rows should be queryable by agent, target, and game history."""
+
+    repository = _repository(tmp_path)
+    _create_saved_game(repository)
+
+    note = repository.record_nhp_note(
+        agent_identity="Miss Scarlet",
+        game_id="game_repo",
+        seat_id="seat_scarlet",
+        note_kind="social_intent",
+        note_text="Keep pressure on Dr. Orchid.",
+        payload={"intent": "challenge"},
+        tool_name="record_social_intent_note",
+        target_kind="hp",
+        target_identity=normalize_player_identity("Dr. Orchid"),
+        target_display_name="Dr. Orchid",
+    )
+
+    by_agent = repository.list_nhp_notes(agent_identity="Miss Scarlet")
+    by_target = repository.list_nhp_notes(target_kind="hp", target_identity=normalize_player_identity("Dr. Orchid"))
+    nhp_history = repository.list_nhp_history(agent_identity="Miss Scarlet")
+    human_history = repository.list_human_player_history(player_identity="  Dr.   Orchid ")
+    detail = repository.admin_game_detail("game_repo")
+
+    assert note["payload"]["intent"] == "challenge"
+    assert by_agent[0]["id"] == note["id"]
+    assert by_target[0]["target_display_name"] == "Dr. Orchid"
+    assert nhp_history[0]["character_name"] == "Miss Scarlet"
+    assert human_history[0]["player_identity"] == "dr. orchid"
+    assert detail["nhp_notes"][0]["id"] == note["id"]

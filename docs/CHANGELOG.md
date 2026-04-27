@@ -1,11 +1,18 @@
 # Changelog
 
 ## Unreleased
+
+## v1.8.0 - 2026-04-27
 - Added durable cross-game NHP memory jobs and relationship persistence for stateful chatbot behavior.
 - Added LLM-only completed-game memory summaries with pending/failed retry lifecycle and no heuristic prose fallback.
 - Loaded ready durable memory into internal NHP runtime snapshots while keeping normal player snapshots free of memory context.
-- Added protected Administrator Mode APIs and a plain admin page for saved games, NHP memory, relationships, and memory retry.
-- Added focused tests for durable memory storage, runtime hooks, SDK memory mode, admin access, and snapshot privacy.
+- Added append-only durable NHP note/tool-audit rows and loaded recent notes into internal memory context.
+- Added canonical model-facing write tools for durable memory notes, relationship posture, and social-intent notes while keeping gameplay rules state under the Game Master only.
+- Added protected Administrator Mode APIs and a plain admin page for saved games, NHP memory, durable notes, relationships, HP/NHP history, and memory retry.
+- Added bounded proactive idle chat for quiet table periods with a per-game/per-turn throttle and model-chosen silence preserved.
+- Added Secret Manager indirection for the Flask signing secret and Administrator Mode token.
+- Added a separate `clue-smoke` App Engine manifest for deployed OpenAI/App Engine/Cloud SQL smoke tests without writing to the production Clue database.
+- Added focused tests for durable memory/note storage, runtime hooks, SDK memory mode, write-tool diagnostics, admin access, proactive chat, and snapshot privacy.
 - Changed LLM turn/chat failures to fail loudly with `llm_unavailable` diagnostics instead of silently using heuristic fallback behavior.
 - Enabled Agents SDK response storage and raised deployed/profile turn budgets so stateful LLM sessions can complete multi-tool decisions.
 

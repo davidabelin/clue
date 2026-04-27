@@ -128,7 +128,7 @@ class LLMSeatAgent(SeatAgent):
     """OpenAI Agents SDK seat policy that fails loudly when the model path fails.
 
     The LLM path is intentionally narrow:
-    - read-only tools expose seat-local state
+    - read tools expose seat-local state, and write tools persist durable NHP notes/relationships only
     - output guardrails validate legality and leakage risk
     - missing SDK/API credentials, guardrail blocks, timeouts, and model errors
       raise ``LLMDecisionError`` instead of producing a deterministic fake move
@@ -147,6 +147,7 @@ class LLMSeatAgent(SeatAgent):
         chat_profile_id: str = "",
         api_key: str = "",
         runtime_config: LLMRuntimeConfig | None = None,
+        write_sink: Any = None,
     ) -> None:
         """Resolve runtime configuration and the API key for future turn decisions."""
 
@@ -171,6 +172,7 @@ class LLMSeatAgent(SeatAgent):
         self._model = self._runtime_config.model
         self._chat_model = self._chat_runtime_config.model
         self._api_key = resolve_openai_api_key(api_key=api_key)
+        self._write_sink = write_sink
 
     def clear_session(self, *, game_id: str, seat_id: str) -> None:
         """Best-effort cleanup for one seat's local encrypted agent session."""
@@ -364,6 +366,7 @@ class LLMSeatAgent(SeatAgent):
             "session_id": artifacts.session_id,
             "last_response_id": artifacts.last_response_id,
             "tool_calls": artifacts.tool_calls,
+            "tool_writes": artifacts.tool_writes,
             "output_guardrails": artifacts.output_guardrails,
             "tool_input_guardrails": artifacts.tool_input_guardrails,
         }
@@ -390,6 +393,7 @@ class LLMSeatAgent(SeatAgent):
             accusation_gate=accusation_gate,
             runtime_config=self._runtime_config,
             mode="turn",
+            write_sink=self._write_sink,
         )
         try:
             raw_output, artifacts = self._run_agent(context)
@@ -449,6 +453,7 @@ class LLMSeatAgent(SeatAgent):
                 "sdk_session_id": str(artifacts.get("session_id") or ""),
                 "sdk_last_response_id": str(artifacts.get("last_response_id") or ""),
                 "sdk_tool_calls": list(artifacts.get("tool_calls") or []),
+                "sdk_tool_writes": list(artifacts.get("tool_writes") or []),
                 "sdk_output_guardrails": list(artifacts.get("output_guardrails") or []),
                 "sdk_tool_input_guardrails": list(artifacts.get("tool_input_guardrails") or []),
                 "model_debug_private": dict(raw_output.debug_private or {}),
@@ -462,6 +467,7 @@ class LLMSeatAgent(SeatAgent):
                 "last_response_id": str(artifacts.get("last_response_id") or ""),
                 "tool_call_count": tool_call_count,
                 "tool_calls": list(artifacts.get("tool_calls") or []),
+                "tool_writes": list(artifacts.get("tool_writes") or []),
             }
             return decision
         except LLMDecisionError:
@@ -472,7 +478,7 @@ class LLMSeatAgent(SeatAgent):
                 tool_snapshot=tool_snapshot,
                 accusation_gate=accusation_gate,
                 error=exc,
-                extra_debug=guardrail_exception_payload(exc),
+                extra_debug=guardrail_exception_payload(exc) | {"tool_writes": list(context.tool_write_log)},
             )
         except InputGuardrailTripwireTriggered as exc:
             self._raise_turn_error(
@@ -480,7 +486,7 @@ class LLMSeatAgent(SeatAgent):
                 tool_snapshot=tool_snapshot,
                 accusation_gate=accusation_gate,
                 error=exc,
-                extra_debug=guardrail_exception_payload(exc),
+                extra_debug=guardrail_exception_payload(exc) | {"tool_writes": list(context.tool_write_log)},
             )
         except MaxTurnsExceeded as exc:
             self._raise_turn_error(
@@ -488,6 +494,7 @@ class LLMSeatAgent(SeatAgent):
                 tool_snapshot=tool_snapshot,
                 accusation_gate=accusation_gate,
                 error=exc,
+                extra_debug={"tool_writes": list(context.tool_write_log)},
             )
         except TimeoutError as exc:
             self._raise_turn_error(
@@ -495,6 +502,7 @@ class LLMSeatAgent(SeatAgent):
                 tool_snapshot=tool_snapshot,
                 accusation_gate=accusation_gate,
                 error=exc,
+                extra_debug={"tool_writes": list(context.tool_write_log)},
             )
         except Exception as exc:
             self._raise_turn_error(
@@ -502,6 +510,7 @@ class LLMSeatAgent(SeatAgent):
                 tool_snapshot=tool_snapshot,
                 accusation_gate=accusation_gate,
                 error=exc,
+                extra_debug={"tool_writes": list(context.tool_write_log)},
             )
 
     def summarize_memory(self, *, snapshot: dict[str, Any]) -> MemorySummaryDecision:
@@ -523,6 +532,7 @@ class LLMSeatAgent(SeatAgent):
             accusation_gate={"ready": False},
             runtime_config=self._chat_runtime_config,
             mode="memory_summary",
+            write_sink=self._write_sink,
         )
         try:
             raw_output, artifacts = self._run_agent(context)
@@ -541,6 +551,7 @@ class LLMSeatAgent(SeatAgent):
                 "sdk_session_id": str(artifacts.get("session_id") or ""),
                 "sdk_last_response_id": str(artifacts.get("last_response_id") or ""),
                 "sdk_tool_calls": list(artifacts.get("tool_calls") or []),
+                "sdk_tool_writes": list(artifacts.get("tool_writes") or []),
                 "sdk_output_guardrails": list(artifacts.get("output_guardrails") or []),
                 "sdk_tool_input_guardrails": list(artifacts.get("tool_input_guardrails") or []),
                 "model_debug_private": dict(getattr(raw_output, "debug_private", {}) or {}),
@@ -553,6 +564,7 @@ class LLMSeatAgent(SeatAgent):
                 "last_response_id": str(artifacts.get("last_response_id") or ""),
                 "tool_call_count": tool_call_count,
                 "tool_calls": list(artifacts.get("tool_calls") or []),
+                "tool_writes": list(artifacts.get("tool_writes") or []),
             }
             return decision
         except MemorySummaryError:
@@ -580,6 +592,7 @@ class LLMSeatAgent(SeatAgent):
             accusation_gate={"ready": False},
             runtime_config=self._chat_runtime_config,
             mode="chat_intent",
+            write_sink=self._write_sink,
         )
         try:
             raw_intent, intent_artifacts = self._run_agent(intent_context)
@@ -587,6 +600,7 @@ class LLMSeatAgent(SeatAgent):
                 "session_id": str(intent_artifacts.get("session_id") or ""),
                 "intent_trace_id": str(intent_artifacts.get("trace_id") or ""),
                 "intent_last_response_id": str(intent_artifacts.get("last_response_id") or ""),
+                "intent_tool_writes": list(intent_artifacts.get("tool_writes") or []),
             }
             if hasattr(raw_intent, "text"):
                 sanitized_text = sanitize_public_chat(str(getattr(raw_intent, "text", "") or ""))
@@ -607,6 +621,7 @@ class LLMSeatAgent(SeatAgent):
                         "llm_runtime": self._chat_runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE),
                         "sdk_trace_id": str(intent_artifacts.get("trace_id") or ""),
                         "sdk_session_id": str(intent_artifacts.get("session_id") or ""),
+                        "sdk_tool_writes": list(intent_artifacts.get("tool_writes") or []),
                     },
                     agent_meta={
                         **self._chat_runtime_meta(),
@@ -617,6 +632,7 @@ class LLMSeatAgent(SeatAgent):
                         "last_response_id": str(intent_artifacts.get("last_response_id") or ""),
                         "tool_call_count": len(list(intent_artifacts.get("tool_calls") or [])),
                         "tool_calls": list(intent_artifacts.get("tool_calls") or []),
+                        "tool_writes": list(intent_artifacts.get("tool_writes") or []),
                     },
                 )
             if not raw_intent.speak:
@@ -624,6 +640,7 @@ class LLMSeatAgent(SeatAgent):
                 silent.debug_private["intent_rationale"] = raw_intent.rationale_private
                 silent.debug_private["intent_plan"] = raw_intent.model_dump()
                 silent.debug_private["sdk_intent_tool_calls"] = list(intent_artifacts.get("tool_calls") or [])
+                silent.debug_private["sdk_intent_tool_writes"] = list(intent_artifacts.get("tool_writes") or [])
                 silent.debug_private["sdk_output_guardrails"] = list(intent_artifacts.get("output_guardrails") or [])
                 return silent
 
@@ -634,10 +651,12 @@ class LLMSeatAgent(SeatAgent):
                 runtime_config=self._chat_runtime_config,
                 mode="chat_utterance",
                 chat_plan=raw_intent.model_dump(),
+                write_sink=self._write_sink,
             )
             raw_utterance, utterance_artifacts = self._run_agent(utterance_context)
             sanitized_text = sanitize_public_chat(raw_utterance.text or "")
             combined_tool_calls = [*list(intent_artifacts.get("tool_calls") or []), *list(utterance_artifacts.get("tool_calls") or [])]
+            combined_tool_writes = [*list(intent_artifacts.get("tool_writes") or []), *list(utterance_artifacts.get("tool_writes") or [])]
             shared_meta = {
                 **shared_meta,
                 "trace_id": str(utterance_artifacts.get("trace_id") or ""),
@@ -645,6 +664,7 @@ class LLMSeatAgent(SeatAgent):
                 "last_response_id": str(utterance_artifacts.get("last_response_id") or ""),
                 "tool_call_count": len(combined_tool_calls),
                 "tool_calls": combined_tool_calls,
+                "tool_writes": combined_tool_writes,
             }
             if not sanitized_text:
                 silent = self._silent_chat_decision(reason="unsafe_public_chat", extra_meta=shared_meta)
@@ -683,6 +703,8 @@ class LLMSeatAgent(SeatAgent):
                     "sdk_last_response_id": str(utterance_artifacts.get("last_response_id") or ""),
                     "sdk_intent_tool_calls": list(intent_artifacts.get("tool_calls") or []),
                     "sdk_utterance_tool_calls": list(utterance_artifacts.get("tool_calls") or []),
+                    "sdk_intent_tool_writes": list(intent_artifacts.get("tool_writes") or []),
+                    "sdk_utterance_tool_writes": list(utterance_artifacts.get("tool_writes") or []),
                     "sdk_output_guardrails": [
                         *list(intent_artifacts.get("output_guardrails") or []),
                         *list(utterance_artifacts.get("output_guardrails") or []),
@@ -706,17 +728,29 @@ class LLMSeatAgent(SeatAgent):
             self._raise_chat_error(
                 "output_guardrail_blocked",
                 error=exc,
-                extra_debug=guardrail_exception_payload(exc),
+                extra_debug=guardrail_exception_payload(exc)
+                | {
+                    "tool_writes": [
+                        *list(intent_context.tool_write_log),
+                        *list(locals().get("utterance_context").tool_write_log if locals().get("utterance_context") else []),
+                    ]
+                },
             )
         except InputGuardrailTripwireTriggered as exc:
             self._raise_chat_error(
                 "input_guardrail_blocked",
                 error=exc,
-                extra_debug=guardrail_exception_payload(exc),
+                extra_debug=guardrail_exception_payload(exc)
+                | {
+                    "tool_writes": [
+                        *list(intent_context.tool_write_log),
+                        *list(locals().get("utterance_context").tool_write_log if locals().get("utterance_context") else []),
+                    ]
+                },
             )
         except MaxTurnsExceeded as exc:
-            self._raise_chat_error("max_turns_exceeded", error=exc)
+            self._raise_chat_error("max_turns_exceeded", error=exc, extra_debug={"tool_writes": list(intent_context.tool_write_log)})
         except TimeoutError as exc:
-            self._raise_chat_error("timeout", error=exc)
+            self._raise_chat_error("timeout", error=exc, extra_debug={"tool_writes": list(intent_context.tool_write_log)})
         except Exception as exc:
-            self._raise_chat_error("model_error", error=exc)
+            self._raise_chat_error("model_error", error=exc, extra_debug={"tool_writes": list(intent_context.tool_write_log)})

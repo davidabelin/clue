@@ -45,6 +45,7 @@ def build_initial_state(game_id: str, title: str, seats: list[SeatConfig], hidde
     seat_state = {}
     social_state = {
         "last_public_event_index": 0,
+        "last_proactive_turn_index": -1,
         "threads": [],
         "seats": {},
     }

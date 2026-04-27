@@ -1,5 +1,5 @@
 runtime: python314
-service: clue
+service: clue-smoke
 entrypoint: gunicorn --timeout 180 --graceful-timeout 30 --worker-tmp-dir /tmp -b :$PORT run:app
 
 beta_settings:
@@ -9,16 +9,16 @@ automatic_scaling:
   max_instances: 1
 
 env_variables:
-  APP_BASE_PATH: /clue
+  APP_BASE_PATH: /smoke-clue
   AIX_HUB_URL: https://aix-labs.uw.r.appspot.com/
   CLUE_DATABASE_URL: ""
-  CLUE_DATABASE_URL_SECRET: projects/aix-labs/secrets/clue-database-url/versions/latest
-  CLUE_DB_PATH: /tmp/clue.db
+  CLUE_DATABASE_URL_SECRET: projects/aix-labs/secrets/clue-smoke-database-url/versions/latest
+  CLUE_DB_PATH: /tmp/clue-smoke.db
   CLUE_SECRET_KEY: ""
-  CLUE_SECRET_KEY_SECRET: projects/aix-labs/secrets/clue-secret-key/versions/latest
+  CLUE_SECRET_KEY_SECRET: projects/aix-labs/secrets/clue-smoke-secret-key/versions/latest
   CLUE_INTERNAL_WORKER_TOKEN: ""
   CLUE_ADMIN_TOKEN: ""
-  CLUE_ADMIN_TOKEN_SECRET: projects/aix-labs/secrets/clue-admin-token/versions/latest
+  CLUE_ADMIN_TOKEN_SECRET: projects/aix-labs/secrets/clue-smoke-admin-token/versions/latest
   CLUE_LLM_MODEL: gpt-5.4-mini-2026-03-17
   CLUE_LLM_REASONING_EFFORT: medium
   CLUE_LLM_TIMEOUT_SECONDS: "45"

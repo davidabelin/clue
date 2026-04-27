@@ -1,13 +1,13 @@
 # Clue ML Runtime Guide
 
 ## Purpose
-This document describes the shipped OpenAI seat runtime in **v1.7.6**. It is for the maintainer changing prompts, profiles, tools, tracing, failure behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
+This document describes the shipped OpenAI seat runtime in **v1.8.0**. It is for the maintainer changing prompts, profiles, tools, tracing, failure behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
 
 ## Runtime Boundary
 - `clue_core` owns rules, hidden setup, legality, turn progression, refutation order, accusations, and filtered snapshots.
 - `clue_web.runtime.GameService` owns orchestration: snapshot building, tool-snapshot generation, seat-agent execution, diagnostics, and persistence.
 - `clue_agents` owns autonomous seat policy selection.
-- The model-facing path can inspect seat-local context and return structured output, but it never mutates gameplay state directly.
+- The model-facing path can inspect seat-local context and return structured output. Its write tools may persist durable NHP memory/social state only; they never mutate gameplay state directly.
 - The `GameMaster` remains the only authority that applies actions.
 
 ## Seat Runtime Topology
@@ -26,6 +26,7 @@ This document describes the shipped OpenAI seat runtime in **v1.7.6**. It is for
 ### Idle chat path
 - Chat is separate from gameplay decisions
 - `GameService.maybe_run_idle_chat()` decides whether one non-human seat may speak after new player-facing public activity
+- If all new public activity has been processed and no autonomous rules action is pending, proactive quiet-table chat may run once per game turn
 - The chat runtime uses a two-stage SDK flow:
   1. `ChatIntentOutput`
   2. `ChatUtteranceOutput`
@@ -72,12 +73,14 @@ Each SDK run gets a code-owned `SeatAgentContext` containing:
 - the trace id and local session id
 - chat-plan data for the second chat stage
 - durable memory context injected only for internal NHP runtime calls
+- the repository-backed write sink for durable NHP memory/social writes
 - tool-access logs for diagnostics
+- tool-write logs for private traces and admin inspection
 
 The context is the source of truth for tools and guardrails. This avoids pushing seat-private logic into prompt strings and keeps the privacy boundary code-owned.
 
-## Read-Only Tool Surface
-The current seat agent exposes only read-only tools. Examples include:
+## Tool Surface
+Most tools are read-only. Examples include:
 - legal action envelope
 - board and room summary
 - belief summary and top hypotheses
@@ -89,9 +92,17 @@ The current seat agent exposes only read-only tools. Examples include:
 - durable cross-game memory and relationship context
 - final-game context for memory-summary runs
 
+The v1.8.0 write tools are deliberately narrow:
+- `record_memory_note`
+  appends a durable first-person NHP note.
+- `update_relationship_posture`
+  updates a bounded durable relationship row and writes an audit note.
+- `record_social_intent_note`
+  appends the NHP's intended pressure, alliance, deflection, or table-context note.
+
 Rules for future tools:
-- keep them read-only
 - keep them seat-local
+- keep write tools outside rules authority
 - do not bypass the legal envelope
 - do not expose another seat's private hand or the raw hidden setup
 - prefer compact summaries over bulk dumps
@@ -173,6 +184,7 @@ Durable NHP memory lives in repository tables rather than the encrypted SDK sess
 
 - `nhp_memory` stores one memory job per completed game and NHP seat.
 - `nhp_relationships` stores bounded cross-game relationship posture keyed by canonical NHP character and either canonical NHP target or normalized HP display name.
+- `nhp_notes` stores append-only memory/social/tool-audit notes and is loaded into `memory_context.recent_notes`.
 - Only `ready` memory rows are loaded into future NHP turn/chat/memory runs.
 - `pending` and `failed` rows are visible through Administrator Mode and can be retried.
 - Normal player snapshots never include durable memory; `GameService._build_internal_snapshot()` injects it only for autonomous runtime calls.
@@ -195,7 +207,7 @@ Durable memory model/runtime failure leaves a retryable memory job.
 
 ## What To Check Before Changing This Runtime
 1. Does the change preserve the rule that only the Game Master mutates game state?
-2. Does the change keep tools read-only and seat-local?
+2. Does the change keep read tools read-only, write tools durable-memory-only, and all tools seat-local?
 3. Does the change preserve filtered private/public visibility boundaries?
 4. Does the change preserve fail-loud LLM behavior without heuristic substitution?
 5. Do the env defaults, docs, and tests all still match?
@@ -205,5 +217,6 @@ Durable memory model/runtime failure leaves a retryable memory job.
 - heuristic behavior remains testable as an explicit policy, not as an LLM substitute
 - LLM seats cannot bypass legality or privacy checks
 - seat-private debug data remains private
+- durable write-tool rows are visible in Administrator Mode but not normal player snapshots
 - session storage stays local-first unless explicitly redesigned
 - deployment still works with Secret Manager-backed API keys and database URLs

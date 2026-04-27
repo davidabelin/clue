@@ -38,6 +38,7 @@ Owns persistence:
 - append-only event history
 - loading and saving the current state snapshot
 - durable NHP memory jobs and cross-game relationship rows
+- append-only durable NHP note/audit rows
 
 ### `clue_web`
 Owns app assembly and request orchestration:
@@ -109,7 +110,7 @@ Humans do not log in with full accounts in v1. A signed seat token maps to one p
 ### Administrator flow
 `/admin?admin_token=...` and `/api/v1/admin/...`
 - require `CLUE_ADMIN_TOKEN`
-- expose saved games, full game detail, durable NHP memory, durable relationships, and memory-job retry
+- expose saved games, full game detail, durable NHP memory, durable notes/tool writes, durable relationships, HP/NHP history, and memory-job retry
 - are maintainer surfaces, not normal player views
 
 ## Rules Engine And Snapshot Boundary
@@ -168,7 +169,7 @@ The heuristic seat remains the simplest end-to-end autonomous path. It is determ
 `LLMSeatAgent` wraps the OpenAI Agents SDK while keeping the integration narrow:
 - one code-owned context object
 - typed output contracts
-- read-only tools
+- read tools plus narrow durable memory/social write tools
 - output and tool guardrails
 - local encrypted session memory
 - fail-loud handling when the SDK, API key, model call, or structured output fails
@@ -196,7 +197,7 @@ Tracked concepts include:
 - relationship scores
 - active side threads
 
-The model can influence this layer only through structured chat output. The persisted social state is normalized and bounded in code before it is written back to the game state.
+The model can influence this layer through structured chat output and the bounded `update_relationship_posture` write tool. The persisted social state is normalized and bounded in code before it is written back to the game state.
 
 ## Durable NHP Memory
 Completed games create a durable memory job for each non-human seat.
@@ -212,6 +213,7 @@ Memory lifecycle:
 - `failed`: model/runtime output failed and can be retried from Administrator Mode.
 
 Ready memory and durable relationship posture are loaded into future NHP turn, chat, and memory-summary runs. New games also use durable relationships as small social-posture nudges while preserving the YAML persona relationship hints.
+Append-only `nhp_notes` rows capture durable observations, social intent notes, and write-tool audit history. Recent notes are injected only into internal NHP memory context and Administrator Mode.
 
 ## Storage Model
 `ClueRepository` is a thin SQLAlchemy facade that supports both:
@@ -225,6 +227,7 @@ Important persistence properties:
 - events are appended with a monotonically increasing `event_index`
 - the repository stores opaque JSON payloads for config, setup, state, and notebooks rather than enforcing a relational gameplay schema
 - durable NHP memory and relationships are relational enough for admin lookup and cross-game agent context
+- durable NHP notes are append-only so model-facing writes remain audit-visible even if the final model output fails
 
 That tradeoff keeps the application logic in Python, where the privacy and rules semantics already live.
 
@@ -254,7 +257,7 @@ This is why notebook text, chat text, and action dropdown drafts are tracked sep
 - durable NHP memory is not sent to normal player snapshots
 
 ### LLM privacy
-- tools are read-only and seat-local
+- read tools are seat-local; write tools are limited to durable NHP memory/social state
 - public chat is sanitized
 - sensitive tracing is off by default
 - SDK response storage is enabled for active session continuity, while durable cross-game memory remains in Clue-owned storage
@@ -263,6 +266,8 @@ This is why notebook text, chat text, and action dropdown drafts are tracked sep
 ### Deployment secrets
 - `CLUE_DATABASE_URL_SECRET` can fill the database URL from Secret Manager
 - `OPENAI_API_KEY_SECRET_VERSION` can fill the OpenAI API key from Secret Manager
+- `CLUE_SECRET_KEY_SECRET` can fill the Flask/seat-token signing secret from Secret Manager
+- `CLUE_ADMIN_TOKEN_SECRET` can fill the Administrator Mode token from Secret Manager
 - `CLUE_ADMIN_TOKEN` protects Administrator Mode and admin APIs
 
 ## Testing Strategy

@@ -2,7 +2,7 @@
 
 The game service and deterministic rules engine should not need to know how the
 Agents SDK is wired together. This module keeps that integration boundary small:
-typed output, read-only tools, local session handling, guardrails, and the
+typed output, read tools, narrow durable write tools, local session handling, guardrails, and the
 diagnostic metadata needed by future maintainers.
 """
 
@@ -182,7 +182,9 @@ class SeatAgentContext:
     session_id: str
     mode: str = "turn"
     chat_plan: dict[str, Any] = field(default_factory=dict)
+    write_sink: Any = None
     tool_access_log: list[dict[str, Any]] = field(default_factory=list)
+    tool_write_log: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def game_id(self) -> str:
@@ -262,6 +264,16 @@ class SeatAgentContext:
             }
         )
 
+    def record_tool_write(self, name: str, result: dict[str, Any]) -> None:
+        """Append one model-facing write-tool result for diagnostics."""
+
+        self.tool_write_log.append(
+            {
+                "name": name,
+                "result": dict(result or {}),
+            }
+        )
+
     def move_target_map(self) -> dict[str, dict[str, Any]]:
         """Index legal move options by target node id for guardrails and tools."""
 
@@ -285,6 +297,7 @@ class SeatRunArtifacts:
     session_id: str
     last_response_id: str = ""
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_writes: list[dict[str, Any]] = field(default_factory=list)
     output_guardrails: list[dict[str, Any]] = field(default_factory=list)
     tool_input_guardrails: list[dict[str, Any]] = field(default_factory=list)
 
@@ -297,6 +310,7 @@ def build_seat_context(
     runtime_config: LLMRuntimeConfig,
     mode: str = "turn",
     chat_plan: dict[str, Any] | None = None,
+    write_sink: Any = None,
 ) -> SeatAgentContext:
     """Build the private context object for one seat-agent run.
 
@@ -325,6 +339,7 @@ def build_seat_context(
         session_id=session_id,
         mode=mode_label,
         chat_plan=dict(chat_plan or {}),
+        write_sink=write_sink,
     )
 
 
@@ -609,6 +624,116 @@ if AGENTS_SDK_AVAILABLE:
         }
 
 
+    def _write_sink_unavailable(context: SeatAgentContext, tool_name: str) -> dict[str, Any]:
+        """Return the standard payload when write tools are unavailable."""
+
+        result = {"status": "unavailable", "reason": "write_sink_missing", "tool_name": tool_name}
+        context.record_tool_write(tool_name, result)
+        return result
+
+
+    @function_tool
+    def record_memory_note(
+        context: RunContextWrapper[SeatAgentContext],
+        note_text: str,
+        note_kind: str = "memory_note",
+        target_seat_id: str = "",
+    ) -> dict[str, Any]:
+        """Persist a durable first-person observation for this NHP."""
+
+        tool_name = "record_memory_note"
+        context.context.record_tool_call(
+            tool_name,
+            arguments={"note_kind": note_kind, "target_seat_id": target_seat_id},
+        )
+        if context.context.write_sink is None:
+            return _write_sink_unavailable(context.context, tool_name)
+        result = context.context.write_sink.record_note(
+            game_id=context.context.game_id,
+            seat_id=context.context.seat_id,
+            note_kind=note_kind,
+            note_text=note_text,
+            tool_name=tool_name,
+            target_seat_id=target_seat_id,
+            payload={"mode": context.context.mode},
+        )
+        context.context.record_tool_write(tool_name, result)
+        return result
+
+
+    @function_tool
+    def update_relationship_posture(
+        context: RunContextWrapper[SeatAgentContext],
+        target_seat_id: str,
+        affinity_delta: int = 0,
+        trust_delta: int = 0,
+        friction_delta: int = 0,
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Persist an immediate bounded relationship posture update."""
+
+        tool_name = "update_relationship_posture"
+        context.context.record_tool_call(
+            tool_name,
+            arguments={
+                "target_seat_id": target_seat_id,
+                "affinity_delta": affinity_delta,
+                "trust_delta": trust_delta,
+                "friction_delta": friction_delta,
+            },
+        )
+        if context.context.write_sink is None:
+            return _write_sink_unavailable(context.context, tool_name)
+        result = context.context.write_sink.update_relationship(
+            game_id=context.context.game_id,
+            seat_id=context.context.seat_id,
+            target_seat_id=target_seat_id,
+            affinity_delta=affinity_delta,
+            trust_delta=trust_delta,
+            friction_delta=friction_delta,
+            note=note,
+            tool_name=tool_name,
+            payload={"mode": context.context.mode},
+        )
+        context.context.record_tool_write(tool_name, result)
+        return result
+
+
+    @function_tool
+    def record_social_intent_note(
+        context: RunContextWrapper[SeatAgentContext],
+        intent: str,
+        topic: str = "",
+        pressure_hint: str = "",
+        target_seat_id: str = "",
+    ) -> dict[str, Any]:
+        """Persist this NHP's social intent for admin and future memory context."""
+
+        tool_name = "record_social_intent_note"
+        context.context.record_tool_call(
+            tool_name,
+            arguments={"intent": intent, "topic": topic, "target_seat_id": target_seat_id},
+        )
+        if context.context.write_sink is None:
+            return _write_sink_unavailable(context.context, tool_name)
+        result = context.context.write_sink.record_note(
+            game_id=context.context.game_id,
+            seat_id=context.context.seat_id,
+            note_kind="social_intent",
+            note_text=pressure_hint or topic or intent,
+            tool_name=tool_name,
+            target_seat_id=target_seat_id,
+            payload={
+                "mode": context.context.mode,
+                "intent": str(intent or ""),
+                "topic": str(topic or ""),
+                "pressure_hint": str(pressure_hint or ""),
+            },
+        )
+        context.context.record_tool_write(tool_name, result)
+        return result
+
+
     @output_guardrail(name="clue_turn_output_guardrail")
     def clue_turn_output_guardrail(
         context: RunContextWrapper[SeatAgentContext],
@@ -759,7 +884,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
     """Construct the Clue seat agent definition for one turn or chat run.
 
     The returned agent surface stays deliberately narrow: typed output,
-    read-only tools, and output guardrails only. Any new tool or prompt path
+    read tools, narrow durable write tools, and output guardrails. Any new tool or prompt path
     added here should be evaluated against the privacy and legality boundaries
     described in the maintainer docs.
     """
@@ -767,13 +892,18 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
     if not AGENTS_SDK_AVAILABLE:
         raise RuntimeError("OpenAI Agents SDK is not available in this environment.")
     mode_label = str(mode).strip().lower()
-    social_tools = [
+    social_read_tools = [
         get_social_state_summary,
         get_active_chat_threads,
         get_relationship_posture,
         get_recent_public_chat_turns,
         get_recent_public_narrative_turns,
         get_durable_memory_context,
+    ]
+    write_tools = [
+        record_memory_note,
+        update_relationship_posture,
+        record_social_intent_note,
     ]
     memory_tools = [
         get_final_game_context,
@@ -790,7 +920,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
         return Agent(
             name="Clue Seat Durable Memory Agent",
             instructions=_memory_summary_agent_instructions,
-            tools=memory_tools,
+            tools=[*memory_tools, *write_tools],
             model=runtime_config.model,
             model_settings=ModelSettings(
                 tool_choice="required",
@@ -813,7 +943,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
         return Agent(
             name="Clue Seat Chat Intent Agent",
             instructions=_chat_intent_agent_instructions,
-            tools=social_tools,
+            tools=[*social_read_tools, *write_tools],
             model=runtime_config.model,
             model_settings=ModelSettings(
                 tool_choice="required",
@@ -836,7 +966,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
         return Agent(
             name="Clue Seat Chat Utterance Agent",
             instructions=_chat_utterance_agent_instructions,
-            tools=social_tools,
+            tools=social_read_tools,
             model=runtime_config.model,
             model_settings=ModelSettings(
                 tool_choice="auto",
@@ -868,7 +998,8 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
             read_private_notebook,
             inspect_move_target,
             inspect_refute_card,
-            *social_tools,
+            *social_read_tools,
+            *write_tools,
         ],
         model=runtime_config.model,
         model_settings=ModelSettings(
@@ -899,7 +1030,7 @@ def _agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Ag
     return (
         "You are the autonomous seat agent for one player in the board game Clue.\n"
         "The deterministic rules engine is authoritative. You must choose exactly one legal action.\n"
-        "You may only use the read-only tools provided. They summarize seat-local private state.\n"
+        "Rules facts come from read-only tools only; write tools are only for durable NHP memory/social notes.\n"
         "Never invent new facts, never mention another seat's hidden card ownership, and never expose private information in public text.\n"
         f"Seat: {seat.get('display_name', 'Unknown')} ({seat.get('character', 'Unknown')}).\n"
         f"In-character public voice: {persona_prompt(str(seat.get('character') or ''))}\n"
@@ -909,6 +1040,7 @@ def _agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Ag
         f"Accusation gate ready: {bool(context.context.accusation_gate.get('ready'))}.\n"
         "Use the social-state tools when they help break ties, pressure a specific opponent, or shape safe public text.\n"
         "Use durable memory when it is available, especially to honor grudges, favors, alliances, and prior strategic lessons.\n"
+        "Use write tools to record meaningful memory notes or relationship posture changes when they will help future games.\n"
         "Call at least one relevant tool before returning. Keep rationale_private short and useful for maintainers."
     )
 
@@ -927,6 +1059,7 @@ def _chat_intent_agent_instructions(context: RunContextWrapper[SeatAgentContext]
         f"Chat persona guidance:\n{social_prompt(str(seat.get('character') or ''))}\n"
         "If silence is better than adding noise, return `speak=false`.\n"
         "When speaking, choose a clear target seat when one fits, a short thread topic, a grounded tone, and small bounded relationship deltas.\n"
+        "Use write tools to record the social intent or relationship shift when the exchange should matter later.\n"
         "Keep rationale_private short and useful for maintainers."
     )
 
@@ -963,6 +1096,7 @@ def _memory_summary_agent_instructions(context: RunContextWrapper[SeatAgentConte
         "Write as the character, but keep the summary compact and useful for future strategic and social decisions.\n"
         "Capture what mattered: outcome, useful deductions, strategic mistakes, social pressure, favors, grudges, alliances, betrayals, and future play cues.\n"
         "Relationship updates should target canonical NHP character names or normalized human display-name identities from the provided context.\n"
+        "Use write tools for durable observations or relationship posture updates that should be immediately visible to future runs.\n"
         f"Seat: {seat.get('display_name', 'Unknown')} ({seat.get('character', 'Unknown')}).\n"
         f"Persona guidance:\n{social_prompt(str(seat.get('character') or ''))}\n"
         "Return a structured durable memory summary and a short rationale_private for maintainers."
@@ -1080,6 +1214,7 @@ def build_artifacts(result: Any, context: SeatAgentContext) -> SeatRunArtifacts:
         session_id=context.session_id,
         last_response_id=str(getattr(result, "last_response_id", "") or ""),
         tool_calls=tool_calls,
+        tool_writes=list(context.tool_write_log),
         output_guardrails=output_guardrails,
         tool_input_guardrails=tool_input_guardrails,
     )

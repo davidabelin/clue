@@ -57,6 +57,202 @@ def _new_game_seed() -> int:
     return secrets.randbits(64)
 
 
+class RepositoryNHPWriteSink:
+    """Persist model-facing NHP memory/social writes outside rules authority."""
+
+    def __init__(self, repository: ClueRepository) -> None:
+        """Store the repository used for immediate durable write-tool effects."""
+
+        self._repository = repository
+
+    @staticmethod
+    def _clamp_delta(value: Any) -> int:
+        """Clamp a model-proposed relationship delta into the public tool contract."""
+
+        try:
+            return min(max(int(value), -2), 2)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _clamp_social(value: Any, *, minimum: int, maximum: int) -> int:
+        """Clamp a current per-game social value after an immediate write."""
+
+        try:
+            return min(max(int(value), minimum), maximum)
+        except (TypeError, ValueError):
+            return minimum
+
+    def _source_context(self, game_id: str, seat_id: str) -> tuple[dict[str, Any], dict[str, Any], str]:
+        """Resolve and validate the NHP source seat for a model-facing write."""
+
+        source_game_id = str(game_id or "").strip()
+        source_seat_id = str(seat_id or "").strip()
+        if not source_game_id or not source_seat_id:
+            raise ValueError("source_game_and_seat_required")
+        state = self._repository.get_state(source_game_id)
+        seat = dict((state.get("seats") or {}).get(source_seat_id) or {})
+        if not seat:
+            raise ValueError("source_seat_not_found")
+        if str(seat.get("seat_kind", "")).strip().lower() == "human":
+            raise ValueError("human_seats_cannot_use_nhp_write_tools")
+        agent_identity = str(seat.get("character") or "").strip()
+        if not agent_identity:
+            raise ValueError("source_agent_identity_missing")
+        return state, seat | {"seat_id": source_seat_id}, agent_identity
+
+    @staticmethod
+    def _target_context(state: dict[str, Any], target_seat_id: str) -> dict[str, str]:
+        """Resolve one current-game target seat into durable identity fields."""
+
+        clean_target_id = str(target_seat_id or "").strip()
+        if not clean_target_id:
+            return {"seat_id": "", "target_kind": "", "target_identity": "", "target_display_name": ""}
+        target = dict((state.get("seats") or {}).get(clean_target_id) or {})
+        if not target:
+            raise ValueError("target_seat_not_found")
+        display_name = str(target.get("display_name") or target.get("character") or clean_target_id).strip()
+        if str(target.get("seat_kind", "")).strip().lower() == "human":
+            target_kind = "hp"
+            target_identity = normalize_player_identity(display_name)
+        else:
+            target_kind = "nhp"
+            target_identity = str(target.get("character") or "").strip()
+        if not target_identity:
+            raise ValueError("target_identity_missing")
+        return {
+            "seat_id": clean_target_id,
+            "target_kind": target_kind,
+            "target_identity": target_identity,
+            "target_display_name": display_name or target_identity,
+        }
+
+    def _apply_current_social_delta(
+        self,
+        state: dict[str, Any],
+        *,
+        source_seat_id: str,
+        target_seat_id: str,
+        affinity_delta: int,
+        trust_delta: int,
+        friction_delta: int,
+    ) -> None:
+        """Fold one immediate durable relationship write into current social state."""
+
+        if not target_seat_id:
+            return
+        social = dict(state.get("social") or {})
+        social_seats = dict(social.get("seats") or {})
+        if source_seat_id not in social_seats:
+            return
+        source_social = dict(social_seats.get(source_seat_id) or {})
+        relationships = dict(source_social.get("relationships") or {})
+        current = dict(relationships.get(target_seat_id) or {"affinity": 0, "trust": 0, "friction": 0})
+        current["affinity"] = self._clamp_social(int(current.get("affinity", 0) or 0) + affinity_delta, minimum=-2, maximum=2)
+        current["trust"] = self._clamp_social(int(current.get("trust", 0) or 0) + trust_delta, minimum=-2, maximum=2)
+        current["friction"] = self._clamp_social(int(current.get("friction", 0) or 0) + friction_delta, minimum=0, maximum=3)
+        relationships[target_seat_id] = current
+        source_social["relationships"] = relationships
+        social_seats[source_seat_id] = source_social
+        social["seats"] = social_seats
+        state["social"] = social
+
+    def record_note(
+        self,
+        *,
+        game_id: str,
+        seat_id: str,
+        note_kind: str,
+        note_text: str,
+        tool_name: str,
+        target_seat_id: str = "",
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist one immediate durable note for the current NHP source seat."""
+
+        try:
+            state, _seat, agent_identity = self._source_context(game_id, seat_id)
+            target = self._target_context(state, target_seat_id) if str(target_seat_id or "").strip() else {}
+            note = self._repository.record_nhp_note(
+                agent_identity=agent_identity,
+                game_id=str(game_id),
+                seat_id=str(seat_id),
+                note_kind=note_kind,
+                note_text=note_text,
+                payload=dict(payload or {}),
+                tool_name=tool_name,
+                target_kind=str(target.get("target_kind") or ""),
+                target_identity=str(target.get("target_identity") or ""),
+                target_display_name=str(target.get("target_display_name") or ""),
+            )
+            return {"status": "ok", "note": note}
+        except (KeyError, ValueError) as exc:
+            return {"status": "rejected", "reason": str(exc), "tool_name": str(tool_name or "")}
+
+    def update_relationship(
+        self,
+        *,
+        game_id: str,
+        seat_id: str,
+        target_seat_id: str,
+        affinity_delta: int = 0,
+        trust_delta: int = 0,
+        friction_delta: int = 0,
+        note: str = "",
+        tool_name: str = "",
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist one immediate bounded durable relationship update and audit note."""
+
+        try:
+            state, _seat, agent_identity = self._source_context(game_id, seat_id)
+            target = self._target_context(state, target_seat_id)
+            if str(target.get("seat_id") or "") == str(seat_id):
+                raise ValueError("relationship_target_cannot_be_self")
+            clamped = {
+                "affinity_delta": self._clamp_delta(affinity_delta),
+                "trust_delta": self._clamp_delta(trust_delta),
+                "friction_delta": self._clamp_delta(friction_delta),
+            }
+            relationship = self._repository.upsert_nhp_relationship(
+                agent_identity=agent_identity,
+                target_kind=target["target_kind"],
+                target_identity=target["target_identity"],
+                target_display_name=target["target_display_name"],
+                source_game_id=str(game_id),
+                note=str(note or "").strip(),
+                **clamped,
+            )
+            audit_payload = {
+                **dict(payload or {}),
+                "target_seat_id": str(target.get("seat_id") or ""),
+                "clamped_deltas": clamped,
+                "relationship": relationship,
+            }
+            audit_note = self._repository.record_nhp_note(
+                agent_identity=agent_identity,
+                game_id=str(game_id),
+                seat_id=str(seat_id),
+                note_kind="relationship_update",
+                note_text=str(note or "Relationship posture updated.").strip(),
+                payload=audit_payload,
+                tool_name=tool_name,
+                target_kind=target["target_kind"],
+                target_identity=target["target_identity"],
+                target_display_name=target["target_display_name"],
+            )
+            self._apply_current_social_delta(
+                state,
+                source_seat_id=str(seat_id),
+                target_seat_id=str(target.get("seat_id") or ""),
+                **clamped,
+            )
+            self._repository.save_state_and_events(str(game_id), state=state, events=[])
+            return {"status": "ok", "relationship": relationship, "note": audit_note}
+        except (KeyError, ValueError) as exc:
+            return {"status": "rejected", "reason": str(exc), "tool_name": str(tool_name or "")}
+
+
 class GameService:
     """High-level gameplay service that bridges web requests, storage, and agents.
 
@@ -72,7 +268,8 @@ class GameService:
 
         self._repository = repository
         self._serializer = URLSafeSerializer(secret_key, salt="clue-seat-token")
-        self._agents = AgentRuntime()
+        self._write_sink = RepositoryNHPWriteSink(repository)
+        self._agents = AgentRuntime(write_sink=self._write_sink)
 
     @staticmethod
     def _latency_targets() -> dict[str, int]:
@@ -162,6 +359,7 @@ class GameService:
 
         return {
             "last_public_event_index": 0,
+            "last_proactive_turn_index": -1,
             "threads": [],
             "seats": {
                 seat_id: GameService._blank_social_seat_state(state, seat_id)
@@ -181,6 +379,7 @@ class GameService:
         defaults = self._build_social_defaults(state)
         social = dict(state.get("social") or {})
         social.setdefault("last_public_event_index", defaults["last_public_event_index"])
+        social.setdefault("last_proactive_turn_index", defaults["last_proactive_turn_index"])
         social["threads"] = [self._normalize_social_thread(item) for item in list(social.get("threads") or [])]
         seat_social = dict(social.get("seats") or {})
         for seat_id, payload in defaults["seats"].items():
@@ -205,6 +404,19 @@ class GameService:
         social["seats"] = seat_social
         state["social"] = social
         return social
+
+    def _merge_latest_social_state(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Preserve immediate write-tool social updates before saving local state."""
+
+        try:
+            latest_state = self._repository.get_state(str(state.get("game_id") or ""))
+        except KeyError:
+            return state
+        latest_social = latest_state.get("social")
+        if latest_social:
+            state["social"] = latest_social
+            self._ensure_social(state)
+        return state
 
     @staticmethod
     def _blank_social_seat_state(state: dict[str, Any], seat_id: str) -> dict[str, Any]:
@@ -399,6 +611,7 @@ class GameService:
             "agent_identity": agent_identity,
             "ready_memories": self._repository.ready_nhp_memory_for_agent(agent_identity, limit=5),
             "relationships": relationships,
+            "recent_notes": self._repository.recent_nhp_notes_for_agent(agent_identity, limit=8),
         }
 
     @staticmethod
@@ -875,14 +1088,27 @@ class GameService:
         return {
             "games": self._repository.list_games(limit=50),
             "nhp_memory": self._repository.list_nhp_memory(limit=100),
+            "nhp_notes": self._repository.list_nhp_notes(limit=100),
             "pending_memory": self._repository.list_pending_nhp_memory_jobs(include_failed=True, limit=100),
             "relationships": self._repository.list_nhp_relationships(limit=250),
+            "nhp_history": self._repository.list_nhp_history(limit=100),
+            "human_history": self._repository.list_human_player_history(limit=100),
         }
 
     def admin_game_detail(self, game_id: str) -> dict[str, Any]:
         """Return a full admin-authorized saved-game detail payload."""
 
         return self._repository.admin_game_detail(game_id)
+
+    def admin_nhp_history(self, *, agent_identity: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        """Return saved-game history for non-human player identities."""
+
+        return self._repository.list_nhp_history(agent_identity=agent_identity, limit=limit)
+
+    def admin_human_history(self, *, player_identity: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        """Return saved-game history for normalized human display names."""
+
+        return self._repository.list_human_player_history(player_identity=player_identity, limit=limit)
 
     def admin_retry_nhp_memory(self, memory_ids: list[str] | None = None) -> dict[str, Any]:
         """Retry pending or failed durable NHP memory jobs for Administrator Mode."""
@@ -1270,11 +1496,10 @@ class GameService:
 
         latest_public_event = public_events[-1]
         latest_public_event_index = int(latest_public_event["event_index"])
-        if all(
+        all_processed = all(
             int(dict(social_seats.get(seat_id) or {}).get("last_processed_public_event_index", 0)) >= latest_public_event_index
             for seat_id in nonhuman_ids
-        ):
-            return
+        )
 
         prior_social_index = int(social.get("last_public_event_index") or 0)
         new_public_events = [event for event in public_events if int(event.get("event_index") or 0) > prior_social_index]
@@ -1300,61 +1525,99 @@ class GameService:
         hottest_thread = self._hottest_social_thread(social)
         candidates: list[dict[str, Any]] = []
 
-        for seat_id in nonhuman_ids:
-            seat_social = dict(social_seats.get(seat_id) or {})
-            last_processed = int(seat_social.get("last_processed_public_event_index", 0) or 0)
-            unseen_events = [event for event in public_events if int(event.get("event_index") or 0) > last_processed]
-            if not unseen_events:
-                continue
+        if not all_processed:
+            for seat_id in nonhuman_ids:
+                seat_social = dict(social_seats.get(seat_id) or {})
+                last_processed = int(seat_social.get("last_processed_public_event_index", 0) or 0)
+                unseen_events = [event for event in public_events if int(event.get("event_index") or 0) > last_processed]
+                if not unseen_events:
+                    continue
 
-            cooldown = max(int(seat_social.get("cooldown_events_remaining", 0) or 0), 0)
-            if cooldown > 0:
-                seat_social["cooldown_events_remaining"] = max(cooldown - len(unseen_events), 0)
+                cooldown = max(int(seat_social.get("cooldown_events_remaining", 0) or 0), 0)
+                if cooldown > 0:
+                    seat_social["cooldown_events_remaining"] = max(cooldown - len(unseen_events), 0)
+                    seat_social["last_processed_public_event_index"] = latest_public_event_index
+                    social_seats[seat_id] = self._normalize_social_seat_state(seat_social)
+                    state_changed = True
+                    continue
+
+                seat = dict(state["seats"][seat_id])
+                addressed = bool(latest_public_chat and self._event_mentions_seat(latest_public_chat, seat))
+                participates_in_hot_thread = bool(
+                    hottest_thread
+                    and str(hottest_thread.get("status") or "") == "active"
+                    and seat_id in {str(item) for item in list(hottest_thread.get("participants") or [])}
+                    and int(hottest_thread.get("burst_count") or 0) < 2
+                )
+                focus_seat_id = str(seat_social.get("focus_seat_id") or "")
+                focus_involved = bool(
+                    focus_seat_id
+                    and latest_public_event
+                    and self._public_event_involves_seat(state, latest_public_event, focus_seat_id)
+                )
+                unresolved_friction = self._has_unresolved_friction_thread(social, seat_id)
+                chance = self._idle_chat_base_chance(str(seat.get("character") or ""))
+                if addressed:
+                    chance += 0.20
+                if participates_in_hot_thread:
+                    chance += 0.15
+                if focus_involved:
+                    chance += 0.10
+                if unresolved_friction:
+                    chance += 0.10
+                if seat_id in recent_chat_authors and not participates_in_hot_thread:
+                    chance -= 0.25
+                chance = max(0.0, min(chance, 0.90))
+                roll = self._idle_chat_roll(game_id, seat_id, latest_public_event_index)
+                if roll < chance:
+                    candidates.append(
+                        {
+                            "seat_id": seat_id,
+                            "addressed": addressed,
+                            "latest_event_actor": latest_event_actor == seat_id,
+                            "margin": round(chance - roll, 6),
+                            "proactive": False,
+                        }
+                    )
                 seat_social["last_processed_public_event_index"] = latest_public_event_index
                 social_seats[seat_id] = self._normalize_social_seat_state(seat_social)
                 state_changed = True
-                continue
-
-            seat = dict(state["seats"][seat_id])
-            addressed = bool(latest_public_chat and self._event_mentions_seat(latest_public_chat, seat))
-            participates_in_hot_thread = bool(
-                hottest_thread
-                and str(hottest_thread.get("status") or "") == "active"
-                and seat_id in {str(item) for item in list(hottest_thread.get("participants") or [])}
-                and int(hottest_thread.get("burst_count") or 0) < 2
-            )
-            focus_seat_id = str(seat_social.get("focus_seat_id") or "")
-            focus_involved = bool(
-                focus_seat_id
-                and latest_public_event
-                and self._public_event_involves_seat(state, latest_public_event, focus_seat_id)
-            )
-            unresolved_friction = self._has_unresolved_friction_thread(social, seat_id)
-            chance = self._idle_chat_base_chance(str(seat.get("character") or ""))
-            if addressed:
-                chance += 0.20
-            if participates_in_hot_thread:
-                chance += 0.15
-            if focus_involved:
-                chance += 0.10
-            if unresolved_friction:
-                chance += 0.10
-            if seat_id in recent_chat_authors and not participates_in_hot_thread:
-                chance -= 0.25
-            chance = max(0.0, min(chance, 0.90))
-            roll = self._idle_chat_roll(game_id, seat_id, latest_public_event_index)
-            if roll < chance:
-                candidates.append(
-                    {
-                        "seat_id": seat_id,
-                        "addressed": addressed,
-                        "latest_event_actor": latest_event_actor == seat_id,
-                        "margin": round(chance - roll, 6),
-                    }
-                )
-            seat_social["last_processed_public_event_index"] = latest_public_event_index
-            social_seats[seat_id] = self._normalize_social_seat_state(seat_social)
+        elif (
+            self._proactive_chat_enabled()
+            and str(latest_public_event.get("event_type") or "") != "chat_posted"
+            and int(social.get("last_proactive_turn_index", -1) or -1) < int(state.get("turn_index") or 0)
+        ):
+            social["last_proactive_turn_index"] = int(state.get("turn_index") or 0)
             state_changed = True
+            multiplier = self._proactive_chat_chance_multiplier()
+            for seat_id in nonhuman_ids:
+                if seat_id in recent_chat_authors:
+                    continue
+                seat_social = dict(social_seats.get(seat_id) or {})
+                if max(int(seat_social.get("cooldown_events_remaining", 0) or 0), 0) > 0:
+                    continue
+                seat = dict(state["seats"][seat_id])
+                participates_in_hot_thread = bool(
+                    hottest_thread
+                    and str(hottest_thread.get("status") or "") == "active"
+                    and seat_id in {str(item) for item in list(hottest_thread.get("participants") or [])}
+                    and int(hottest_thread.get("burst_count") or 0) < 2
+                )
+                chance = self._idle_chat_base_chance(str(seat.get("character") or "")) * multiplier
+                if participates_in_hot_thread:
+                    chance += 0.08
+                chance = max(0.0, min(chance, 0.35))
+                roll = self._idle_chat_roll(game_id, seat_id, latest_public_event_index + int(state.get("turn_index") or 0) + 9973)
+                if roll < chance:
+                    candidates.append(
+                        {
+                            "seat_id": seat_id,
+                            "addressed": False,
+                            "latest_event_actor": latest_event_actor == seat_id,
+                            "margin": round(chance - roll, 6),
+                            "proactive": True,
+                        }
+                    )
 
         social["seats"] = social_seats
         state["social"] = social
@@ -1377,6 +1640,7 @@ class GameService:
             try:
                 decision = self._agents.decide_chat(seat=seat, snapshot=snapshot)
             except LLMDecisionError as exc:
+                state = self._merge_latest_social_state(state)
                 events.append(
                     self._trace_event(
                         "trace_llm_unavailable",
@@ -1398,6 +1662,9 @@ class GameService:
             if decision is None:
                 pass
             else:
+                state = self._merge_latest_social_state(state)
+                if decision.agent_meta.get("tool_writes"):
+                    state_changed = True
                 safe_text = sanitize_public_chat(str(decision.text or ""))
                 if decision.speak and safe_text:
                     next_public_index = self._repository.next_event_index(game_id) + 1
@@ -1448,6 +1715,7 @@ class GameService:
             try:
                 decision = self._agents.decide(seat=seat, snapshot=snapshot, tool_snapshot=tool_snapshot_payload)
             except LLMDecisionError as exc:
+                state = self._merge_latest_social_state(state)
                 decision_latency_ms = round((time.perf_counter() - decision_started) * 1000.0, 2)
                 metric = {
                     "recorded_at": datetime.now(UTC).isoformat(),
@@ -1528,6 +1796,7 @@ class GameService:
                 )
                 return
             decision_latency_ms = round((time.perf_counter() - decision_started) * 1000.0, 2)
+            state = self._merge_latest_social_state(state)
             game = GameMaster(state)
             try:
                 new_state, events = game.apply_action(seat_id, decision.to_action_payload())
@@ -1548,6 +1817,7 @@ class GameService:
                     "session_id": str(decision.agent_meta.get("session_id", "")),
                     "last_response_id": str(decision.agent_meta.get("last_response_id", "")),
                     "tool_call_count": int(decision.agent_meta.get("tool_call_count", 0) or 0),
+                    "tool_writes": list(decision.agent_meta.get("tool_writes") or []),
                     "reasoning_effort": str(decision.agent_meta.get("reasoning_effort", "")),
                     "model": str(decision.agent_meta.get("model", "")),
                     "guardrail_blocks": 0,
@@ -1604,6 +1874,7 @@ class GameService:
                 "last_response_id": str(decision.agent_meta.get("last_response_id", "")),
                 "tool_call_count": int(decision.agent_meta.get("tool_call_count", 0) or 0),
                 "tool_calls": list(decision.agent_meta.get("tool_calls") or []),
+                "tool_writes": list(decision.agent_meta.get("tool_writes") or []),
                 "reasoning_effort": str(decision.agent_meta.get("reasoning_effort", "")),
                 "model": str(decision.agent_meta.get("model", "")),
                 "guardrail_blocks": guardrail_blocks + int(bool(decision.agent_meta.get("guardrail_blocked"))),
@@ -1713,6 +1984,21 @@ class GameService:
             4: 0.50,
             5: 0.68,
         }.get(persona_chattiness(character), 0.32)
+
+    @staticmethod
+    def _proactive_chat_enabled() -> bool:
+        """Return whether quiet-table proactive NHP chat is enabled."""
+
+        return str(os.getenv("CLUE_PROACTIVE_CHAT_ENABLED", "1")).strip().lower() not in {"0", "false", "no", "off"}
+
+    @staticmethod
+    def _proactive_chat_chance_multiplier() -> float:
+        """Return the bounded multiplier applied to quiet-table chat chance."""
+
+        try:
+            return max(0.0, min(float(os.getenv("CLUE_PROACTIVE_CHAT_CHANCE_MULTIPLIER", "0.35")), 1.0))
+        except (TypeError, ValueError):
+            return 0.35
 
     @staticmethod
     def _idle_chat_roll(game_id: str, seat_id: str, latest_public_event_index: int) -> float:

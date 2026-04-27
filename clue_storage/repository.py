@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 from threading import RLock
 from typing import Any
+import uuid
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine, MappingResult
@@ -53,6 +54,12 @@ def _relationship_id(agent_identity: str, target_kind: str, target_identity: str
     """Return the stable durable relationship id for one agent-target pair."""
 
     return f"{str(agent_identity)}|{str(target_kind)}|{str(target_identity)}"
+
+
+def _note_id() -> str:
+    """Return one sortable-ish durable NHP note id."""
+
+    return f"note_{uuid.uuid4().hex}"
 
 
 def _clamp_int(value: Any, *, minimum: int, maximum: int) -> int:
@@ -193,6 +200,22 @@ class ClueRepository:
                 UNIQUE(agent_identity, target_kind, target_identity)
             );
 
+            CREATE TABLE IF NOT EXISTS nhp_notes (
+                id TEXT PRIMARY KEY,
+                note_kind TEXT NOT NULL,
+                tool_name TEXT NOT NULL DEFAULT '',
+                agent_identity TEXT NOT NULL,
+                source_game_id TEXT NOT NULL,
+                source_seat_id TEXT NOT NULL,
+                target_kind TEXT NOT NULL DEFAULT '',
+                target_identity TEXT NOT NULL DEFAULT '',
+                target_display_name TEXT NOT NULL DEFAULT '',
+                note_text TEXT NOT NULL DEFAULT '',
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(source_game_id) REFERENCES games(id)
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_events_game_index ON events(game_id, event_index);
             CREATE INDEX IF NOT EXISTS idx_seats_game ON seats(game_id);
             CREATE INDEX IF NOT EXISTS idx_events_game_id ON events(game_id, id);
@@ -200,6 +223,9 @@ class ClueRepository:
             CREATE INDEX IF NOT EXISTS idx_nhp_memory_agent ON nhp_memory(agent_identity, status, updated_at);
             CREATE INDEX IF NOT EXISTS idx_nhp_memory_status ON nhp_memory(status, updated_at);
             CREATE INDEX IF NOT EXISTS idx_nhp_relationships_agent ON nhp_relationships(agent_identity);
+            CREATE INDEX IF NOT EXISTS idx_nhp_notes_agent ON nhp_notes(agent_identity, created_at);
+            CREATE INDEX IF NOT EXISTS idx_nhp_notes_source ON nhp_notes(source_game_id, source_seat_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_nhp_notes_target ON nhp_notes(target_kind, target_identity, created_at);
         """
 
         postgres_schema = """
@@ -280,6 +306,21 @@ class ClueRepository:
                 UNIQUE(agent_identity, target_kind, target_identity)
             );
 
+            CREATE TABLE IF NOT EXISTS nhp_notes (
+                id TEXT PRIMARY KEY,
+                note_kind TEXT NOT NULL,
+                tool_name TEXT NOT NULL DEFAULT '',
+                agent_identity TEXT NOT NULL,
+                source_game_id TEXT NOT NULL REFERENCES games(id),
+                source_seat_id TEXT NOT NULL,
+                target_kind TEXT NOT NULL DEFAULT '',
+                target_identity TEXT NOT NULL DEFAULT '',
+                target_display_name TEXT NOT NULL DEFAULT '',
+                note_text TEXT NOT NULL DEFAULT '',
+                payload_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+
             CREATE UNIQUE INDEX IF NOT EXISTS idx_events_game_index ON events(game_id, event_index);
             CREATE INDEX IF NOT EXISTS idx_seats_game ON seats(game_id);
             CREATE INDEX IF NOT EXISTS idx_events_game_id ON events(game_id, id);
@@ -287,6 +328,9 @@ class ClueRepository:
             CREATE INDEX IF NOT EXISTS idx_nhp_memory_agent ON nhp_memory(agent_identity, status, updated_at);
             CREATE INDEX IF NOT EXISTS idx_nhp_memory_status ON nhp_memory(status, updated_at);
             CREATE INDEX IF NOT EXISTS idx_nhp_relationships_agent ON nhp_relationships(agent_identity);
+            CREATE INDEX IF NOT EXISTS idx_nhp_notes_agent ON nhp_notes(agent_identity, created_at);
+            CREATE INDEX IF NOT EXISTS idx_nhp_notes_source ON nhp_notes(source_game_id, source_seat_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_nhp_notes_target ON nhp_notes(target_kind, target_identity, created_at);
         """
         self._run_script(sqlite_schema if self._dialect == "sqlite" else postgres_schema)
         self._ensure_seat_key_column()
@@ -687,6 +731,25 @@ class ClueRepository:
             "updated_at": row["updated_at"],
         }
 
+    @staticmethod
+    def _note_row(row: dict[str, Any]) -> dict[str, Any]:
+        """Normalize one durable NHP note or tool-audit row into app-facing shape."""
+
+        return {
+            "id": row["id"],
+            "note_kind": row["note_kind"],
+            "tool_name": row["tool_name"],
+            "agent_identity": row["agent_identity"],
+            "source_game_id": row["source_game_id"],
+            "source_seat_id": row["source_seat_id"],
+            "target_kind": row["target_kind"],
+            "target_identity": row["target_identity"],
+            "target_display_name": row["target_display_name"],
+            "note_text": row["note_text"],
+            "payload": json.loads(row["payload_json"] or "{}"),
+            "created_at": row["created_at"],
+        }
+
     def list_games(self, *, limit: int = 50) -> list[dict[str, Any]]:
         """Return recent saved games for Administrator Mode."""
 
@@ -1015,6 +1078,180 @@ class ClueRepository:
             ).mappings()
             return [self._relationship_row(dict(row)) for row in rows]
 
+    def record_nhp_note(
+        self,
+        *,
+        agent_identity: str,
+        game_id: str,
+        seat_id: str,
+        note_kind: str,
+        note_text: str = "",
+        payload: dict[str, Any] | None = None,
+        tool_name: str = "",
+        target_kind: str = "",
+        target_identity: str = "",
+        target_display_name: str = "",
+    ) -> dict[str, Any]:
+        """Append one durable NHP memory/social/tool-audit note."""
+
+        agent = str(agent_identity or "").strip()
+        source_game_id = str(game_id or "").strip()
+        source_seat_id = str(seat_id or "").strip()
+        kind = str(note_kind or "tool_audit").strip().lower() or "tool_audit"
+        if not agent or not source_game_id or not source_seat_id:
+            raise ValueError("Durable NHP notes require agent identity, game id, and seat id.")
+        now = utcnow_iso()
+        row_id = _note_id()
+        with self._lock, self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO nhp_notes (
+                        id, note_kind, tool_name, agent_identity, source_game_id, source_seat_id,
+                        target_kind, target_identity, target_display_name, note_text, payload_json, created_at
+                    )
+                    VALUES (
+                        :id, :note_kind, :tool_name, :agent_identity, :source_game_id, :source_seat_id,
+                        :target_kind, :target_identity, :target_display_name, :note_text, :payload_json, :created_at
+                    )
+                    """
+                ),
+                {
+                    "id": row_id,
+                    "note_kind": kind[:64],
+                    "tool_name": str(tool_name or "")[:96],
+                    "agent_identity": agent,
+                    "source_game_id": source_game_id,
+                    "source_seat_id": source_seat_id,
+                    "target_kind": str(target_kind or "").strip().lower()[:16],
+                    "target_identity": str(target_identity or "").strip()[:160],
+                    "target_display_name": str(target_display_name or "").strip()[:160],
+                    "note_text": str(note_text or "").strip()[:2000],
+                    "payload_json": json.dumps(dict(payload or {})),
+                    "created_at": now,
+                },
+            )
+            row = self._first_or_none(
+                conn.execute(text("SELECT * FROM nhp_notes WHERE id = :id"), {"id": row_id}).mappings()
+            )
+        if row is None:
+            raise RuntimeError(f"Could not append durable NHP note: {row_id}")
+        return self._note_row(row)
+
+    def list_nhp_notes(
+        self,
+        *,
+        agent_identity: str = "",
+        game_id: str = "",
+        seat_id: str = "",
+        note_kind: str = "",
+        target_kind: str = "",
+        target_identity: str = "",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Return durable NHP notes for runtime context and admin history views."""
+
+        clauses: list[str] = []
+        params: dict[str, Any] = {"limit": min(max(int(limit), 1), 500)}
+        if str(agent_identity).strip():
+            clauses.append("agent_identity = :agent_identity")
+            params["agent_identity"] = str(agent_identity).strip()
+        if str(game_id).strip():
+            clauses.append("source_game_id = :game_id")
+            params["game_id"] = str(game_id).strip()
+        if str(seat_id).strip():
+            clauses.append("source_seat_id = :seat_id")
+            params["seat_id"] = str(seat_id).strip()
+        if str(note_kind).strip():
+            clauses.append("note_kind = :note_kind")
+            params["note_kind"] = str(note_kind).strip().lower()
+        if str(target_kind).strip():
+            clauses.append("target_kind = :target_kind")
+            params["target_kind"] = str(target_kind).strip().lower()
+        if str(target_identity).strip():
+            clauses.append("target_identity = :target_identity")
+            params["target_identity"] = str(target_identity).strip()
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT *
+                    FROM nhp_notes
+                    {where}
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings()
+            return [self._note_row(dict(row)) for row in rows]
+
+    def recent_nhp_notes_for_agent(self, agent_identity: str, *, limit: int = 8) -> list[dict[str, Any]]:
+        """Return recent durable notes for one canonical NHP identity."""
+
+        return self.list_nhp_notes(agent_identity=agent_identity, limit=limit)
+
+    def list_nhp_history(self, *, agent_identity: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        """Return saved-game appearances for NHP history views."""
+
+        clauses = ["s.seat_kind != 'human'"]
+        params: dict[str, Any] = {"limit": min(max(int(limit), 1), 500)}
+        if str(agent_identity).strip():
+            clauses.append("s.character_name = :agent_identity")
+            params["agent_identity"] = str(agent_identity).strip()
+        where = "WHERE " + " AND ".join(clauses)
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT
+                        s.game_id, g.title, g.status, s.seat_key, s.display_name,
+                        s.character_name, s.seat_kind, s.agent_model, s.first_seen_at,
+                        g.created_at AS game_created_at, g.updated_at AS game_updated_at
+                    FROM seats AS s
+                    JOIN games AS g ON g.id = s.game_id
+                    {where}
+                    ORDER BY g.updated_at DESC, g.created_at DESC, s.id
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings()
+            return [dict(row) for row in rows]
+
+    def list_human_player_history(self, *, player_identity: str = "", limit: int = 100) -> list[dict[str, Any]]:
+        """Return saved-game appearances for human display-name history views."""
+
+        normalized = normalize_player_identity(player_identity)
+        clauses = ["s.seat_kind = 'human'"]
+        params: dict[str, Any] = {"limit": min(max(int(limit), 1), 500)}
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT
+                        s.game_id, g.title, g.status, s.seat_key, s.display_name,
+                        s.character_name, s.first_seen_at,
+                        g.created_at AS game_created_at, g.updated_at AS game_updated_at
+                    FROM seats AS s
+                    JOIN games AS g ON g.id = s.game_id
+                    WHERE {" AND ".join(clauses)}
+                    ORDER BY g.updated_at DESC, g.created_at DESC, s.id
+                    LIMIT :limit
+                    """
+                ),
+                params,
+            ).mappings()
+            history = []
+            for row in rows:
+                item = dict(row)
+                item["player_identity"] = normalize_player_identity(str(row["display_name"] or ""))
+                if normalized and item["player_identity"] != normalized:
+                    continue
+                history.append(item)
+            return history
+
     def admin_game_detail(self, game_id: str) -> dict[str, Any]:
         """Return a full admin-authorized game record with seats, events, and memory jobs."""
 
@@ -1033,9 +1270,21 @@ class ClueRepository:
                 ),
                 {"game_id": game_id},
             ).mappings()
+            note_rows = conn.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM nhp_notes
+                    WHERE source_game_id = :game_id
+                    ORDER BY created_at DESC, id DESC
+                    """
+                ),
+                {"game_id": game_id},
+            ).mappings()
         return {
             **record,
             "seats": self.list_seats(game_id),
             "events": self.events_for_game(game_id),
             "nhp_memory": [self._memory_row(dict(row)) for row in memory_rows],
+            "nhp_notes": [self._note_row(dict(row)) for row in note_rows],
         }

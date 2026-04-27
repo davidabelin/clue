@@ -1,4 +1,4 @@
-"""LLM-seat tests for the v1.7.6 Agents SDK runtime wrapper."""
+"""LLM-seat tests for the v1.8.0 Agents SDK runtime wrapper."""
 
 from __future__ import annotations
 
@@ -189,6 +189,63 @@ def test_llm_agent_records_sdk_metadata_on_success(monkeypatch):
     assert decision.agent_meta["trace_id"] == "trace_123"
     assert decision.agent_meta["tool_call_count"] == 2
     assert decision.debug_private["sdk_trace_id"] == "trace_123"
+
+
+def test_llm_agent_passes_write_sink_and_surfaces_tool_writes(monkeypatch):
+    """SDK context writes should be returned in private diagnostics and agent metadata."""
+
+    sink = object()
+
+    def _run(self, context):
+        assert context.write_sink is sink
+        context.record_tool_write("record_memory_note", {"status": "ok", "note": {"id": "note_test"}})
+        return (
+            AgentTurnOutput(action="end_turn", rationale_private="done"),
+            _artifacts(tool_writes=list(context.tool_write_log)),
+        )
+
+    monkeypatch.setattr(LLMSeatAgent, "_run_agent", _run)
+
+    agent = LLMSeatAgent(api_key="test-key", write_sink=sink)
+    decision = agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
+
+    assert decision.agent_meta["tool_writes"][0]["name"] == "record_memory_note"
+    assert decision.debug_private["sdk_tool_writes"][0]["result"]["status"] == "ok"
+
+
+def test_llm_agent_keeps_tool_write_diagnostics_when_final_output_fails(monkeypatch):
+    """Immediate writes should remain audit-visible when a later model output fails."""
+
+    class FakeSink:
+        def __init__(self):
+            self.rows = []
+
+        def record_note(self, **kwargs):
+            self.rows.append(dict(kwargs))
+            return {"status": "ok", "note": {"id": "note_failure"}}
+
+    sink = FakeSink()
+
+    def _run(self, context):
+        result = context.write_sink.record_note(
+            game_id=context.game_id,
+            seat_id=context.seat_id,
+            note_kind="memory_note",
+            note_text="This should survive final output failure.",
+            tool_name="record_memory_note",
+        )
+        context.record_tool_write("record_memory_note", result)
+        raise RuntimeError("bad final output")
+
+    monkeypatch.setattr(LLMSeatAgent, "_run_agent", _run)
+
+    agent = LLMSeatAgent(api_key="test-key", write_sink=sink)
+    with pytest.raises(LLMDecisionError) as excinfo:
+        agent.decide_turn(snapshot=_snapshot(), tool_snapshot={})
+
+    assert sink.rows[0]["note_text"].startswith("This should survive")
+    assert excinfo.value.reason == "model_error"
+    assert excinfo.value.debug["llm_debug"]["tool_writes"][0]["result"]["note"]["id"] == "note_failure"
 
 
 def test_llm_agent_holds_early_accusation_without_heuristic_fallback(monkeypatch):

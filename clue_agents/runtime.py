@@ -19,11 +19,12 @@ class AgentRuntime:
     repository and ``GameMaster`` pipeline.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, write_sink: Any = None) -> None:
         """Cache the shared heuristic agent and the normalized LLM runtime config."""
 
         self._heuristic = HeuristicSeatAgent()
         self._llm_runtime_config = load_llm_runtime_config()
+        self._write_sink = write_sink
 
     def agent_for_seat(self, seat: dict[str, Any]) -> SeatAgent:
         """Resolve one autonomous agent implementation from the stored seat kind."""
@@ -38,6 +39,7 @@ class AgentRuntime:
                 chat_model=str(seat.get("agent_chat_model", "")),
                 chat_profile_id=str(seat.get("agent_chat_profile", "")),
                 runtime_config=self._llm_runtime_config,
+                write_sink=self._write_sink,
             )
         raise ValueError("Human seats do not have an autonomous agent runtime.")
 
@@ -65,6 +67,7 @@ class AgentRuntime:
             chat_model=str(seat.get("agent_chat_model", "")),
             chat_profile_id=str(seat.get("agent_chat_profile", "")),
             runtime_config=self._llm_runtime_config,
+            write_sink=self._write_sink,
         )
         return agent.summarize_memory(snapshot=snapshot)
 
@@ -90,4 +93,5 @@ class AgentRuntime:
                 chat_model=str(seat.get("agent_chat_model", "")),
                 chat_profile_id=str(seat.get("agent_chat_profile", "")),
                 runtime_config=self._llm_runtime_config,
+                write_sink=self._write_sink,
             ).clear_session(game_id=game_id, seat_id=str(seat.get("seat_id", "")))

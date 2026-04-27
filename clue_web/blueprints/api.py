@@ -146,6 +146,50 @@ def admin_relationships():
     return jsonify({"relationships": rows})
 
 
+@api_bp.get("/admin/nhp-notes")
+def admin_nhp_notes():
+    """Return durable NHP note and write-tool audit rows for Administrator Mode."""
+
+    if not _admin_authorized():
+        return _admin_forbidden()
+    rows = current_app.extensions["repository"].list_nhp_notes(
+        agent_identity=str(request.args.get("agent_identity", "") or ""),
+        game_id=str(request.args.get("game_id", "") or ""),
+        seat_id=str(request.args.get("seat_id", "") or ""),
+        note_kind=str(request.args.get("note_kind", "") or ""),
+        target_kind=str(request.args.get("target_kind", "") or ""),
+        target_identity=str(request.args.get("target_identity", "") or ""),
+        limit=500,
+    )
+    return jsonify({"nhp_notes": rows})
+
+
+@api_bp.get("/admin/nhp-history")
+def admin_nhp_history():
+    """Return saved-game history for NHP identities."""
+
+    if not _admin_authorized():
+        return _admin_forbidden()
+    rows = current_app.extensions["game_service"].admin_nhp_history(
+        agent_identity=str(request.args.get("agent_identity", "") or ""),
+        limit=500,
+    )
+    return jsonify({"nhp_history": rows})
+
+
+@api_bp.get("/admin/human-history")
+def admin_human_history():
+    """Return saved-game history for normalized human display names."""
+
+    if not _admin_authorized():
+        return _admin_forbidden()
+    rows = current_app.extensions["game_service"].admin_human_history(
+        player_identity=str(request.args.get("player_identity", "") or ""),
+        limit=500,
+    )
+    return jsonify({"human_history": rows})
+
+
 @api_bp.post("/admin/nhp-memory/retry")
 def admin_retry_nhp_memory():
     """Retry pending or failed durable NHP memory jobs."""

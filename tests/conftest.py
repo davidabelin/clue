@@ -46,6 +46,10 @@ def isolate_openai_env(monkeypatch):
     monkeypatch.delenv("CLUE_AGENT_TRACING_ENABLED", raising=False)
     monkeypatch.delenv("CLUE_AGENT_TRACE_INCLUDE_SENSITIVE_DATA", raising=False)
     monkeypatch.delenv("CLUE_AGENT_EVAL_EXPORT_ENABLED", raising=False)
+    monkeypatch.delenv("CLUE_SECRET_KEY_SECRET", raising=False)
+    monkeypatch.delenv("CLUE_ADMIN_TOKEN_SECRET", raising=False)
+    monkeypatch.delenv("CLUE_PROACTIVE_CHAT_ENABLED", raising=False)
+    monkeypatch.delenv("CLUE_PROACTIVE_CHAT_CHANCE_MULTIPLIER", raising=False)
     yield
     clear_profile_caches()
     load_llm_runtime_config.cache_clear()

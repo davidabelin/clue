@@ -83,12 +83,14 @@ def create_app(config: dict | None = None) -> Flask:
         CLUE_RELEASE_LABEL=CLUE_RELEASE_LABEL,
         CLUE_STATIC_TOKEN=static_token,
         SECRET_KEY=os.getenv("CLUE_SECRET_KEY", "clue-dev-secret-key"),
+        SECRET_KEY_SECRET=os.getenv("CLUE_SECRET_KEY_SECRET", ""),
         DATABASE_URL=os.getenv("CLUE_DATABASE_URL", ""),
         DATABASE_URL_SECRET=os.getenv("CLUE_DATABASE_URL_SECRET", ""),
         DB_PATH=os.getenv("CLUE_DB_PATH", str(data_dir / "clue.db")),
         AIX_HUB_URL=os.getenv("AIX_HUB_URL", "/"),
         INTERNAL_WORKER_TOKEN=os.getenv("CLUE_INTERNAL_WORKER_TOKEN", ""),
         CLUE_ADMIN_TOKEN=os.getenv("CLUE_ADMIN_TOKEN", ""),
+        CLUE_ADMIN_TOKEN_SECRET=os.getenv("CLUE_ADMIN_TOKEN_SECRET", ""),
         APP_BASE_PATH=os.getenv("APP_BASE_PATH", ""),
         CLUE_LLM_MODEL=os.getenv("CLUE_LLM_MODEL", "gpt-5.4-mini-2026-03-17"),
         CLUE_LLM_REASONING_EFFORT=os.getenv("CLUE_LLM_REASONING_EFFORT", "medium"),
@@ -105,6 +107,8 @@ def create_app(config: dict | None = None) -> Flask:
     if config:
         app.config.update(config)
 
+    _resolve_secret_into_config(app, target_key="SECRET_KEY", source_key="SECRET_KEY_SECRET")
+    _resolve_secret_into_config(app, target_key="CLUE_ADMIN_TOKEN", source_key="CLUE_ADMIN_TOKEN_SECRET")
     _resolve_secret_into_config(app, target_key="DATABASE_URL", source_key="DATABASE_URL_SECRET")
     db_target = app.config["DATABASE_URL"] or app.config["DB_PATH"]
     repository = ClueRepository(db_target)

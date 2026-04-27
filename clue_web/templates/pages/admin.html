@@ -33,8 +33,23 @@
   </section>
 
   <section class="panel">
+    <h2>Durable Notes and Tool Writes</h2>
+    <pre>{{ dashboard.nhp_notes | tojson(indent=2) }}</pre>
+  </section>
+
+  <section class="panel">
     <h2>Durable Relationships</h2>
     <pre>{{ dashboard.relationships | tojson(indent=2) }}</pre>
+  </section>
+
+  <section class="panel">
+    <h2>NHP History</h2>
+    <pre>{{ dashboard.nhp_history | tojson(indent=2) }}</pre>
+  </section>
+
+  <section class="panel">
+    <h2>Human Player History</h2>
+    <pre>{{ dashboard.human_history | tojson(indent=2) }}</pre>
   </section>
 </section>
 {% endblock %}

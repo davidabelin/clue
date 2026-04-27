@@ -1,6 +1,6 @@
 # Clue Docs Map
 
-This directory is maintainer-facing. The documents below are all current for **v1.7.6**, but they answer different questions.
+This directory is maintainer-facing. The documents below are all current for **v1.8.0**, but they answer different questions.
 
 ## Start Here
 - [`../README.md`](../README.md)
@@ -11,6 +11,8 @@ This directory is maintainer-facing. The documents below are all current for **v
 ## Runtime And Operations
 - [`ClueMLRuntime.md`](./ClueMLRuntime.md)
   OpenAI seat runtime contract: model/profile selection, tools, guardrails, session memory, tracing, diagnostics, and failure behavior.
+- [`CLUE_live_checks.md`](./CLUE_live_checks.md)
+  Local, smoke-service, and production read-only verification checklist for the live chatbot path.
 - [`CHANGELOG.md`](./CHANGELOG.md)
   Release history for the standalone `clue` repo.
 
@@ -18,7 +20,7 @@ This directory is maintainer-facing. The documents below are all current for **v
 - [`CLUE_PLAN_alpha.md`](./CLUE_PLAN_alpha.md)
   Historical implementation path and the architecture decisions that still shape the repo.
 - [`clue_to_do.md`](./clue_to_do.md)
-  Current engineering backlog after the `v1.7.6` Player board movement fix.
+  Current engineering backlog after the `v1.8.0` full chatbot release.
 
 ## Supporting Material
 - [`dont_use.png`](./dont_use_clue_layout.png)

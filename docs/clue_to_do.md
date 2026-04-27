@@ -1,19 +1,19 @@
 # Clue TO DO List
 
-- As of 2026-04-26
-- Current version: 1.7.6
-- Next target: 1.8.0
+- As of 2026-04-27
+- Current version: 1.8.0
+- Next target: 1.8.x stabilization and Superplayer prep
 
 ## 1.8.0 Milestone Definition
 
 Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot mode:
 
-- [ ] Every NHP has durable state across games and never feels stateless or unsure about what they are doing or why.
-- [ ] Every NHP retains character, voice, personal goals, relationships, grudges, favors, and relevant table history.
-- [ ] NHPs play to win strategically while also using social behavior to influence, mislead, help, bargain with, or pressure other NHPs and HPs.
-- [ ] NHP-to-NHP and NHP-to-HP relationships can develop progressively across repeated games.
-- [ ] Game history, player history, and interaction history are persisted, retrievable, and organized enough to support both gameplay and Administrator Mode.
-- [ ] The shipped behavior is covered by targeted tests or replay/eval checks so future prompt/profile/runtime changes can be judged against saved traces.
+- [x] Every NHP has durable state across games and never feels stateless or unsure about what they are doing or why.
+- [x] Every NHP retains character, voice, personal goals, relationships, grudges, favors, and relevant table history.
+- [x] NHPs play to win strategically while also using social behavior to influence, mislead, help, bargain with, or pressure other NHPs and HPs.
+- [x] NHP-to-NHP and NHP-to-HP relationships can develop progressively across repeated games.
+- [x] Game history, player history, and interaction history are persisted, retrievable, and organized enough to support both gameplay and Administrator Mode.
+- [x] The shipped behavior is covered by targeted tests or replay/eval checks so future prompt/profile/runtime changes can be judged against saved traces.
 
 ## 1.8.0 Priority Plan: Full-Bore Cluebot Mode
 
@@ -99,16 +99,16 @@ Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot m
 
 ## Immediate Work Queue
 
-1. [ ] Audit the current NHP implementation and persistence schema.
-2. [ ] Design the minimum durable memory + relationship schema needed for `v1.8.0`.
-3. [ ] Implement memory write at game end and memory load at game start.
-4. [ ] Add NHP read/write tools for memory and relationship state.
-5. [ ] Update NHP prompts/profiles to require memory-aware, in-character, social play.
-6. [ ] Replace remaining placeholder NPC dialogue paths.
-7. [ ] Add focused tests/replay checks.
-8. [ ] Add Administrator Mode access to saved games and NHP/player history data.
-9. [ ] Run local verification, then deploy/backend checks.
-10. [ ] Update docs and bump `VERSION` to `1.8.0`.
+1. [x] Audit the current NHP implementation and persistence schema.
+2. [x] Design the minimum durable memory + relationship schema needed for `v1.8.0`.
+3. [x] Implement memory write at game end and memory load at game start.
+4. [x] Add NHP read/write tools for memory and relationship state.
+5. [x] Update NHP prompts/profiles to require memory-aware, in-character, social play.
+6. [x] Replace remaining placeholder NPC dialogue paths with reactive plus proactive LLM chat behavior.
+7. [x] Add focused tests/replay checks for the new runtime surface.
+8. [x] Add Administrator Mode access to saved games and NHP/player history data.
+9. [ ] Run deployed smoke/backend checks against `clue-smoke`, then production read-only checks.
+10. [x] Update docs and bump `VERSION` to `1.8.0`.
 
 ## UI Modes And Gameplay Backlog
 
@@ -155,19 +155,20 @@ Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot m
 - [ ] Improve board aesthetics, especially jagged or irregular lines.
 - [ ] Add Pause, Save, and Resume game controls after persistence semantics are complete.
 
-## Current Shipped State After v1.7.6
+## Current Shipped State After v1.8.0
 
 - [x] Standalone Flask app plus AIX-mount-safe routing.
 - [x] Deterministic Clue rules engine with filtered seat snapshots.
 - [x] Mixed human and autonomous seats under one Game Master.
-- [x] SQL-backed persistence for games, seats, tokens, notebooks, and events.
+- [x] SQL-backed persistence for games, seats, tokens, notebooks, events, durable memory, durable relationships, and append-only NHP notes.
 - [x] YAML-driven turn/chat profiles and persona-social guidance.
-- [x] OpenAI Agents SDK runtime with read-only tools, guardrails, local encrypted sessions, and fail-loud LLM turn/chat handling.
+- [x] OpenAI Agents SDK runtime with read tools, durable memory/social write tools, guardrails, local encrypted sessions, and fail-loud LLM turn/chat handling.
+- [x] Reactive and proactive NHP chat behavior with bounded cooldown/throttle handling.
 - [x] Browser UI with polling synchronization and seat-private/public separation.
 - [x] Beginner and Player table UI modes, with Superplayer reserved for later.
 - [x] Per-seat UI mode selection for active table seats.
 - [x] Fresh setup seeds for new games, so deals and case files are no longer repeated from a fixed default.
-- [x] Maintainer documentation and targeted docstring sweep completed for `v1.7.6`.
+- [x] Maintainer documentation updated for the `v1.8.0` chatbot runtime.
 
 ## Engineering Backlog
 

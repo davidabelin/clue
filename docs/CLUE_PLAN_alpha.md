@@ -1,15 +1,15 @@
 # Clue Implementation History And Architecture Decisions
 
-This file keeps the historical `CLUE_PLAN_alpha.md` name, but it now serves as a current **v1.7.6** implementation-history record. The original forward plan has been replaced by the decisions that actually shaped the shipped repo.
+This file keeps the historical `CLUE_PLAN_alpha.md` name, but it now serves as a current **v1.8.0** implementation-history record. The original forward plan has been replaced by the decisions that actually shaped the shipped repo.
 
 ## What Shipped
 - Standalone Flask app plus AIX-mount-safe routing
 - Deterministic classic Clue rules for 3 to 6 active seats
 - Signed seat-token flow instead of full user accounts
-- SQL-backed persistence for current state, notebooks, and append-only events
+- SQL-backed persistence for current state, notebooks, append-only events, durable NHP memory, relationships, and note/audit rows
 - Mixed human and autonomous seats under one authoritative Game Master
 - Shared deduction substrate used by both heuristic and LLM-backed seats
-- OpenAI Agents SDK integration with local encrypted session memory, read-only tools, and guardrails
+- OpenAI Agents SDK integration with local encrypted session memory, read tools, narrow durable write tools, and guardrails
 - Player-facing browser UI with polling synchronization and seat-private/public separation
 
 ## Architecture Decisions That Still Matter
@@ -73,7 +73,7 @@ Consequence:
 - Polling-based sync is simple and robust, but it leaves reconnect and multi-browser E2E testing as important follow-up work.
 - JSON state persistence keeps application logic centralized in Python, but schema drift must be managed in code and tests rather than with strict relational constraints.
 - The social-memory layer is intentionally bounded and code-normalized; future expansions should preserve that boundedness.
-- The LLM path is intentionally conservative. Any future expansion should preserve read-only tools, explicit guardrails, and fail-soft fallback.
+- The LLM path is intentionally conservative. Any future expansion should preserve rules-authoritative writes, explicit guardrails, and fail-loud behavior without heuristic LLM substitutes.
 
 ## If You Are Revisiting The Architecture
 Ask these first:

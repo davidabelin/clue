@@ -315,6 +315,42 @@ def test_idle_chat_does_not_repeat_for_same_public_event(client, monkeypatch):
     assert len(_chat_events(second)) == 1
 
 
+def test_proactive_idle_chat_runs_once_after_model_silence(client, monkeypatch):
+    """After reactive silence, quiet-table proactive chat should be throttled per turn."""
+
+    monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
+    calls = {"count": 0}
+
+    def _reply(self, *, snapshot):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return ChatDecision(speak=False, rationale_private="silence")
+        return ChatDecision(speak=True, text="The room has gone interestingly quiet.", rationale_private="proactive")
+
+    monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.decide_chat", _reply)
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Proactive Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "llm"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    first = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+    second = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+    third = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+
+    assert _chat_events(first) == []
+    assert len(_chat_events(second)) == 1
+    assert len(_chat_events(third)) == 1
+
+
 def test_human_chat_can_trigger_idle_npc_reply_without_advancing_turn(client, monkeypatch):
     """Human off-turn chat should be able to provoke one NPC reply without changing turn control."""
 
@@ -781,16 +817,69 @@ def test_internal_nhp_snapshot_loads_memory_but_player_snapshot_does_not(client,
     assert "memory_context" not in player
 
 
+def test_write_sink_persists_notes_relationships_and_memory_context(client, app, monkeypatch):
+    """Model-facing write tools should persist immediately without leaking to players."""
+
+    payload = _create_table_without_agents(client, monkeypatch, title="Write Sink Table")
+    game_id = payload["game_id"]
+
+    result = app.extensions["game_service"]._write_sink.update_relationship(
+        game_id=game_id,
+        seat_id="seat_mustard",
+        target_seat_id="seat_scarlet",
+        affinity_delta=9,
+        trust_delta=-9,
+        friction_delta=1,
+        note="Scarlet pushed too directly.",
+        tool_name="update_relationship_posture",
+        payload={"mode": "chat_intent"},
+    )
+    note_result = app.extensions["game_service"]._write_sink.record_note(
+        game_id=game_id,
+        seat_id="seat_mustard",
+        target_seat_id="seat_scarlet",
+        note_kind="memory_note",
+        note_text="Scarlet responds to direct pressure.",
+        tool_name="record_memory_note",
+        payload={"mode": "turn"},
+    )
+    internal = app.extensions["game_service"]._build_internal_snapshot(game_id, "seat_mustard")
+    human_token = _token_from_join_url(payload["seat_links"][0]["url"])
+    player = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": human_token}).get_json()
+
+    relationships = app.extensions["repository"].list_nhp_relationships(agent_identity="Colonel Mustard")
+    notes = app.extensions["repository"].list_nhp_notes(agent_identity="Colonel Mustard")
+
+    assert result["status"] == "ok"
+    assert note_result["status"] == "ok"
+    assert relationships[0]["affinity"] == 2
+    assert relationships[0]["trust"] == -2
+    assert {note["note_kind"] for note in notes} >= {"relationship_update", "memory_note"}
+    assert internal["memory_context"]["recent_notes"]
+    assert "memory_context" not in player
+
+
 def test_admin_endpoints_require_token_and_expose_memory(client, app, monkeypatch):
     """Administrator APIs should reject missing tokens and accept the configured token."""
 
     app.config["CLUE_ADMIN_TOKEN"] = "admin-test"
     payload = _create_table_without_agents(client, monkeypatch, title="Admin Memory Table")
     _mark_game_complete(app, payload["game_id"])
+    app.extensions["repository"].record_nhp_note(
+        agent_identity="Colonel Mustard",
+        game_id=payload["game_id"],
+        seat_id="seat_mustard",
+        note_kind="memory_note",
+        note_text="Admin-visible note.",
+        tool_name="record_memory_note",
+    )
 
     blocked = client.get("/api/v1/admin/games")
     allowed = client.get("/api/v1/admin/games", headers={"X-Clue-Admin-Token": "admin-test"})
     detail = client.get(f"/api/v1/admin/games/{payload['game_id']}", headers={"X-Clue-Admin-Token": "admin-test"})
+    notes = client.get("/api/v1/admin/nhp-notes", headers={"X-Clue-Admin-Token": "admin-test"})
+    nhp_history = client.get("/api/v1/admin/nhp-history", headers={"X-Clue-Admin-Token": "admin-test"})
+    human_history = client.get("/api/v1/admin/human-history?player_identity=Miss%20Scarlet", headers={"X-Clue-Admin-Token": "admin-test"})
     page = client.get("/admin?admin_token=admin-test")
 
     assert blocked.status_code == 403
@@ -798,8 +887,13 @@ def test_admin_endpoints_require_token_and_expose_memory(client, app, monkeypatc
     assert allowed.get_json()["games"]
     assert detail.status_code == 200
     assert detail.get_json()["id"] == payload["game_id"]
+    assert detail.get_json()["nhp_notes"]
+    assert notes.get_json()["nhp_notes"]
+    assert nhp_history.get_json()["nhp_history"]
+    assert human_history.get_json()["human_history"][0]["player_identity"] == "miss scarlet"
     assert page.status_code == 200
     assert "Administrator Mode" in page.get_data(as_text=True)
+    assert "Durable Notes and Tool Writes" in page.get_data(as_text=True)
 
 
 def test_admin_memory_retry_uses_pending_jobs(client, app, monkeypatch):
@@ -839,3 +933,29 @@ def test_create_app_loads_database_url_from_secret(monkeypatch, tmp_path: Path):
         }
     )
     assert str(app.config["DATABASE_URL"]).startswith("sqlite+pysqlite:///")
+
+
+def test_create_app_loads_admin_and_flask_secrets(monkeypatch, tmp_path: Path):
+    """Secret Manager indirection should populate admin and Flask signing secrets."""
+
+    def _fake_read_secret(version_name: str) -> str:
+        values = {
+            "projects/p/secrets/clue-secret-key/versions/latest": "signed-seat-secret",
+            "projects/p/secrets/clue-admin-token/versions/latest": "admin-secret",
+        }
+        return values[version_name]
+
+    monkeypatch.setattr("clue_web._read_secret_version", _fake_read_secret)
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "",
+            "SECRET_KEY_SECRET": "projects/p/secrets/clue-secret-key/versions/latest",
+            "CLUE_ADMIN_TOKEN": "",
+            "CLUE_ADMIN_TOKEN_SECRET": "projects/p/secrets/clue-admin-token/versions/latest",
+            "DB_PATH": str(tmp_path / "secret-config.db"),
+        }
+    )
+
+    assert app.config["SECRET_KEY"] == "signed-seat-secret"
+    assert app.config["CLUE_ADMIN_TOKEN"] == "admin-secret"
