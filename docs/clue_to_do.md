@@ -78,13 +78,14 @@ Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot m
 
 ### 6. Save Games And Administrator Mode Foundation
 
-- [ ] Save all games with important game stats, player histories, and interaction histories.
-- [ ] Make saved games retrievable and functionally organized for Administrator Mode.
+- [x] Save all games with important game stats, player histories, and interaction histories.
+- [x] Make saved games retrievable and functionally organized for Administrator Mode.
 - [ ] Add Administrator Mode views or API endpoints for:
-  - game statistics and accumulated analysis
-  - saved game browsing and inspection
-  - NHP histories, configurations, rankings, and relationship records
-  - HP histories organized by the names human players give to the table
+  - [x] game statistics and accumulated analysis
+  - [x] saved game browsing and inspection
+  - [x] NHP histories, configurations, and relationship records
+  - [x] HP histories organized by the names human players give to the table
+  - [ ] future NHP rankings once a ranking model is defined
 - [ ] Keep Administrator Mode planning aligned with eventual Superplayer Mode.
 
 ### 7. Verification And Release Readiness
@@ -139,10 +140,12 @@ Clue reaches `v1.8.0` when the Non-Human Players are operating in full chatbot m
 
 ### Superplayer And Administrator Modes
 
+- [x] Merge to one mode: Superplayer operates as the site administrator in the administrative Superplayer Mode 
+- [x] Implement the first Superplayer/Admin dashboard skeleton with settings, status displays, saved-game inspection, and NHP/player history controls.
+- [ ] Expand Superplayer Mode into a fuller administrative / Dungeon Master style UX with richer NHP/player controls.
 - [ ] Prepare Superplayer Mode, but keep implementation behind the NHP/chatbot priority.
-- [ ] Reorganize Superplayer prep materials when Administrator Mode data surfaces are clearer.
-- [ ] Design Superplayer Mode as an administrative / Dungeon Master style UX with settings, status displays, saved-game inspection, and NHP/player controls.
-- [ ] Preserve future Superplayer hooks in planning and docstrings where relevant.
+  - [ ] Preserve future Superplayer hooks in planning and docstrings where relevant.
+  - [x] Clarify the first administrative data surfaces: saved games, stats, admin-truth detail, memory, notes, relationships, and histories.
 
 ### Board And Flow
 

@@ -1,0 +1,188 @@
+{# Full saved-game inspection page for Administrator Mode. #}
+{% extends "base.html" %}
+{% block content %}
+<section class="admin-shell">
+  <header class="panel admin-hero">
+    <div>
+      <p class="eyebrow">Saved Game Review</p>
+      <h1>{{ game.title }}</h1>
+      <p class="admin-subline">{{ game.id }} · {{ game.summary.status }} · updated {{ game.updated_at }}</p>
+    </div>
+    <a class="admin-back-link" href="{{ url_for('main.admin_page', admin_token=admin_token) }}">Back To Dashboard</a>
+  </header>
+
+  <section class="admin-overview-grid">
+    <article class="panel admin-stat">
+      <span class="card-kicker">Turn</span>
+      <strong>{{ game.summary.turn_index }}</strong>
+      <small>{{ game.summary.phase }}</small>
+    </article>
+    <article class="panel admin-stat">
+      <span class="card-kicker">Winner</span>
+      <strong>{{ game.summary.winner_display_name or "-" }}</strong>
+      <small>{{ game.summary.seat_mix_label }}</small>
+    </article>
+    <article class="panel admin-stat">
+      <span class="card-kicker">LLM Failures</span>
+      <strong>{{ game.summary.llm_unavailable_count }}</strong>
+      <small>{{ game.summary.sampling_timeouts }} sampling timeouts</small>
+    </article>
+    <article class="panel admin-stat">
+      <span class="card-kicker">Max Turn Latency</span>
+      <strong>{{ "%.0f"|format(game.summary.turn_latency_ms_max) }} ms</strong>
+      <small>{{ game.summary.latency_budget_breaches }} breaches</small>
+    </article>
+  </section>
+
+  <section class="panel admin-section">
+    <div class="panel-head">
+      <div>
+        <p class="card-kicker">Admin Truth</p>
+        <h2>Case File And Hands</h2>
+      </div>
+    </div>
+    <div class="admin-truth-grid">
+      <article class="admin-truth-card">
+        <h3>Case File</h3>
+        <dl class="admin-dl">
+          <div><dt>Suspect</dt><dd>{{ game.case_file.suspect }}</dd></div>
+          <div><dt>Weapon</dt><dd>{{ game.case_file.weapon }}</dd></div>
+          <div><dt>Room</dt><dd>{{ game.case_file.room }}</dd></div>
+        </dl>
+      </article>
+      {% for seat in game.seats %}
+      <article class="admin-truth-card">
+        <h3>{{ seat.display_name }}</h3>
+        <p>{{ seat.character }} · {{ seat.seat_kind }} · {{ seat.position }}</p>
+        <ul class="admin-card-list">
+          {% for card in seat.hand %}
+          <li>{{ card }}</li>
+          {% else %}
+          <li>No cards recorded.</li>
+          {% endfor %}
+        </ul>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel admin-section">
+    <div class="panel-head compact">
+      <h2>Seats And Notebooks</h2>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>Seat</th><th>Kind</th><th>Model</th><th>Joined</th><th>Notebook</th></tr></thead>
+        <tbody>
+          {% for seat in game.seats %}
+          <tr>
+            <td>{{ seat.display_name }}<br><small>{{ seat.seat_id }}</small></td>
+            <td>{{ seat.seat_kind }}</td>
+            <td>{{ seat.agent_model or "-" }}</td>
+            <td>{{ seat.first_seen_at or "-" }}</td>
+            <td><pre class="admin-inline-json">{{ seat.notebook | tojson(indent=2) }}</pre></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-two-column">
+    <section class="panel admin-section">
+      <div class="panel-head compact">
+        <h2>Game Metrics</h2>
+      </div>
+      <dl class="admin-dl admin-dl--metrics">
+        {% for key, value in game.game_metrics.items() %}
+        <div><dt>{{ key }}</dt><dd>{{ value }}</dd></div>
+        {% else %}
+        <div><dt>Metrics</dt><dd>No metrics recorded.</dd></div>
+        {% endfor %}
+      </dl>
+    </section>
+
+    <section class="panel admin-section">
+      <div class="panel-head compact">
+        <h2>Runtime Snapshot</h2>
+      </div>
+      <pre class="admin-json">{{ {"latency_targets_ms": game.latency_targets_ms, "agent_runtime": game.agent_runtime} | tojson(indent=2) }}</pre>
+    </section>
+  </section>
+
+  <section class="panel admin-section">
+    <div class="panel-head compact">
+      <h2>Recent Turn Metrics</h2>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>Turn</th><th>Seat</th><th>Action</th><th>Latency</th><th>Model</th><th>Error</th></tr></thead>
+        <tbody>
+          {% for metric in game.turn_metrics[-40:] %}
+          <tr>
+            <td>{{ metric.turn_index }}</td>
+            <td>{{ metric.seat_id }}</td>
+            <td>{{ metric.action }}</td>
+            <td>{{ metric.latency_ms }} ms</td>
+            <td>{{ metric.model or "-" }}</td>
+            <td>{{ metric.llm_error_reason or metric.error or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">No turn metrics recorded.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-two-column">
+    <section class="panel admin-section">
+      <div class="panel-head compact">
+        <h2>NHP Memory</h2>
+      </div>
+      <pre class="admin-json">{{ game.nhp_memory | tojson(indent=2) }}</pre>
+    </section>
+    <section class="panel admin-section">
+      <div class="panel-head compact">
+        <h2>NHP Notes</h2>
+      </div>
+      <pre class="admin-json">{{ game.nhp_notes | tojson(indent=2) }}</pre>
+    </section>
+  </section>
+
+  <section class="panel admin-section">
+    <div class="panel-head compact">
+      <h2>Event Stream</h2>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>#</th><th>Visibility</th><th>Type</th><th>Message</th><th>Payload</th></tr></thead>
+        <tbody>
+          {% for event in game.events %}
+          <tr>
+            <td>{{ event.event_index }}</td>
+            <td>{{ event.visibility }}</td>
+            <td>{{ event.event_type }}</td>
+            <td>{{ event.message }}</td>
+            <td><pre class="admin-inline-json">{{ event.payload | tojson(indent=2) }}</pre></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">No events recorded.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-two-column">
+    <details class="panel admin-section" open>
+      <summary><h2>Social State</h2></summary>
+      <pre class="admin-json">{{ game.social | tojson(indent=2) }}</pre>
+    </details>
+    <details class="panel admin-section" open>
+      <summary><h2>Raw State</h2></summary>
+      <pre class="admin-json">{{ game.state | tojson(indent=2) }}</pre>
+    </details>
+  </section>
+</section>
+{% endblock %}

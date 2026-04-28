@@ -110,8 +110,10 @@ Humans do not log in with full accounts in v1. A signed seat token maps to one p
 ### Administrator flow
 `/admin?admin_token=...` and `/api/v1/admin/...`
 - require `CLUE_ADMIN_TOKEN`
-- expose saved games, full game detail, durable NHP memory, durable notes/tool writes, durable relationships, HP/NHP history, and memory-job retry
+- expose the Superplayer administration dashboard, saved-game summaries, full admin-truth game detail, durable NHP memory, durable notes/tool writes, durable relationships, HP/NHP history, memory-job retry, and session runtime settings
 - are maintainer surfaces, not normal player views
+
+`/admin/games/<game_id>?admin_token=...` renders one saved game with case-file truth, all hands, private events, private traces, metrics, social state, memory, and notes. The admin token is therefore a full-trust surface.
 
 ## Rules Engine And Snapshot Boundary
 

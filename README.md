@@ -40,7 +40,9 @@ Standalone Clue lab for AIX, currently labeled **v1.8.0**.
 - `/api/v1/games/current` returns the filtered snapshot, including the table UI mode, for the current signed seat token.
 - `/api/v1/games/current/actions` applies one action through the Game Master, persists state and events, and runs any follow-up autonomous turns.
 - `/api/v1/games/current/notebook` updates one seat-private notebook.
-- `/admin?admin_token=...` and `/api/v1/admin/...` expose protected saved-game, NHP memory, durable notes, relationship, and HP/NHP history inspection for maintainers.
+- `/admin?admin_token=...` renders the protected Superplayer administration dashboard for saved-game review, stats, NHP memory, durable notes, relationships, and player histories.
+- `/admin/games/<game_id>?admin_token=...` renders full admin-truth game inspection, including the case file, hands, private events, traces, metrics, social state, memory, and notes.
+- `/api/v1/admin/...` exposes the same protected data surfaces plus memory retry and session runtime settings for maintainers.
 
 ### 3. Rules authority
 - `clue_core.engine.GameMaster` validates every action and emits public or seat-private events.
@@ -100,6 +102,8 @@ Standalone Clue lab for AIX, currently labeled **v1.8.0**.
   Falls back to `CLUE_SECRET_KEY`, then a dev default
 - `CLUE_AGENT_EVAL_EXPORT_ENABLED`
   Default: `0`
+- `CLUE_IDLE_CHAT_ENABLED`
+  Default: `1`; set `0` to disable all optional snapshot-triggered NHP idle chat.
 - `CLUE_PROACTIVE_CHAT_ENABLED`
   Default: `1`; set `0` to disable quiet-table proactive NHP chat.
 - `CLUE_PROACTIVE_CHAT_CHANCE_MULTIPLIER`
@@ -108,6 +112,8 @@ Standalone Clue lab for AIX, currently labeled **v1.8.0**.
   Direct local override for the OpenAI API key
 - `OPENAI_API_KEY_SECRET_VERSION`
   Secret Manager indirection for deployment
+
+The Superplayer administration dashboard can also apply process-local overrides for idle chat, proactive chat, and proactive chat chance. Those overrides reset on app restart and do not change the stored environment contract.
 
 Model-profile and chat-profile YAML defaults live in:
 - [`clue_agents/profiles/models.yaml`](./clue_agents/profiles/models.yaml)

@@ -40,12 +40,75 @@ def _admin_token_is_valid(token: str) -> bool:
     return bool(expected and str(token or "").strip() == expected)
 
 
+def _admin_forbidden():
+    """Return the standard protected-admin route response."""
+
+    return "Administrator token required.", 403
+
+
+def _admin_form_payload() -> dict[str, str]:
+    """Read a form while letting later duplicate field values win."""
+
+    return {key: values[-1] for key in request.form for values in [request.form.getlist(key)] if values}
+
+
 @main_bp.get("/admin")
 def admin_page():
-    """Render the protected plain Administrator Mode dashboard."""
+    """Render the protected Superplayer Administrator Mode dashboard."""
 
     token = str(request.args.get("admin_token", "")).strip()
     if not _admin_token_is_valid(token):
-        return "Administrator token required.", 403
+        return _admin_forbidden()
     dashboard = current_app.extensions["game_service"].admin_dashboard()
-    return render_template("pages/admin.html", title="Clue Administrator", dashboard=dashboard, admin_token=token)
+    return render_template(
+        "pages/admin.html",
+        title="Clue Superplayer Admin",
+        dashboard=dashboard,
+        admin_token=token,
+        notice=str(request.args.get("notice", "") or ""),
+    )
+
+
+@main_bp.get("/admin/games/<game_id>")
+def admin_game_page(game_id: str):
+    """Render one full saved-game inspection page for Administrator Mode."""
+
+    token = str(request.args.get("admin_token", "")).strip()
+    if not _admin_token_is_valid(token):
+        return _admin_forbidden()
+    try:
+        game = current_app.extensions["game_service"].admin_game_review(game_id)
+    except KeyError:
+        return "Saved game not found.", 404
+    return render_template("pages/admin_game.html", title=f"Clue Admin: {game['title']}", game=game, admin_token=token)
+
+
+@main_bp.post("/admin/runtime-settings")
+def admin_runtime_settings_form():
+    """Update process-local optional-chat settings from the admin dashboard."""
+
+    payload = _admin_form_payload()
+    token = str(payload.get("admin_token", "")).strip()
+    if not _admin_token_is_valid(token):
+        return _admin_forbidden()
+    current_app.extensions["game_service"].update_admin_runtime_settings(payload)
+    return redirect(url_for("main.admin_page", admin_token=token, notice="Runtime settings updated."))
+
+
+@main_bp.post("/admin/nhp-memory/retry")
+def admin_retry_memory_form():
+    """Retry pending or selected durable memory jobs from the admin dashboard."""
+
+    payload = _admin_form_payload()
+    token = str(payload.get("admin_token", "")).strip()
+    if not _admin_token_is_valid(token):
+        return _admin_forbidden()
+    memory_ids = [item for item in request.form.getlist("memory_id") if str(item).strip()]
+    result = current_app.extensions["game_service"].admin_retry_nhp_memory(memory_ids or None)
+    return redirect(
+        url_for(
+            "main.admin_page",
+            admin_token=token,
+            notice=f"Memory retry attempted {int(result.get('attempted', 0))} job(s).",
+        )
+    )

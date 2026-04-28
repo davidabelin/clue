@@ -48,6 +48,7 @@ def isolate_openai_env(monkeypatch):
     monkeypatch.delenv("CLUE_AGENT_EVAL_EXPORT_ENABLED", raising=False)
     monkeypatch.delenv("CLUE_SECRET_KEY_SECRET", raising=False)
     monkeypatch.delenv("CLUE_ADMIN_TOKEN_SECRET", raising=False)
+    monkeypatch.delenv("CLUE_IDLE_CHAT_ENABLED", raising=False)
     monkeypatch.delenv("CLUE_PROACTIVE_CHAT_ENABLED", raising=False)
     monkeypatch.delenv("CLUE_PROACTIVE_CHAT_CHANCE_MULTIPLIER", raising=False)
     yield

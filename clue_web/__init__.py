@@ -113,8 +113,14 @@ def create_app(config: dict | None = None) -> Flask:
     db_target = app.config["DATABASE_URL"] or app.config["DB_PATH"]
     repository = ClueRepository(db_target)
     repository.init_schema()
+    runtime_overrides: dict[str, object] = {}
     app.extensions["repository"] = repository
-    app.extensions["game_service"] = GameService(repository, secret_key=str(app.config["SECRET_KEY"]))
+    app.extensions["runtime_overrides"] = runtime_overrides
+    app.extensions["game_service"] = GameService(
+        repository,
+        secret_key=str(app.config["SECRET_KEY"]),
+        runtime_overrides=runtime_overrides,
+    )
 
     from clue_web.blueprints.api import api_bp
     from clue_web.blueprints.main import main_bp

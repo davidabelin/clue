@@ -36,6 +36,14 @@ def _admin_forbidden():
     return _error("Administrator token required.", 403)
 
 
+def _request_payload() -> dict:
+    """Read JSON first, then form data, for admin control endpoints."""
+
+    if request.is_json:
+        return request.get_json(silent=True) or {}
+    return request.form.to_dict()
+
+
 @api_bp.post("/games")
 def create_game():
     """Create a new game and return per-seat invitation links."""
@@ -188,6 +196,24 @@ def admin_human_history():
         limit=500,
     )
     return jsonify({"human_history": rows})
+
+
+@api_bp.get("/admin/runtime-settings")
+def admin_runtime_settings():
+    """Return effective process-local runtime settings for Administrator Mode."""
+
+    if not _admin_authorized():
+        return _admin_forbidden()
+    return jsonify(current_app.extensions["game_service"].admin_runtime_settings())
+
+
+@api_bp.post("/admin/runtime-settings")
+def admin_update_runtime_settings():
+    """Update safe process-local runtime settings for optional NHP chat."""
+
+    if not _admin_authorized():
+        return _admin_forbidden()
+    return jsonify(current_app.extensions["game_service"].update_admin_runtime_settings(_request_payload()))
 
 
 @api_bp.post("/admin/nhp-memory/retry")

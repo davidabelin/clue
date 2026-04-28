@@ -492,6 +492,262 @@ button:disabled {
   color: #5a473b;
 }
 
+.admin-shell {
+  display: grid;
+  gap: 1rem;
+  color: var(--ink);
+}
+
+.admin-shell .panel {
+  border-radius: 14px;
+}
+
+.admin-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  background:
+    linear-gradient(135deg, rgba(27, 19, 14, 0.98), rgba(53, 35, 28, 0.94)),
+    linear-gradient(180deg, rgba(46, 86, 111, 0.24), rgba(255, 247, 231, 0.04));
+  color: #fff4e5;
+}
+
+.admin-hero h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 3vw, 2.6rem);
+  line-height: 1.05;
+  color: #fff8ef;
+}
+
+.admin-hero .eyebrow,
+.admin-hero .card-kicker {
+  color: #f0cc88;
+}
+
+.admin-subline {
+  margin: 0.5rem 0 0;
+  color: rgba(255, 238, 213, 0.86);
+}
+
+.admin-runtime-pill,
+.admin-back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.2rem;
+  padding: 0.48rem 0.82rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 235, 204, 0.22);
+  background: rgba(255, 244, 226, 0.12);
+  color: #fff4e5;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.admin-notice {
+  border-color: rgba(47, 93, 46, 0.28);
+  background: rgba(239, 255, 227, 0.96);
+  color: #244b25;
+}
+
+.admin-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.8rem;
+}
+
+.admin-stat {
+  display: grid;
+  gap: 0.24rem;
+  min-height: 7rem;
+  align-content: start;
+}
+
+.admin-stat strong {
+  display: block;
+  font-size: clamp(1.65rem, 3vw, 2.4rem);
+  line-height: 1;
+}
+
+.admin-stat small,
+.admin-table small {
+  display: block;
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
+
+.admin-control-panel,
+.admin-section {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.admin-settings-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.8rem;
+  align-items: end;
+}
+
+.admin-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.admin-two-column {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-table-wrap {
+  overflow: auto;
+  border: 1px solid rgba(44, 31, 23, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 252, 244, 0.72);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+  font-size: 0.92rem;
+}
+
+.admin-table th,
+.admin-table td {
+  padding: 0.62rem 0.72rem;
+  border-bottom: 1px solid rgba(44, 31, 23, 0.13);
+  vertical-align: top;
+  text-align: left;
+}
+
+.admin-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(239, 227, 199, 0.98);
+  color: var(--accent);
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.admin-table tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table input[type="checkbox"] {
+  width: auto;
+}
+
+.admin-truth-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.75rem;
+}
+
+.admin-truth-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(44, 31, 23, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 252, 244, 0.82);
+}
+
+.admin-truth-card h3,
+.admin-truth-card p {
+  margin: 0;
+}
+
+.admin-card-list {
+  display: grid;
+  gap: 0.26rem;
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.admin-dl {
+  display: grid;
+  gap: 0.48rem;
+  margin: 0;
+}
+
+.admin-dl div {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(0, 1.2fr);
+  gap: 0.7rem;
+  padding-bottom: 0.42rem;
+  border-bottom: 1px solid rgba(44, 31, 23, 0.12);
+}
+
+.admin-dl div:last-child {
+  border-bottom: none;
+}
+
+.admin-dl dt {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.admin-dl dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-json,
+.admin-inline-json {
+  margin: 0;
+  max-width: 100%;
+  overflow: auto;
+  border-radius: 10px;
+  background: rgba(35, 25, 19, 0.92);
+  color: #fff3df;
+  font-family: Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.admin-json {
+  max-height: 34rem;
+  padding: 0.8rem;
+}
+
+.admin-inline-json {
+  max-height: 12rem;
+  padding: 0.55rem;
+}
+
+.admin-section summary {
+  cursor: pointer;
+}
+
+.admin-section summary h2 {
+  display: inline;
+}
+
+@media (max-width: 900px) {
+  .admin-hero,
+  .admin-two-column {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-hero {
+    display: grid;
+  }
+
+  .admin-runtime-pill,
+  .admin-back-link {
+    width: fit-content;
+    white-space: normal;
+  }
+}
+
 .pace-note,
 .field-note,
 .guidance,

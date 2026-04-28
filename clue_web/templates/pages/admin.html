@@ -1,55 +1,286 @@
-{# Plain maintainer-facing Administrator Mode dashboard. #}
+{# Superplayer-style maintainer dashboard. #}
 {% extends "base.html" %}
 {% block content %}
-<section class="home admin-home">
-  <div class="hero panel">
-    <p class="eyebrow">Administrator Mode</p>
-    <h1>Saved games and durable NHP memory.</h1>
-    <p class="lede">This page is intentionally data-first while Superplayer UX decisions remain separate.</p>
-  </div>
+<section class="admin-shell">
+  <header class="panel admin-hero">
+    <div>
+      <p class="eyebrow">Superplayer Administration</p>
+      <h1>Saved games, stats, and NHP state.</h1>
+    </div>
+    <div class="admin-runtime-pill">
+      <span>Runtime overrides reset on restart</span>
+    </div>
+  </header>
 
-  <section class="panel">
-    <h2>Saved Games</h2>
-    <ul class="seat-links">
-      {% for game in dashboard.games %}
-      <li>
-        <a href="{{ url_for('api.admin_game_detail', game_id=game.id, admin_token=admin_token) }}">{{ game.title }}</a>
-        <span>{{ game.status }} · {{ game.updated_at }}</span>
-      </li>
-      {% else %}
-      <li>No saved games yet.</li>
-      {% endfor %}
-    </ul>
+  {% if notice %}
+  <section class="panel admin-notice">{{ notice }}</section>
+  {% endif %}
+
+  <section class="admin-overview-grid">
+    <article class="panel admin-stat">
+      <span class="card-kicker">Saved Games</span>
+      <strong>{{ dashboard.overview.saved_games }}</strong>
+      <small>{{ dashboard.overview.active_games }} active / {{ dashboard.overview.complete_games }} complete</small>
+    </article>
+    <article class="panel admin-stat">
+      <span class="card-kicker">Memory Queue</span>
+      <strong>{{ dashboard.overview.pending_memory_jobs }}</strong>
+      <small>{{ dashboard.overview.failed_memory_jobs }} failed / {{ dashboard.overview.ready_memory_rows }} ready</small>
+    </article>
+    <article class="panel admin-stat">
+      <span class="card-kicker">LLM Failures</span>
+      <strong>{{ dashboard.overview.llm_failures }}</strong>
+      <small>{{ dashboard.overview.sampling_timeouts }} sampling timeouts</small>
+    </article>
+    <article class="panel admin-stat">
+      <span class="card-kicker">Latency Breaches</span>
+      <strong>{{ dashboard.overview.latency_budget_breaches }}</strong>
+      <small>{{ "%.0f"|format(dashboard.overview.turn_latency_ms_max) }} ms max turn</small>
+    </article>
+    <article class="panel admin-stat">
+      <span class="card-kicker">NHP Notes</span>
+      <strong>{{ dashboard.overview.durable_notes }}</strong>
+      <small>{{ dashboard.overview.relationships }} relationships</small>
+    </article>
   </section>
 
-  <section class="panel">
-    <h2>Pending Memory Jobs</h2>
-    <pre>{{ dashboard.pending_memory | tojson(indent=2) }}</pre>
+  <section class="panel admin-control-panel">
+    <div class="panel-head">
+      <div>
+        <p class="card-kicker">Runtime Controls</p>
+        <h2>Optional NHP Chat</h2>
+      </div>
+    </div>
+    <form class="admin-settings-form" action="{{ url_for('main.admin_runtime_settings_form') }}" method="post">
+      <input type="hidden" name="admin_token" value="{{ admin_token }}">
+      <label>
+        <span>Idle Chat</span>
+        <select name="idle_chat_enabled">
+          <option value="1" {% if dashboard.runtime_settings.effective.idle_chat_enabled %}selected{% endif %}>Enabled</option>
+          <option value="0" {% if not dashboard.runtime_settings.effective.idle_chat_enabled %}selected{% endif %}>Disabled</option>
+        </select>
+      </label>
+      <label>
+        <span>Proactive Chat</span>
+        <select name="proactive_chat_enabled">
+          <option value="1" {% if dashboard.runtime_settings.effective.proactive_chat_enabled %}selected{% endif %}>Enabled</option>
+          <option value="0" {% if not dashboard.runtime_settings.effective.proactive_chat_enabled %}selected{% endif %}>Disabled</option>
+        </select>
+      </label>
+      <label>
+        <span>Proactive Chance</span>
+        <input name="proactive_chat_chance_multiplier" type="number" min="0" max="1" step="0.05" value="{{ dashboard.runtime_settings.effective.proactive_chat_chance_multiplier }}">
+      </label>
+      <div class="admin-form-actions">
+        <button type="submit">Apply Runtime Settings</button>
+        <button class="secondary-action" type="submit" name="reset" value="1">Reset Overrides</button>
+      </div>
+    </form>
   </section>
 
-  <section class="panel">
-    <h2>NHP Memory</h2>
-    <pre>{{ dashboard.nhp_memory | tojson(indent=2) }}</pre>
+  <section class="panel admin-section">
+    <div class="panel-head">
+      <div>
+        <p class="card-kicker">Saved Games</p>
+        <h2>Game Review</h2>
+      </div>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Game</th>
+            <th>Status</th>
+            <th>Turn</th>
+            <th>Seats</th>
+            <th>Winner</th>
+            <th>LLM</th>
+            <th>Latency</th>
+            <th>Updated</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for game in dashboard.games %}
+          <tr>
+            <td>
+              <a href="{{ url_for('main.admin_game_page', game_id=game.id, admin_token=admin_token) }}">{{ game.title }}</a>
+              <small>{{ game.id }}</small>
+            </td>
+            <td><span class="status-chip" data-state="{{ game.status }}">{{ game.status }}</span></td>
+            <td>{{ game.turn_index }} / {{ game.phase }}</td>
+            <td>{{ game.seat_mix_label }}</td>
+            <td>{{ game.winner_display_name or "-" }}</td>
+            <td>{{ game.llm_unavailable_count }} failures<br>{{ game.sampling_timeouts }} timeouts</td>
+            <td>{{ "%.0f"|format(game.turn_latency_ms_max) }} ms<br>{{ game.latency_budget_breaches }} breaches</td>
+            <td>{{ game.updated_at }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8">No saved games yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 
-  <section class="panel">
-    <h2>Durable Notes and Tool Writes</h2>
-    <pre>{{ dashboard.nhp_notes | tojson(indent=2) }}</pre>
+  <section class="panel admin-section">
+    <div class="panel-head">
+      <div>
+        <p class="card-kicker">Memory Queue</p>
+        <h2>Pending And Failed Jobs</h2>
+      </div>
+    </div>
+    <form action="{{ url_for('main.admin_retry_memory_form') }}" method="post">
+      <input type="hidden" name="admin_token" value="{{ admin_token }}">
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Select</th>
+              <th>Agent</th>
+              <th>Status</th>
+              <th>Game</th>
+              <th>Retries</th>
+              <th>Failure</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in dashboard.pending_memory %}
+            <tr>
+              <td><input type="checkbox" name="memory_id" value="{{ job.id }}"></td>
+              <td>{{ job.agent_identity }}</td>
+              <td>{{ job.status }}</td>
+              <td><a href="{{ url_for('main.admin_game_page', game_id=job.source_game_id, admin_token=admin_token) }}">{{ job.source_game_id }}</a></td>
+              <td>{{ job.retry_count }}</td>
+              <td>{{ job.failure_reason or "-" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6">No pending or failed memory jobs.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="admin-form-actions">
+        <button type="submit">Retry Selected Or All</button>
+      </div>
+    </form>
   </section>
 
-  <section class="panel">
-    <h2>Durable Relationships</h2>
-    <pre>{{ dashboard.relationships | tojson(indent=2) }}</pre>
+  <section class="admin-two-column">
+    <section class="panel admin-section">
+      <div class="panel-head compact">
+        <h2>NHP Memory</h2>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>Agent</th><th>Status</th><th>Game</th><th>Summary</th></tr></thead>
+          <tbody>
+            {% for memory in dashboard.nhp_memory %}
+            <tr>
+              <td>{{ memory.agent_identity }}</td>
+              <td>{{ memory.status }}</td>
+              <td><a href="{{ url_for('main.admin_game_page', game_id=memory.source_game_id, admin_token=admin_token) }}">{{ memory.source_game_id }}</a></td>
+              <td>{{ memory.summary.first_person_summary or memory.failure_reason or "-" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4">No durable NHP memory yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel admin-section">
+      <div class="panel-head compact">
+        <h2>Relationships</h2>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>Agent</th><th>Target</th><th>Scores</th><th>Updated</th></tr></thead>
+          <tbody>
+            {% for relationship in dashboard.relationships %}
+            <tr>
+              <td>{{ relationship.agent_identity }}</td>
+              <td>{{ relationship.target_display_name }} <small>{{ relationship.target_kind }}</small></td>
+              <td>A {{ relationship.affinity }} / T {{ relationship.trust }} / F {{ relationship.friction }}</td>
+              <td>{{ relationship.updated_at }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4">No durable relationships yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
   </section>
 
-  <section class="panel">
-    <h2>NHP History</h2>
-    <pre>{{ dashboard.nhp_history | tojson(indent=2) }}</pre>
+  <section class="panel admin-section">
+    <div class="panel-head compact">
+      <h2>Durable Notes And Tool Writes</h2>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>When</th><th>Agent</th><th>Kind</th><th>Target</th><th>Note</th></tr></thead>
+        <tbody>
+          {% for note in dashboard.nhp_notes %}
+          <tr>
+            <td>{{ note.created_at }}</td>
+            <td>{{ note.agent_identity }}</td>
+            <td>{{ note.note_kind }}<br><small>{{ note.tool_name }}</small></td>
+            <td>{{ note.target_display_name or note.target_identity or "-" }}</td>
+            <td>{{ note.note_text or note.payload | tojson }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">No durable notes yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </section>
 
-  <section class="panel">
-    <h2>Human Player History</h2>
-    <pre>{{ dashboard.human_history | tojson(indent=2) }}</pre>
+  <section class="admin-two-column">
+    <section class="panel admin-section">
+      <div class="panel-head compact">
+        <h2>NHP History</h2>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>Agent</th><th>Game</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for item in dashboard.nhp_history %}
+            <tr>
+              <td>{{ item.character_name }}</td>
+              <td><a href="{{ url_for('main.admin_game_page', game_id=item.game_id, admin_token=admin_token) }}">{{ item.title }}</a></td>
+              <td>{{ item.status }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3">No NHP history yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel admin-section">
+      <div class="panel-head compact">
+        <h2>Human Player History</h2>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>Player</th><th>Game</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for item in dashboard.human_history %}
+            <tr>
+              <td>{{ item.display_name }}<br><small>{{ item.player_identity }}</small></td>
+              <td><a href="{{ url_for('main.admin_game_page', game_id=item.game_id, admin_token=admin_token) }}">{{ item.title }}</a></td>
+              <td>{{ item.status }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3">No human player history yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
   </section>
 </section>
 {% endblock %}

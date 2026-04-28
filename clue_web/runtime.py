@@ -263,13 +263,97 @@ class GameService:
     the operational concerns needed by the Flask app.
     """
 
-    def __init__(self, repository: ClueRepository, *, secret_key: str) -> None:
+    def __init__(self, repository: ClueRepository, *, secret_key: str, runtime_overrides: dict[str, Any] | None = None) -> None:
         """Store repository access and build the seat-token serializer."""
 
         self._repository = repository
         self._serializer = URLSafeSerializer(secret_key, salt="clue-seat-token")
         self._write_sink = RepositoryNHPWriteSink(repository)
         self._agents = AgentRuntime(write_sink=self._write_sink)
+        self._runtime_overrides = runtime_overrides if runtime_overrides is not None else {}
+
+    @staticmethod
+    def _env_bool(name: str, default: bool) -> bool:
+        """Parse one boolean environment knob with a stable fallback."""
+
+        raw = str(os.getenv(name, "")).strip().lower()
+        if not raw:
+            return default
+        return raw in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _parse_bool(value: Any, *, default: bool) -> bool:
+        """Normalize checkbox, JSON, and query-like boolean values."""
+
+        if isinstance(value, bool):
+            return value
+        raw = str(value or "").strip().lower()
+        if not raw:
+            return default
+        if raw in {"1", "true", "yes", "on", "enabled"}:
+            return True
+        if raw in {"0", "false", "no", "off", "disabled"}:
+            return False
+        return default
+
+    @staticmethod
+    def _parse_multiplier(value: Any, *, default: float) -> float:
+        """Clamp a chat-chance multiplier into the supported 0..1 range."""
+
+        try:
+            return max(0.0, min(float(value), 1.0))
+        except (TypeError, ValueError):
+            return default
+
+    def _runtime_setting_defaults(self) -> dict[str, Any]:
+        """Return process env-backed defaults before admin session overrides."""
+
+        return {
+            "idle_chat_enabled": self._env_bool("CLUE_IDLE_CHAT_ENABLED", True),
+            "proactive_chat_enabled": self._env_bool("CLUE_PROACTIVE_CHAT_ENABLED", True),
+            "proactive_chat_chance_multiplier": self._parse_multiplier(
+                os.getenv("CLUE_PROACTIVE_CHAT_CHANCE_MULTIPLIER", "0.35"),
+                default=0.35,
+            ),
+        }
+
+    def admin_runtime_settings(self) -> dict[str, Any]:
+        """Return the current effective session runtime settings for Administrator Mode."""
+
+        defaults = self._runtime_setting_defaults()
+        overrides = {
+            key: self._runtime_overrides[key]
+            for key in ("idle_chat_enabled", "proactive_chat_enabled", "proactive_chat_chance_multiplier")
+            if key in self._runtime_overrides
+        }
+        effective = defaults | overrides
+        return {
+            "effective": effective,
+            "defaults": defaults,
+            "overrides": overrides,
+            "reset_on_restart": True,
+            "latency_targets_ms": self._latency_targets(),
+            "agent_runtime": self._agents.runtime_summary(),
+        }
+
+    def update_admin_runtime_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Apply safe process-local admin overrides for optional chat behavior."""
+
+        data = dict(payload or {})
+        if self._parse_bool(data.get("reset"), default=False):
+            self._runtime_overrides.clear()
+            return self.admin_runtime_settings()
+
+        defaults = self._runtime_setting_defaults()
+        for key in ("idle_chat_enabled", "proactive_chat_enabled"):
+            if key in data:
+                self._runtime_overrides[key] = self._parse_bool(data.get(key), default=bool(defaults[key]))
+        if "proactive_chat_chance_multiplier" in data:
+            self._runtime_overrides["proactive_chat_chance_multiplier"] = self._parse_multiplier(
+                data.get("proactive_chat_chance_multiplier"),
+                default=float(defaults["proactive_chat_chance_multiplier"]),
+            )
+        return self.admin_runtime_settings()
 
     @staticmethod
     def _latency_targets() -> dict[str, int]:
@@ -1082,15 +1166,128 @@ class GameService:
         self._repository.update_notebook(seat["game_id"], seat["seat_id"], notebook)
         return self.snapshot_for_token(token)
 
-    def admin_dashboard(self) -> dict[str, Any]:
-        """Return Administrator Mode data for saved games and durable NHP memory."""
+    @staticmethod
+    def _seat_mix_label(seat_mix: dict[str, int]) -> str:
+        """Format one compact seat-mix summary for admin tables."""
+
+        order = ("human", "llm", "heuristic", "np")
+        parts = [f"{seat_mix[key]} {key}" for key in order if int(seat_mix.get(key, 0) or 0)]
+        parts.extend(f"{value} {key}" for key, value in sorted(seat_mix.items()) if key not in order and int(value or 0))
+        return ", ".join(parts) or "No seats"
+
+    def _admin_game_summary_from_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Shape one saved game into the dashboard's compact review row."""
+
+        state = dict(record.get("state") or {})
+        analysis = dict(state.get("analysis") or {})
+        metrics = dict(analysis.get("game_metrics") or {})
+        seats = dict(state.get("seats") or {})
+        seat_mix: dict[str, int] = {}
+        for seat in seats.values():
+            seat_kind = str(dict(seat or {}).get("seat_kind") or "unknown")
+            seat_mix[seat_kind] = seat_mix.get(seat_kind, 0) + 1
+        winner_seat_id = str(state.get("winner_seat_id") or "")
+        winner = dict(seats.get(winner_seat_id) or {})
+        active_seat_id = str(state.get("active_seat_id") or "")
+        active = dict(seats.get(active_seat_id) or {})
+        hidden = dict(state.get("hidden") or {})
+        case_file = dict(hidden.get("case_file") or {})
+        return {
+            "id": str(record.get("id") or ""),
+            "title": str(record.get("title") or ""),
+            "status": str(record.get("status") or state.get("status") or ""),
+            "created_at": str(record.get("created_at") or ""),
+            "updated_at": str(record.get("updated_at") or ""),
+            "phase": str(state.get("phase") or ""),
+            "turn_index": int(state.get("turn_index") or 0),
+            "active_seat_id": active_seat_id,
+            "active_display_name": str(active.get("display_name") or active.get("character") or active_seat_id),
+            "winner_seat_id": winner_seat_id,
+            "winner_display_name": str(winner.get("display_name") or winner.get("character") or winner_seat_id),
+            "case_file": case_file,
+            "seat_count": len(seats),
+            "seat_mix": seat_mix,
+            "seat_mix_label": self._seat_mix_label(seat_mix),
+            "actions_applied": int(metrics.get("actions_applied", 0) or 0),
+            "autonomous_actions": int(metrics.get("autonomous_actions", 0) or 0),
+            "llm_unavailable_count": int(metrics.get("llm_unavailable_count", 0) or 0),
+            "sampling_timeouts": int(metrics.get("sampling_timeouts", 0) or 0),
+            "latency_budget_breaches": int(metrics.get("latency_budget_breaches", 0) or 0),
+            "turn_latency_ms_max": float(metrics.get("turn_latency_ms_max", 0.0) or 0.0),
+            "agent_decision_latency_ms_max": float(metrics.get("agent_decision_latency_ms_max", 0.0) or 0.0),
+            "tool_snapshot_latency_ms_max": float(metrics.get("tool_snapshot_latency_ms_max", 0.0) or 0.0),
+            "completion_rate": float(metrics.get("completion_rate", 0.0) or 0.0),
+            "accusation_precision": float(metrics.get("accusation_precision", 0.0) or 0.0),
+            "run_context": dict(analysis.get("run_context") or {}),
+        }
+
+    def _admin_game_summary(self, game: dict[str, Any]) -> dict[str, Any]:
+        """Load one listed game's state and return a compact dashboard row."""
+
+        record = self._repository.get_game_record(str(game.get("id") or ""))
+        if record is None:
+            return {
+                **dict(game),
+                "phase": "",
+                "turn_index": 0,
+                "winner_display_name": "",
+                "seat_mix_label": "Unavailable",
+                "llm_unavailable_count": 0,
+                "sampling_timeouts": 0,
+                "latency_budget_breaches": 0,
+                "turn_latency_ms_max": 0.0,
+                "autonomous_actions": 0,
+            }
+        return self._admin_game_summary_from_record(record)
+
+    @staticmethod
+    def _admin_overview(
+        *,
+        games: list[dict[str, Any]],
+        pending_memory: list[dict[str, Any]],
+        nhp_memory: list[dict[str, Any]],
+        notes: list[dict[str, Any]],
+        relationships: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Aggregate the headline numbers for the Superplayer admin dashboard."""
 
         return {
-            "games": self._repository.list_games(limit=50),
-            "nhp_memory": self._repository.list_nhp_memory(limit=100),
-            "nhp_notes": self._repository.list_nhp_notes(limit=100),
-            "pending_memory": self._repository.list_pending_nhp_memory_jobs(include_failed=True, limit=100),
-            "relationships": self._repository.list_nhp_relationships(limit=250),
+            "saved_games": len(games),
+            "active_games": sum(1 for game in games if str(game.get("status") or "") == "active"),
+            "complete_games": sum(1 for game in games if str(game.get("status") or "") == "complete"),
+            "pending_memory_jobs": sum(1 for job in pending_memory if str(job.get("status") or "") == "pending"),
+            "failed_memory_jobs": sum(1 for job in pending_memory if str(job.get("status") or "") == "failed"),
+            "ready_memory_rows": sum(1 for job in nhp_memory if str(job.get("status") or "") == "ready"),
+            "durable_notes": len(notes),
+            "relationships": len(relationships),
+            "llm_failures": sum(int(game.get("llm_unavailable_count", 0) or 0) for game in games),
+            "sampling_timeouts": sum(int(game.get("sampling_timeouts", 0) or 0) for game in games),
+            "latency_budget_breaches": sum(int(game.get("latency_budget_breaches", 0) or 0) for game in games),
+            "turn_latency_ms_max": max((float(game.get("turn_latency_ms_max", 0.0) or 0.0) for game in games), default=0.0),
+        }
+
+    def admin_dashboard(self) -> dict[str, Any]:
+        """Return shaped Superplayer Administrator Mode dashboard data."""
+
+        games = [self._admin_game_summary(game) for game in self._repository.list_games(limit=100)]
+        nhp_memory = self._repository.list_nhp_memory(limit=100)
+        nhp_notes = self._repository.list_nhp_notes(limit=100)
+        pending_memory = self._repository.list_pending_nhp_memory_jobs(include_failed=True, limit=100)
+        relationships = self._repository.list_nhp_relationships(limit=250)
+        return {
+            "overview": self._admin_overview(
+                games=games,
+                pending_memory=pending_memory,
+                nhp_memory=nhp_memory,
+                notes=nhp_notes,
+                relationships=relationships,
+            ),
+            "runtime_settings": self.admin_runtime_settings(),
+            "games": games,
+            "nhp_memory": nhp_memory,
+            "nhp_notes": nhp_notes,
+            "pending_memory": pending_memory,
+            "relationships": relationships,
             "nhp_history": self._repository.list_nhp_history(limit=100),
             "human_history": self._repository.list_human_player_history(limit=100),
         }
@@ -1099,6 +1296,50 @@ class GameService:
         """Return a full admin-authorized saved-game detail payload."""
 
         return self._repository.admin_game_detail(game_id)
+
+    def admin_game_review(self, game_id: str) -> dict[str, Any]:
+        """Return one saved game with admin-truth fields shaped for the UI."""
+
+        detail = self._repository.admin_game_detail(game_id)
+        summary = self._admin_game_summary_from_record(detail)
+        state = dict(detail.get("state") or {})
+        analysis = dict(state.get("analysis") or {})
+        hidden = dict(state.get("hidden") or {})
+        hands = dict(hidden.get("hands") or {})
+        seats = []
+        state_seats = dict(state.get("seats") or {})
+        for seat in list(detail.get("seats") or []):
+            seat_id = str(seat.get("seat_id") or "")
+            seat_state = dict(state_seats.get(seat_id) or {})
+            seats.append(
+                {
+                    **dict(seat),
+                    "position": str(seat_state.get("position") or ""),
+                    "status": str(seat_state.get("status") or ""),
+                    "hand_count": int(seat_state.get("hand_count", len(hands.get(seat_id, []))) or 0),
+                    "hand": list(hands.get(seat_id, [])),
+                }
+            )
+        events = [dict(event) for event in list(detail.get("events") or [])]
+        trace_events = [event for event in events if str(event.get("event_type") or "").startswith("trace_")]
+        private_events = [event for event in events if str(event.get("visibility") or "").startswith("seat:")]
+        public_events = [event for event in events if str(event.get("visibility") or "") == "public"]
+        return {
+            **detail,
+            "summary": summary,
+            "seats": seats,
+            "case_file": dict(hidden.get("case_file") or {}),
+            "hands": hands,
+            "analysis": analysis,
+            "game_metrics": dict(analysis.get("game_metrics") or {}),
+            "latency_targets_ms": dict(analysis.get("latency_targets_ms") or {}),
+            "agent_runtime": dict(analysis.get("agent_runtime") or {}),
+            "turn_metrics": list(analysis.get("turn_metrics") or []),
+            "social": dict(state.get("social") or {}),
+            "public_events": public_events,
+            "private_events": private_events,
+            "trace_events": trace_events,
+        }
 
     def admin_nhp_history(self, *, agent_identity: str = "", limit: int = 100) -> list[dict[str, Any]]:
         """Return saved-game history for non-human player identities."""
@@ -1484,6 +1725,8 @@ class GameService:
             return
         if self._autonomous_seat_to_act(state) is not None:
             return
+        if not self._idle_chat_enabled():
+            return
 
         public_events = self._player_facing_public_events(game_id)
         if not public_events:
@@ -1640,7 +1883,8 @@ class GameService:
             try:
                 decision = self._agents.decide_chat(seat=seat, snapshot=snapshot)
             except LLMDecisionError as exc:
-                state = self._merge_latest_social_state(state)
+                if (exc.debug or {}).get("tool_writes"):
+                    state = self._merge_latest_social_state(state)
                 events.append(
                     self._trace_event(
                         "trace_llm_unavailable",
@@ -1662,8 +1906,8 @@ class GameService:
             if decision is None:
                 pass
             else:
-                state = self._merge_latest_social_state(state)
                 if decision.agent_meta.get("tool_writes"):
+                    state = self._merge_latest_social_state(state)
                     state_changed = True
                 safe_text = sanitize_public_chat(str(decision.text or ""))
                 if decision.speak and safe_text:
@@ -1985,20 +2229,20 @@ class GameService:
             5: 0.68,
         }.get(persona_chattiness(character), 0.32)
 
-    @staticmethod
-    def _proactive_chat_enabled() -> bool:
+    def _idle_chat_enabled(self) -> bool:
+        """Return whether snapshot-triggered optional NHP chat may run."""
+
+        return bool(self.admin_runtime_settings()["effective"]["idle_chat_enabled"])
+
+    def _proactive_chat_enabled(self) -> bool:
         """Return whether quiet-table proactive NHP chat is enabled."""
 
-        return str(os.getenv("CLUE_PROACTIVE_CHAT_ENABLED", "1")).strip().lower() not in {"0", "false", "no", "off"}
+        return bool(self.admin_runtime_settings()["effective"]["proactive_chat_enabled"])
 
-    @staticmethod
-    def _proactive_chat_chance_multiplier() -> float:
+    def _proactive_chat_chance_multiplier(self) -> float:
         """Return the bounded multiplier applied to quiet-table chat chance."""
 
-        try:
-            return max(0.0, min(float(os.getenv("CLUE_PROACTIVE_CHAT_CHANCE_MULTIPLIER", "0.35")), 1.0))
-        except (TypeError, ValueError):
-            return 0.35
+        return float(self.admin_runtime_settings()["effective"]["proactive_chat_chance_multiplier"])
 
     @staticmethod
     def _idle_chat_roll(game_id: str, seat_id: str, latest_public_event_index: int) -> float:

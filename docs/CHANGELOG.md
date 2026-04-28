@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Reworked `/admin` into a Superplayer-style dashboard for saved-game stats, memory jobs, durable notes, relationships, and player histories.
+- Added protected saved-game review pages with full admin-truth case file, hands, private events, traces, metrics, social state, memory, and notes.
+- Added process-local admin runtime controls for optional idle chat and proactive NHP chatter, with JSON APIs and server-rendered form posts.
 
 ## v1.8.0 - 2026-04-27
 - Added durable cross-game NHP memory jobs and relationship persistence for stateful chatbot behavior.

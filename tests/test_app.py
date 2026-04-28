@@ -351,6 +351,80 @@ def test_proactive_idle_chat_runs_once_after_model_silence(client, monkeypatch):
     assert len(_chat_events(third)) == 1
 
 
+def test_admin_runtime_setting_can_disable_idle_chat(client, app, monkeypatch):
+    """The session-only idle-chat setting should stop snapshot-triggered NHP chat."""
+
+    app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": False})
+    monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
+    calls = {"count": 0}
+
+    def _reply(self, *, snapshot):
+        calls["count"] += 1
+        return ChatDecision(speak=True, text="This should stay quiet.", rationale_private="chat")
+
+    monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.decide_chat", _reply)
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Idle Disabled Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "llm"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+
+    assert _chat_events(snapshot) == []
+    assert calls["count"] == 0
+
+
+def test_admin_runtime_setting_can_disable_only_proactive_chat(client, app, monkeypatch):
+    """Disabling proactive chat should preserve reactive replies."""
+
+    app.extensions["game_service"].update_admin_runtime_settings({"proactive_chat_enabled": False})
+    monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
+    calls = {"count": 0}
+
+    def _reply(self, *, snapshot):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return ChatDecision(speak=False, rationale_private="reactive silence")
+        return ChatDecision(speak=True, text="Reactive still works.", rationale_private="reactive")
+
+    monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.decide_chat", _reply)
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Proactive Disabled Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "llm"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    first = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+    second = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+    third = client.post(
+        "/api/v1/games/current/actions",
+        headers={"X-Clue-Seat-Token": token},
+        json={"action": "send_chat", "text": "Colonel Mustard, respond."},
+    ).get_json()
+
+    assert _chat_events(first) == []
+    assert _chat_events(second) == []
+    assert calls["count"] == 2
+    assert _chat_events(third)[-1]["payload"]["text"] == "Reactive still works."
+
+
 def test_human_chat_can_trigger_idle_npc_reply_without_advancing_turn(client, monkeypatch):
     """Human off-turn chat should be able to provoke one NPC reply without changing turn control."""
 
@@ -881,6 +955,7 @@ def test_admin_endpoints_require_token_and_expose_memory(client, app, monkeypatc
     nhp_history = client.get("/api/v1/admin/nhp-history", headers={"X-Clue-Admin-Token": "admin-test"})
     human_history = client.get("/api/v1/admin/human-history?player_identity=Miss%20Scarlet", headers={"X-Clue-Admin-Token": "admin-test"})
     page = client.get("/admin?admin_token=admin-test")
+    game_page = client.get(f"/admin/games/{payload['game_id']}?admin_token=admin-test")
 
     assert blocked.status_code == 403
     assert allowed.status_code == 200
@@ -892,8 +967,50 @@ def test_admin_endpoints_require_token_and_expose_memory(client, app, monkeypatc
     assert nhp_history.get_json()["nhp_history"]
     assert human_history.get_json()["human_history"][0]["player_identity"] == "miss scarlet"
     assert page.status_code == 200
-    assert "Administrator Mode" in page.get_data(as_text=True)
-    assert "Durable Notes and Tool Writes" in page.get_data(as_text=True)
+    page_html = page.get_data(as_text=True)
+    assert "Superplayer Administration" in page_html
+    assert "Game Review" in page_html
+    assert "Durable Notes And Tool Writes" in page_html
+    assert game_page.status_code == 200
+    game_html = game_page.get_data(as_text=True)
+    case_file = app.extensions["repository"].get_state(payload["game_id"])["hidden"]["case_file"]
+    assert "Case File And Hands" in game_html
+    assert case_file["suspect"] in game_html
+    assert "Event Stream" in game_html
+    assert "Raw State" in game_html
+
+
+def test_admin_runtime_settings_api_requires_token_and_clamps_values(client, app):
+    """Administrator runtime settings should be protected and process-local."""
+
+    app.config["CLUE_ADMIN_TOKEN"] = "admin-test"
+
+    blocked = client.get("/api/v1/admin/runtime-settings")
+    allowed = client.get("/api/v1/admin/runtime-settings", headers={"X-Clue-Admin-Token": "admin-test"})
+    updated = client.post(
+        "/api/v1/admin/runtime-settings",
+        headers={"X-Clue-Admin-Token": "admin-test"},
+        json={
+            "idle_chat_enabled": False,
+            "proactive_chat_enabled": False,
+            "proactive_chat_chance_multiplier": 9,
+        },
+    )
+    reset = client.post(
+        "/api/v1/admin/runtime-settings",
+        headers={"X-Clue-Admin-Token": "admin-test"},
+        json={"reset": True},
+    )
+
+    assert blocked.status_code == 403
+    assert allowed.status_code == 200
+    assert allowed.get_json()["effective"]["idle_chat_enabled"] is True
+    assert updated.status_code == 200
+    assert updated.get_json()["effective"]["idle_chat_enabled"] is False
+    assert updated.get_json()["effective"]["proactive_chat_enabled"] is False
+    assert updated.get_json()["effective"]["proactive_chat_chance_multiplier"] == 1.0
+    assert reset.get_json()["effective"]["idle_chat_enabled"] is True
+    assert app.extensions["runtime_overrides"] == {}
 
 
 def test_admin_memory_retry_uses_pending_jobs(client, app, monkeypatch):
@@ -909,10 +1026,13 @@ def test_admin_memory_retry_uses_pending_jobs(client, app, monkeypatch):
 
     monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.summarize_memory", _summary)
     retry = client.post("/api/v1/admin/nhp-memory/retry", headers={"X-Clue-Admin-Token": "admin-test"}, json={})
+    page_retry = client.post("/admin/nhp-memory/retry", data={"admin_token": "admin-test"}, follow_redirects=True)
 
     assert retry.status_code == 200
     assert retry.get_json()["attempted"] == 1
     assert app.extensions["repository"].list_nhp_memory(agent_identity="Colonel Mustard")[0]["status"] == "ready"
+    assert page_retry.status_code == 200
+    assert "Memory retry attempted" in page_retry.get_data(as_text=True)
 
 
 def test_create_app_loads_database_url_from_secret(monkeypatch, tmp_path: Path):

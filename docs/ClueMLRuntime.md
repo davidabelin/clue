@@ -57,6 +57,14 @@ Current defaults:
 - session TTL: `900` seconds
 - local session DB path: `data/clue_agent_sessions.db` unless overridden
 
+### Admin session overrides
+Superplayer Administrator Mode can set process-local overrides for optional idle chat:
+- all snapshot-triggered idle chat enabled/disabled
+- proactive quiet-table chat enabled/disabled
+- proactive quiet-table chat chance multiplier
+
+These overrides reset on app restart. They do not change stored game state, model profiles, API keys, or the rules engine.
+
 ### Profile precedence
 - Runtime config starts with normalized env defaults.
 - `model_runtime_defaults(kind="turn")` or `model_runtime_defaults(kind="chat")` overlays maintainer-authored YAML defaults.
@@ -168,6 +176,8 @@ Useful browser-facing diagnostics include:
 - tool-call count
 - LLM failure reason when the live model path cannot produce a turn
 - belief summary and top-ranked suggestions
+
+Superplayer Administrator Mode exposes fuller diagnostics, including saved-game summaries, case-file truth, all hands, private events, traces, turn metrics, social state, durable memory, notes, and relationships.
 
 ## Social Memory Integration
 The LLM runtime does not own the social graph. `GameService` does.
