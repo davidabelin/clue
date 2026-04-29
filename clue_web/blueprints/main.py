@@ -43,7 +43,15 @@ def _admin_token_is_valid(token: str) -> bool:
 def _admin_forbidden():
     """Return the standard protected-admin route response."""
 
-    return "Administrator token required.", 403
+    return (
+        render_template(
+            "pages/admin_entry.html",
+            title="Clue Superplayer Admin",
+            error="Administrator token required.",
+            admin_configured=bool(str(current_app.config.get("CLUE_ADMIN_TOKEN", "")).strip()),
+        ),
+        403,
+    )
 
 
 def _admin_form_payload() -> dict[str, str]:
@@ -57,6 +65,13 @@ def admin_page():
     """Render the protected Superplayer Administrator Mode dashboard."""
 
     token = str(request.args.get("admin_token", "")).strip()
+    if not token:
+        return render_template(
+            "pages/admin_entry.html",
+            title="Clue Superplayer Admin",
+            error="",
+            admin_configured=bool(str(current_app.config.get("CLUE_ADMIN_TOKEN", "")).strip()),
+        )
     if not _admin_token_is_valid(token):
         return _admin_forbidden()
     dashboard = current_app.extensions["game_service"].admin_dashboard()

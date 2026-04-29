@@ -59,7 +59,8 @@ https://aix-labs.uw.r.appspot.com/clue/
 Run only checks that do not create games or write events:
 
 - service responds at `/clue/`
-- `/clue/admin` rejects missing/invalid admin tokens
+- `/clue/admin` renders the Superplayer Admin token entry screen
+- `/clue/admin?admin_token=<token>` opens the Superplayer Admin dashboard
 - `/clue/api/v1/admin/games` accepts the configured admin token
 - existing saved-game/admin data is readable
 - Secret Manager-backed config resolves at startup

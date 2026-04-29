@@ -954,6 +954,9 @@ def test_admin_endpoints_require_token_and_expose_memory(client, app, monkeypatc
     notes = client.get("/api/v1/admin/nhp-notes", headers={"X-Clue-Admin-Token": "admin-test"})
     nhp_history = client.get("/api/v1/admin/nhp-history", headers={"X-Clue-Admin-Token": "admin-test"})
     human_history = client.get("/api/v1/admin/human-history?player_identity=Miss%20Scarlet", headers={"X-Clue-Admin-Token": "admin-test"})
+    home = client.get("/")
+    admin_entry = client.get("/admin")
+    invalid_admin_entry = client.get("/admin?admin_token=wrong")
     page = client.get("/admin?admin_token=admin-test")
     game_page = client.get(f"/admin/games/{payload['game_id']}?admin_token=admin-test")
 
@@ -966,6 +969,12 @@ def test_admin_endpoints_require_token_and_expose_memory(client, app, monkeypatc
     assert notes.get_json()["nhp_notes"]
     assert nhp_history.get_json()["nhp_history"]
     assert human_history.get_json()["human_history"][0]["player_identity"] == "miss scarlet"
+    assert home.status_code == 200
+    assert "Superplayer Admin" in home.get_data(as_text=True)
+    assert admin_entry.status_code == 200
+    assert "Open Superplayer Admin" in admin_entry.get_data(as_text=True)
+    assert invalid_admin_entry.status_code == 403
+    assert "Administrator token required." in invalid_admin_entry.get_data(as_text=True)
     assert page.status_code == 200
     page_html = page.get_data(as_text=True)
     assert "Superplayer Administration" in page_html

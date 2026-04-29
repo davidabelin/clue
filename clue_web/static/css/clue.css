@@ -267,6 +267,25 @@ button:hover {
   filter: saturate(1.06);
 }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.6rem;
+  padding: 0.72rem 1.08rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #9c3342, var(--accent));
+  color: #fff7ef;
+  text-decoration: none;
+  box-shadow: 0 10px 18px rgba(142, 35, 49, 0.26);
+}
+
+.button-link:hover,
+.button-link:focus-visible {
+  color: #fffdf7;
+  filter: saturate(1.06);
+}
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -729,6 +748,34 @@ button:disabled {
 
 .admin-section summary h2 {
   display: inline;
+}
+
+.admin-entry-shell {
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.admin-entry-panel,
+.admin-entry-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.admin-entry-form {
+  max-width: 32rem;
+}
+
+.admin-entry-error {
+  margin: 0;
+  padding: 0.78rem 0.88rem;
+  border-radius: 12px;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 1rem;
 }
 
 @media (max-width: 900px) {

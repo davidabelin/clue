@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Added visible Superplayer Admin links and a token-entry screen at `/admin` so deployed maintainers can reach the protected dashboard without manually constructing a query URL.
 - Reworked `/admin` into a Superplayer-style dashboard for saved-game stats, memory jobs, durable notes, relationships, and player histories.
 - Added protected saved-game review pages with full admin-truth case file, hands, private events, traces, metrics, social state, memory, and notes.
 - Added process-local admin runtime controls for optional idle chat and proactive NHP chatter, with JSON APIs and server-rendered form posts.

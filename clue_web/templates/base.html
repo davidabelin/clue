@@ -11,6 +11,7 @@
     <header class="shell-header">
       <a class="brand" href="{{ url_for('main.home') }}">Clue</a>
       <nav class="shell-nav">
+        <a class="admin-nav-link" href="{{ url_for('main.admin_page') }}">Superplayer Admin</a>
         <a href="{{ aix_hub_url }}">AIX Labs</a>
         <a href="{{ aix_contact_url }}">Contact</a>
         <a href="{{ aix_privacy_url }}">Privacy</a>
@@ -24,6 +25,7 @@
       <p>Clue {{ clue_release_label }} runs as a standalone lab with shared AIX navigation, private seat state, and public table play.</p>
       <nav class="shell-nav shell-footer-nav">
         <a href="{{ url_for('main.home') }}">Clue Home</a>
+        <a href="{{ url_for('main.admin_page') }}">Superplayer Admin</a>
         <a href="{{ aix_hub_url }}">AIX Labs</a>
         <a href="{{ aix_contact_url }}">Contact</a>
         <a href="{{ aix_privacy_url }}">Privacy</a>

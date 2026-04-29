@@ -1,0 +1,34 @@
+{# Token entry point for the protected Superplayer Administrator Mode dashboard. #}
+{% extends "base.html" %}
+{% block content %}
+<section class="admin-shell admin-entry-shell">
+  <div class="admin-hero panel">
+    <div>
+      <p class="eyebrow">Superplayer Administration</p>
+      <h1>Admin Access</h1>
+      <p class="admin-subline">Review saved games, full admin truth, NHP memory, history, stats, and runtime chat controls.</p>
+    </div>
+    <a class="admin-back-link" href="{{ url_for('main.home') }}">Clue Home</a>
+  </div>
+
+  <section class="panel admin-entry-panel">
+    {% if error %}
+    <p class="request-error admin-entry-error">{{ error }}</p>
+    {% endif %}
+    {% if admin_configured %}
+    <form class="admin-entry-form" method="get" action="{{ url_for('main.admin_page') }}">
+      <label>
+        <span>Administrator Token</span>
+        <input type="password" name="admin_token" autocomplete="current-password" required autofocus>
+      </label>
+      <button type="submit">Open Superplayer Admin</button>
+    </form>
+    {% else %}
+    <div class="request-error admin-entry-error">
+      This app server does not have a configured Administrator token.
+    </div>
+    <p class="field-note">Set <code>CLUE_ADMIN_TOKEN</code> locally or configure <code>CLUE_ADMIN_TOKEN_SECRET</code> for deployment.</p>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}

@@ -40,7 +40,8 @@ Standalone Clue lab for AIX, currently labeled **v1.8.0**.
 - `/api/v1/games/current` returns the filtered snapshot, including the table UI mode, for the current signed seat token.
 - `/api/v1/games/current/actions` applies one action through the Game Master, persists state and events, and runs any follow-up autonomous turns.
 - `/api/v1/games/current/notebook` updates one seat-private notebook.
-- `/admin?admin_token=...` renders the protected Superplayer administration dashboard for saved-game review, stats, NHP memory, durable notes, relationships, and player histories.
+- `/admin` renders the protected Superplayer administration entry screen, linked from Clue Home and the shared chrome.
+- `/admin?admin_token=...` renders the Superplayer administration dashboard for saved-game review, stats, NHP memory, durable notes, relationships, and player histories.
 - `/admin/games/<game_id>?admin_token=...` renders full admin-truth game inspection, including the case file, hands, private events, traces, metrics, social state, memory, and notes.
 - `/api/v1/admin/...` exposes the same protected data surfaces plus memory retry and session runtime settings for maintainers.
 
@@ -126,6 +127,15 @@ python run.py
 ```
 
 Open `http://127.0.0.1:5002/`.
+
+For local admin review:
+
+```powershell
+$env:CLUE_ADMIN_TOKEN = "local-admin"
+python run.py
+```
+
+Open `http://127.0.0.1:5002/admin` and enter `local-admin`. The production route is `https://aix-labs.uw.r.appspot.com/clue/admin` and uses the deployed `clue-admin-token` Secret Manager value.
 
 ## Tests
 ```powershell
