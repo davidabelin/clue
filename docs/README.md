@@ -4,7 +4,7 @@ This directory is maintainer-facing. The documents below are all current for **v
 
 ## Start Here
 - [`../README.md`](../README.md)
-  Canonical repo front door: architecture summary, env vars, local run, tests, and deployment entry points.
+  Canonical repo front door: architecture summary, env vars, local `run-local.bat`, admin-token clipboard commands, tests, and deployment entry points.
 - [`ClueDeepDive.md`](./ClueDeepDive.md)
   Full-system walkthrough of how rules, storage, seat agents, social memory, API routes, and browser state fit together.
 
@@ -12,7 +12,7 @@ This directory is maintainer-facing. The documents below are all current for **v
 - [`ClueMLRuntime.md`](./ClueMLRuntime.md)
   OpenAI seat runtime contract: model/profile selection, tools, guardrails, session memory, tracing, diagnostics, and failure behavior.
 - [`CLUE_live_checks.md`](./CLUE_live_checks.md)
-  Local, smoke-service, and production read-only verification checklist for the live chatbot path.
+  Local, smoke-service, and production read-only verification checklist, including exact admin-token clipboard commands.
 - [`CHANGELOG.md`](./CHANGELOG.md)
   Release history for the standalone `clue` repo.
 

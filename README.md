@@ -58,6 +58,8 @@ Standalone Clue lab for AIX, currently labeled **v1.9.0**.
 
 ## Environment Contract
 
+Clue does not currently load a repo `.env` file, and this repo does not contain its own venv. Local settings come from the terminal process that starts `run.py`, from a helper script such as `run-local.bat`, or from Windows user/system environment variables.
+
 ### App and storage
 - `CLUE_SECRET_KEY`
   Flask secret key and fallback session-encryption seed for local development.
@@ -121,21 +123,68 @@ Model-profile and chat-profile YAML defaults live in:
 - [`clue_agents/profiles/personas.yaml`](./clue_agents/profiles/personas.yaml)
 
 ## Local Run
+From Command Prompt or by double-clicking in Explorer:
+
+```bat
+run-local.bat
+```
+
+`run-local.bat` sets:
+
+```bat
+CLUE_ADMIN_TOKEN=local-admin
+CLUE_DB_PATH=<repo>\data\clue-dev.db
+```
+
+Then open `http://127.0.0.1:5002/`.
+
+For local Superplayer Admin, open `http://127.0.0.1:5002/admin` and enter:
+
+```text
+local-admin
+```
+
+To put the local admin token on your clipboard from Command Prompt:
+
+```bat
+echo local-admin|clip
+```
+
+PowerShell also works, but is not required:
+
 ```powershell
 pip install -r requirements.txt
-python run.py
-```
-
-Open `http://127.0.0.1:5002/`.
-
-For local admin review:
-
-```powershell
 $env:CLUE_ADMIN_TOKEN = "local-admin"
+$env:CLUE_DB_PATH = "$PWD\data\clue-dev.db"
 python run.py
 ```
 
-Open `http://127.0.0.1:5002/admin` and enter `local-admin`. The production route is `https://aix-labs.uw.r.appspot.com/clue/admin` and uses the deployed `clue-admin-token` Secret Manager value.
+### Admin tokens
+
+Local admin token:
+- `local-admin`, when Clue is started by `run-local.bat` or by a terminal where `CLUE_ADMIN_TOKEN=local-admin` has been set.
+- This is not stored in a `.env` file. It is an environment variable on the process that starts the app.
+
+Production admin token:
+- The production app uses Secret Manager secret `clue-admin-token`.
+- Normal App Engine deploys do not create a new token. Fetch it again only if the secret is rotated or paste stops working.
+
+To copy the production token to the clipboard from Command Prompt:
+
+```bat
+gcloud secrets versions access latest --secret=clue-admin-token --project=aix-labs | clip
+```
+
+Then open `https://aix-labs.uw.r.appspot.com/clue/admin`, paste, and submit.
+
+Smoke-service admin token:
+- The smoke deployment uses Secret Manager secret `clue-smoke-admin-token`.
+
+To copy the smoke token to the clipboard from Command Prompt:
+
+```bat
+gcloud secrets versions access latest --secret=clue-smoke-admin-token --project=aix-labs | clip
+```
 
 ## Tests
 ```powershell

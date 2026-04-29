@@ -5,6 +5,7 @@
 ## v1.9.0 - 2026-04-29
 - Added visible Superplayer Admin links and a token-entry screen at `/admin` so deployed maintainers can reach the protected dashboard without manually constructing a query URL.
 - Added Admin Access guidance for local `CLUE_ADMIN_TOKEN`, deployed `CLUE_ADMIN_TOKEN_SECRET`, and the production `clue-admin-token` Secret Manager value without exposing token contents.
+- Added `run-local.bat` documentation and Command Prompt clipboard commands for local, production, and smoke Administrator tokens.
 - Reworked `/admin` into a Superplayer-style dashboard for saved-game stats, memory jobs, durable notes, relationships, and player histories.
 - Added protected saved-game review pages with full admin-truth case file, hands, private events, traces, metrics, social state, memory, and notes.
 - Added process-local admin runtime controls for optional idle chat and proactive NHP chatter, with JSON APIs and server-rendered form posts.

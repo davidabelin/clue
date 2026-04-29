@@ -4,6 +4,22 @@ Use these checks when validating the live chatbot path. Write-based proof belong
 
 ## Local OpenAI + SQLite Smoke
 
+From Command Prompt or by double-clicking in Explorer:
+
+```bat
+run-local.bat
+```
+
+This starts local Clue with `CLUE_ADMIN_TOKEN=local-admin` and `CLUE_DB_PATH=data\clue-dev.db`. Open `http://127.0.0.1:5002/admin` and paste `local-admin`.
+
+To put the local admin token on the clipboard:
+
+```bat
+echo local-admin|clip
+```
+
+PowerShell equivalent:
+
 ```powershell
 pip install -r requirements.txt
 $env:CLUE_DB_PATH = "$PWD\data\clue-live-smoke.db"
@@ -13,6 +29,28 @@ python run.py
 ```
 
 Create a table with at least one LLM seat, confirm LLM turns fail loudly when credentials are missing, and confirm live LLM seats can chat/act when credentials are present.
+
+## Admin Token Clipboard Commands
+
+Production Admin page:
+
+```text
+https://aix-labs.uw.r.appspot.com/clue/admin
+```
+
+Copy the production token from Secret Manager to the clipboard:
+
+```bat
+gcloud secrets versions access latest --secret=clue-admin-token --project=aix-labs | clip
+```
+
+Smoke Admin token:
+
+```bat
+gcloud secrets versions access latest --secret=clue-smoke-admin-token --project=aix-labs | clip
+```
+
+A normal App Engine deployment does not create a new admin token. Re-copy from Secret Manager only when the secret is rotated or the pasted token stops working.
 
 ## Deploy Smoke Service
 
@@ -60,7 +98,7 @@ Run only checks that do not create games or write events:
 
 - service responds at `/clue/`
 - `/clue/admin` renders the Superplayer Admin token entry screen
-- `/clue/admin?admin_token=<token>` opens the Superplayer Admin dashboard
+- `/clue/admin?admin_token=<token>` opens the Superplayer Admin dashboard; use the `clue-admin-token` clipboard command above
 - `/clue/api/v1/admin/games` accepts the configured admin token
 - existing saved-game/admin data is readable
 - Secret Manager-backed config resolves at startup
