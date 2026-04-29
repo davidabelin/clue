@@ -2,13 +2,13 @@
 
 - As of 2026-04-29
 - Current version: 1.9.0
-- Next target: v2.0.0 release candidate in about two weeks
+- Next target: v1.9.1 same-day stabilization, then v2.0.0 release candidate in about two weeks
 
 ## Rolling items
 
 This list stays at the top for loose hints and breadcrumbs. Move items into the structured lists below as soon as they become actionable.
 
-No rolling items are currently loose; the previous notes were integrated into the v1.9.0 stabilization pass.
+No rolling items are currently loose; the previous notes were integrated into the v1.9.1 same-day stabilization target.
 
 ## v1.9.0 Stabilization Pass
 
@@ -20,6 +20,38 @@ Goal: make the existing v1.8.0 chatbot/admin/gameplay surfaces easier to operate
 - [x] Beginner UI polish: trim duplicate helper copy, slightly rebalance Caseboard/Table Wire proportions, and improve low-risk SVG board line rendering.
 - [x] Regression coverage: prove admin token guidance does not expose the token and LLM failure debug remains private while public failure events stay visible.
 - [x] Release docs and markers: bump the release label to `v1.9.0`, update the changelog, and keep live-check docs current.
+
+## v1.9.1 Same-Day Stabilization Target
+
+Goal: make one locally hosted game feel understandable, responsive, and compact enough that normal play is possible without confusion caused by lag, unclear loading states, or excessive scrolling.
+
+### Create-Table Feedback
+
+- [ ] Add an immediate loading state after `Create Table` is clicked: disable the button, show a spinner/progress message, and make it explicit that table creation can take time while NHP/LLM seats initialize.
+- [ ] Keep the create-table form state visible while loading so it does not feel like the click failed.
+- [ ] Surface create-game errors clearly and restore the button if table creation fails.
+
+### Gameplay Latency And Synchronization
+
+- [ ] Identify where the painful local-game delay is coming from: initial table creation, autonomous turn execution, OpenAI calls, polling delay, DOM rendering, or database writes.
+- [ ] Add player-visible "working" states when an autonomous seat is acting so the table does not appear frozen.
+- [ ] Tighten polling/snapshot behavior enough that separate seats converge quickly and do not appear to drift onto different versions of the table.
+- [ ] Reduce or defer any optional NHP chatter/runtime work that makes core turn flow feel stalled.
+- [ ] Treat code-caused smoothness problems as blockers for v1.9.1; only external model/API latency should remain outside our control.
+
+### Beginner Mode Density And Navigation
+
+- [ ] Rework Beginner Mode as a compact play surface: the active turn controls, board, private hand/reveals, and table wire must be reachable without five page lengths of scrolling.
+- [ ] Remove or collapse redundant explanatory text, oversized padding, repeated headings, and low-value status copy.
+- [ ] Prioritize fit-to-display over decorative spacing: shrink cards, controls, logs, and diagnostics until the primary workflow is easy to scan.
+- [ ] Keep diagnostics available but secondary; they should not compete with actual play.
+- [ ] Review fresh screenshots at normal desktop size and zoomed-out desktop size before calling the density pass done.
+
+### v1.9.1 Release Gate
+
+- [ ] Do not bump to `v1.9.1` until create-table feedback, gameplay lag, and Beginner density have been verified in an actual local game.
+- [ ] Update `VERSION`, `clue_core.version`, README/docs/changelog, and version-sensitive tests only after the local-game experience clears the gate.
+- [ ] Add a copy-paste-ready commit summary after implementation.
 
 ## v2.0.0 Release-Candidate Work
 
