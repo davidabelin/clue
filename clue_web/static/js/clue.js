@@ -114,6 +114,12 @@ if (app) {
   let lastAppliedSequence = 0;
   let chatUnread = 0;
   let forceChatScroll = false;
+  let renderFingerprints = new Map();
+  const clientTelemetry = {
+    lastFetchMs: 0,
+    lastRenderMs: 0,
+    renderCounts: {},
+  };
   // Draft state is kept outside the latest snapshot so polling can redraw from
   // server-authoritative data without clobbering in-progress human input.
   const actionDrafts = new Map();
@@ -225,7 +231,11 @@ if (app) {
   }
 
   function applyUiMode(snapshot) {
-    currentUiMode = normalizeUiMode(snapshot?.ui_mode);
+    const nextUiMode = normalizeUiMode(snapshot?.ui_mode);
+    if (currentUiMode !== nextUiMode) {
+      renderFingerprints = new Map();
+    }
+    currentUiMode = nextUiMode;
     app.dataset.uiMode = currentUiMode;
     app.classList.toggle("game-app--player", isPlayerMode());
     app.classList.toggle("game-app--beginner", !isPlayerMode());
@@ -235,6 +245,40 @@ if (app) {
     return String(value ?? "")
       .replaceAll("_", " ")
       .replace(/\b\w/g, (match) => match.toUpperCase());
+  }
+
+  function nowMs() {
+    return typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+  }
+
+  function roundedMs(value) {
+    return Math.max(0, Math.round(Number(value || 0)));
+  }
+
+  function stableFingerprint(value) {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value ?? "");
+    }
+  }
+
+  function renderIfChanged(key, fingerprint, renderFn) {
+    const next = stableFingerprint(fingerprint);
+    if (renderFingerprints.get(key) === next) {
+      return false;
+    }
+    const started = nowMs();
+    renderFn();
+    renderFingerprints.set(key, next);
+    clientTelemetry.renderCounts[key] = (clientTelemetry.renderCounts[key] || 0) + 1;
+    const elapsed = roundedMs(nowMs() - started);
+    if (elapsed > 80 && typeof console !== "undefined" && typeof console.debug === "function") {
+      console.debug(`[clue] slow ${key} render`, { elapsed_ms: elapsed });
+    }
+    return true;
   }
 
   function seatMap(snapshot) {
@@ -355,6 +399,7 @@ if (app) {
 
   async function request(path, options = {}) {
     // Every authenticated game request is scoped by the signed seat token.
+    const started = nowMs();
     const response = await fetch(path, {
       ...options,
       headers: {
@@ -364,6 +409,8 @@ if (app) {
       },
     });
     const payload = await response.json().catch(() => ({}));
+    clientTelemetry.lastFetchMs = roundedMs(nowMs() - started);
+    app.dataset.snapshotFetchMs = String(clientTelemetry.lastFetchMs);
     if (!response.ok) {
       throw new Error(payload.error || `Request failed (${response.status}).`);
     }
@@ -771,6 +818,7 @@ if (app) {
       private_card_shown: "Card Revealed",
       suspect_moved: "Marker Moved",
       dice_rolled: "Roll Result",
+      llm_unavailable: "LLM Stopped",
     };
     return overrides[event.event_type] || titleize(event.event_type || "");
   }
@@ -1071,6 +1119,45 @@ if (app) {
       : "Waiting on the next seat.";
   }
 
+  function latestLlmFailureMetric(snapshot) {
+    const metrics = snapshot.analysis?.recent_turn_metrics || [];
+    return [...metrics].reverse().find((item) => {
+      return item?.action === "llm_unavailable" || item?.rejection_kind === "llm_unavailable";
+    }) || null;
+  }
+
+  function latestLlmFailureEvent(snapshot) {
+    const events = [
+      ...(snapshot.events || []),
+      ...eventsByChannel.narrative,
+      ...eventsByChannel.private,
+    ];
+    return [...events].reverse().find((event) => {
+      return event?.event_type === "llm_unavailable";
+    }) || null;
+  }
+
+  function latestLlmFailure(snapshot) {
+    const metric = latestLlmFailureMetric(snapshot);
+    const event = latestLlmFailureEvent(snapshot);
+    if (!metric && !event) {
+      return null;
+    }
+    const seatId = metric?.seat_id || event?.payload?.seat_id || "";
+    const fallbackUsed = Boolean(metric?.fallback_used);
+    return {
+      seatId,
+      actorName: seatId ? seatName(snapshot, seatId) : "LLM seat",
+      reason: metric?.llm_error_reason || event?.payload?.reason || "unavailable",
+      mode: event?.payload?.mode || "",
+      action: metric?.action || event?.event_type || "llm_unavailable",
+      latencyMs: metric?.latency_ms ?? "",
+      decisionLatencyMs: metric?.agent_decision_latency_ms ?? "",
+      fallbackUsed,
+      message: event?.message || "An LLM seat stopped instead of using a heuristic move.",
+    };
+  }
+
   function renderSeatDebug(snapshot) {
     const debug = snapshot.analysis?.seat_debug || {};
     const metric = debug.metric || null;
@@ -1078,15 +1165,49 @@ if (app) {
     const topHypotheses = toolSnapshot.top_hypotheses || [];
     const topSuggestions = toolSnapshot.suggestion_ranking || [];
     const accusation = toolSnapshot.accusation || {};
+    const failure = latestLlmFailure(snapshot);
+    const hasPrivateFailureTrace = Boolean(metric && (metric.action === "llm_unavailable" || metric.rejection_kind === "llm_unavailable"));
 
-    if (!metric && !topHypotheses.length && !topSuggestions.length) {
+    if (!metric && !topHypotheses.length && !topSuggestions.length && !failure) {
       debugStatus.textContent = "Idle";
       seatDebug.innerHTML = '<p class="empty-state">No private agent-debug payload has been recorded for this seat yet.</p>';
       return;
     }
 
-    debugStatus.textContent = metric?.action === "llm_unavailable" ? "LLM Failed" : (metric?.fallback_used ? "Fallback" : "Live");
+    debugStatus.textContent = failure ? "LLM Failed" : (metric?.fallback_used ? "Fallback" : "Live");
+    const failureBlock = failure ? `
+      <div class="debug-block debug-alert" data-state="failure">
+        <p class="card-kicker">Latest LLM Failure</p>
+        <p>${escapeHtml(failure.message)}</p>
+        <dl class="debug-kv">
+          <div><dt>Seat</dt><dd>${escapeHtml(failure.actorName)}</dd></div>
+          <div><dt>Reason</dt><dd>${escapeHtml(failure.reason)}</dd></div>
+          <div><dt>Last Action</dt><dd>${escapeHtml(failure.action)}</dd></div>
+          <div><dt>Total Latency</dt><dd>${escapeHtml(failure.latencyMs || "--")} ms</dd></div>
+          <div><dt>Model Latency</dt><dd>${escapeHtml(failure.decisionLatencyMs || "--")} ms</dd></div>
+          <div><dt>Fallback</dt><dd>${failure.fallbackUsed ? "Used" : "Stopped; no heuristic move"}</dd></div>
+        </dl>
+      </div>
+    ` : "";
+    const privateTraceBlock = hasPrivateFailureTrace ? `
+      <div class="debug-block">
+        <p class="card-kicker">Private Failure Trace</p>
+        <p>${escapeHtml(debug.decision_debug?.error || "Private runtime diagnostics were recorded for this affected seat.")}</p>
+        <dl class="debug-kv">
+          <div><dt>Runtime</dt><dd>${escapeHtml(debug.decision_debug?.llm_runtime?.sdk_backend || "--")}</dd></div>
+          <div><dt>Model</dt><dd>${escapeHtml(metric?.model || debug.decision_debug?.llm_runtime?.default_model || "--")}</dd></div>
+          <div><dt>Reasoning</dt><dd>${escapeHtml(metric?.reasoning_effort || "--")}</dd></div>
+          <div><dt>Guardrails</dt><dd>${escapeHtml(metric?.guardrail_blocks ?? 0)}</dd></div>
+        </dl>
+      </div>
+    ` : failure ? `
+      <div class="debug-block">
+        <p class="card-kicker">Trace Scope</p>
+        <p>Detailed failure diagnostics are private to the affected seat and Superplayer Admin.</p>
+      </div>
+    ` : "";
     seatDebug.innerHTML = `
+      ${failureBlock}
       <div class="debug-grid">
         <article class="summary-stat">
           <span class="card-kicker">Joint Entropy</span>
@@ -1115,6 +1236,7 @@ if (app) {
         <p class="card-kicker">Top Suggestion</p>
         <p>${escapeHtml(topSuggestions[0]?.why || debug.decision_debug?.model_rationale || "No suggestion ranking yet.")}</p>
       </div>
+      ${privateTraceBlock}
     `;
   }
 
@@ -1185,6 +1307,7 @@ if (app) {
   }
 
   function renderSummary(snapshot) {
+    const renderStarted = nowMs();
     const maxEventIndex = Math.max(eventCursor, ...((snapshot.events || []).map((event) => Number(event.event_index || 0))));
     const nextUiMode = normalizeUiMode(snapshot.ui_mode);
     const nextSnapshotKey = [
@@ -1207,29 +1330,92 @@ if (app) {
     paceNote.textContent = waitingOnAutonomousSeat(snapshot)
       ? "Fast updates are active while an autonomous seat resolves."
       : "Draft-safe live updates are active.";
+    paceNote.title = `Last snapshot fetch: ${clientTelemetry.lastFetchMs} ms; last render: ${clientTelemetry.lastRenderMs} ms.`;
 
-    renderSeatSummary(snapshot);
-    handList.innerHTML = snapshot.seat.hand.map((card) => `<li>${escapeHtml(card)}</li>`).join("");
+    renderIfChanged("seat-summary", {
+      ui_mode: currentUiMode,
+      status: snapshot.status,
+      phase: snapshot.phase,
+      active_seat_id: snapshot.active_seat_id,
+      winner_seat_id: snapshot.winner_seat_id,
+      seat: snapshot.seat,
+    }, () => renderSeatSummary(snapshot));
+    renderIfChanged("hand", snapshot.seat.hand, () => {
+      handList.innerHTML = snapshot.seat.hand.map((card) => `<li>${escapeHtml(card)}</li>`).join("");
+    });
     if (!notebookDirty) {
       notebookText.value = snapshot.notebook?.text || "";
     }
 
-    renderSeatCards(snapshot);
-    renderBoard(snapshot);
-    renderPositionGrid(snapshot);
+    const seatPositionFingerprint = {
+      ui_mode: currentUiMode,
+      active_seat_id: snapshot.active_seat_id,
+      seats: snapshot.seats.map((seat) => ({
+        seat_id: seat.seat_id,
+        display_name: seat.display_name,
+        character: seat.character,
+        seat_kind: seat.seat_kind,
+        position: seat.position,
+        can_win: seat.can_win,
+      })),
+    };
+    renderIfChanged("seat-cards", seatPositionFingerprint, () => renderSeatCards(snapshot));
+    renderIfChanged("position-grid", seatPositionFingerprint, () => renderPositionGrid(snapshot));
+    renderIfChanged("board", {
+      ...seatPositionFingerprint,
+      current_seat_id: snapshot.seat.seat_id,
+      current_seat_position: snapshot.seat.position,
+      move_targets: snapshot.legal_actions?.move_targets || [],
+      staged_move: stagedMoveTarget(snapshot),
+      board_nodes: snapshot.board_nodes,
+      board_edges: snapshot.board_edges,
+    }, () => renderBoard(snapshot));
 
     const appended = ingestEvents(snapshot.events || []);
-    renderEventPanels(snapshot, appended);
+    renderIfChanged("events", {
+      ui_mode: currentUiMode,
+      narrative_count: eventsByChannel.narrative.length,
+      chat_count: eventsByChannel.chat.length,
+      private_count: eventsByChannel.private.length,
+      chat_unread: chatUnread,
+      appended: [...appended.narrative, ...appended.chat, ...appended.private].map((event) => event.event_index),
+    }, () => renderEventPanels(snapshot, appended));
 
     const nextLegalFingerprint = JSON.stringify({ ui_mode: currentUiMode, legal_actions: snapshot.legal_actions || {} });
     if (nextLegalFingerprint !== legalFingerprint) {
       legalFingerprint = nextLegalFingerprint;
       renderActions(snapshot);
     }
-    renderGuidance(snapshot);
-    renderSeatDebug(snapshot);
-    renderAiExplainer(snapshot);
+    renderIfChanged("guidance", {
+      ui_mode: currentUiMode,
+      status: snapshot.status,
+      turn_index: snapshot.turn_index,
+      phase: snapshot.phase,
+      active_seat_id: snapshot.active_seat_id,
+      winner_seat_id: snapshot.winner_seat_id,
+      current_roll: snapshot.current_roll,
+      legal_actions: snapshot.legal_actions || {},
+      seat_id: snapshot.seat.seat_id,
+      seat_name: snapshot.seat.display_name,
+      seats: snapshot.seats.map((seat) => ({
+        seat_id: seat.seat_id,
+        display_name: seat.display_name,
+        seat_kind: seat.seat_kind,
+      })),
+    }, () => renderGuidance(snapshot));
+    renderIfChanged("seat-debug", {
+      debug: snapshot.analysis?.seat_debug || {},
+      latest_llm_failure_metric: latestLlmFailureMetric(snapshot),
+      latest_llm_failure_event: latestLlmFailureEvent(snapshot),
+    }, () => renderSeatDebug(snapshot));
+    renderIfChanged("ai-explainer", {
+      game_metrics: snapshot.analysis?.game_metrics || {},
+      latency_targets_ms: snapshot.analysis?.latency_targets_ms || {},
+    }, () => renderAiExplainer(snapshot));
     updateDraftControls();
+    clientTelemetry.lastRenderMs = roundedMs(nowMs() - renderStarted);
+    app.dataset.snapshotRenderMs = String(clientTelemetry.lastRenderMs);
+    paceNote.title = `Last snapshot fetch: ${clientTelemetry.lastFetchMs} ms; last render: ${clientTelemetry.lastRenderMs} ms.`;
     forceChatScroll = false;
   }
 

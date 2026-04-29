@@ -1,4 +1,4 @@
-"""Configuration and guardrail tests for the v1.8.0 seat runtime."""
+"""Configuration and guardrail tests for the v1.9.0 seat runtime."""
 
 from __future__ import annotations
 

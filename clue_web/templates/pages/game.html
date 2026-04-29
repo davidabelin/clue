@@ -45,10 +45,10 @@
           <p class="card-kicker">Board State</p>
           <h2>Caseboard</h2>
         </div>
-        <p class="panel-head-note">Click a lit target to move.</p>
+        <p class="panel-head-note">Click lit targets.</p>
       </div>
       <svg id="board" viewBox="0 0 720 560" class="board-svg"></svg>
-      <p class="field-note board-note">Glowing targets are legal movement options.</p>
+      <p class="field-note board-note">Legal movement glows.</p>
       <details class="info-card info-drawer marker-grid-card" data-collapse-key="marker-grid" data-default-open="0">
         <summary class="info-drawer-summary">
           <div class="drawer-head">
@@ -82,7 +82,7 @@
         <div class="panel-head compact">
           <div>
             <h3>Action Queue</h3>
-            <p class="field-note">Primary moves stay visible. High-risk options stay tucked away until needed.</p>
+            <p class="field-note">Primary moves stay visible.</p>
           </div>
         </div>
         <p id="action-priority-note" class="action-priority-note">Reading action priority...</p>
@@ -99,7 +99,7 @@
         <textarea id="chat-input" rows="2" placeholder="Keep the table talking."></textarea>
         <div class="composer-meta">
           <span id="chat-draft-state" class="micro-status" data-state="idle">Draft empty.</span>
-          <span class="composer-hint">Refresh-safe draft. Enter sends, Shift+Enter creates a newline.</span>
+          <span class="composer-hint">Refresh-safe draft.</span>
         </div>
         <button id="send-chat" type="button">Send Chat</button>
       </section>
@@ -137,7 +137,7 @@
           </div>
         </summary>
         <div class="info-drawer-body">
-          <p class="field-note">Only you can see refutations, reveals, and seat-private prompts.</p>
+          <p class="field-note">Only you can see these reveals.</p>
           <ul id="private-log" class="event-log private-log"></ul>
         </div>
       </details>
@@ -149,11 +149,11 @@
           </div>
         </summary>
         <div class="info-drawer-body">
-          <p class="field-note">Keep deductions here without losing them during refreshes.</p>
+          <p class="field-note">Saved per seat.</p>
           <textarea id="notebook-text" rows="6" placeholder="Track cards, bluffs, and contradictions here."></textarea>
           <div class="composer-meta">
             <span id="notebook-draft-state" class="micro-status" data-state="synced">Seat notebook synced.</span>
-            <span class="composer-hint">Notebook drafts stay intact across refreshes until you save them.</span>
+            <span class="composer-hint">Drafts survive refresh.</span>
           </div>
           <button id="save-notebook" type="button">Save Notes</button>
         </div>
@@ -167,7 +167,7 @@
           <h2>Table Wire</h2>
         </div>
       </div>
-      <p class="panel-head-note">Latest entries stay at the top. Public history and table chat stay separate.</p>
+      <p class="panel-head-note">Newest first.</p>
       <div class="wire-grid">
         <details class="info-card info-drawer lineup-panel" data-collapse-key="suspect-lineup" data-default-open="0">
           <summary class="info-drawer-summary">

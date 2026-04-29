@@ -1,4 +1,4 @@
-# Clue v1.8.0 Live Checks
+# Clue v1.9.0 Live Checks
 
 Use these checks when validating the live chatbot path. Write-based proof belongs on the smoke service only; production checks are read-only.
 

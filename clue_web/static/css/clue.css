@@ -771,6 +771,21 @@ button:disabled {
   border-radius: 12px;
 }
 
+.admin-token-help {
+  display: grid;
+  gap: 0.42rem;
+  max-width: 42rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(46, 86, 111, 0.18);
+  border-radius: 12px;
+  background: rgba(241, 247, 251, 0.92);
+  color: #243a45;
+}
+
+.admin-token-help p {
+  margin: 0;
+}
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
@@ -817,8 +832,8 @@ button:disabled {
 
 .briefing-grid {
   display: grid;
-  gap: 0.85rem;
-  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.82fr) minmax(320px, 0.88fr);
+  gap: 0.74rem;
+  grid-template-columns: minmax(0, 1.62fr) minmax(300px, 0.78fr) minmax(300px, 0.84fr);
   grid-template-areas:
     "caseboard desk briefing"
     "wire wire briefing"
@@ -904,10 +919,11 @@ button:disabled {
 
 .board-svg {
   display: block;
-  width: min(100%, calc(62vh * 1.286), 58rem);
+  width: min(100%, calc(64vh * 1.286), 60rem);
   height: auto;
   aspect-ratio: 720 / 560;
   min-height: 0;
+  shape-rendering: geometricPrecision;
   background:
     radial-gradient(circle at 30% 25%, rgba(255, 240, 208, 0.18), transparent 28%),
     radial-gradient(circle at 72% 68%, rgba(242, 189, 100, 0.12), transparent 22%),
@@ -931,6 +947,7 @@ button:disabled {
 }
 
 .board-edge {
+  vector-effect: non-scaling-stroke;
   stroke-linecap: round;
   stroke-width: 7;
   opacity: 0.68;
@@ -2119,7 +2136,7 @@ button:disabled {
 }
 
 .wire-grid {
-  grid-template-columns: minmax(160px, 0.64fr) minmax(0, 1.18fr) minmax(0, 0.98fr);
+  grid-template-columns: minmax(150px, 0.54fr) minmax(0, 1.24fr) minmax(0, 1fr);
 }
 
 .position-card,
@@ -2162,6 +2179,35 @@ button:disabled {
 
 .log-message {
   line-height: 1.45;
+}
+
+.debug-alert {
+  border-color: rgba(122, 19, 31, 0.24);
+  background: rgba(255, 241, 239, 0.72);
+}
+
+.debug-kv {
+  display: grid;
+  gap: 0.42rem;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  margin: 0.62rem 0 0;
+}
+
+.debug-kv div {
+  min-width: 0;
+}
+
+.debug-kv dt {
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.debug-kv dd {
+  margin: 0.12rem 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
 }
 
 .diagnostics-drawer {

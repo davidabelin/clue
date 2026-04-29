@@ -1,7 +1,7 @@
 # Clue ML Runtime Guide
 
 ## Purpose
-This document describes the shipped OpenAI seat runtime in **v1.8.0**. It is for the maintainer changing prompts, profiles, tools, tracing, failure behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
+This document describes the shipped OpenAI seat runtime in **v1.9.0**. It is for the maintainer changing prompts, profiles, tools, tracing, failure behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
 
 ## Runtime Boundary
 - `clue_core` owns rules, hidden setup, legality, turn progression, refutation order, accusations, and filtered snapshots.
@@ -100,7 +100,7 @@ Most tools are read-only. Examples include:
 - durable cross-game memory and relationship context
 - final-game context for memory-summary runs
 
-The v1.8.0 write tools are deliberately narrow:
+The v1.9.0 write tools are deliberately narrow:
 - `record_memory_note`
   appends a durable first-person NHP note.
 - `update_relationship_posture`

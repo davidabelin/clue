@@ -16,6 +16,10 @@
     <p class="request-error admin-entry-error">{{ error }}</p>
     {% endif %}
     {% if admin_configured %}
+    <div class="admin-token-help">
+      <p>Use the maintainer token configured for this environment. Local runs read <code>CLUE_ADMIN_TOKEN</code>; deployed runs can resolve <code>CLUE_ADMIN_TOKEN_SECRET</code> through Secret Manager.</p>
+      <p>Production is configured from the <code>clue-admin-token</code> secret. The token value is never displayed on this page.</p>
+    </div>
     <form class="admin-entry-form" method="get" action="{{ url_for('main.admin_page') }}">
       <label>
         <span>Administrator Token</span>
@@ -27,7 +31,7 @@
     <div class="request-error admin-entry-error">
       This app server does not have a configured Administrator token.
     </div>
-    <p class="field-note">Set <code>CLUE_ADMIN_TOKEN</code> locally or configure <code>CLUE_ADMIN_TOKEN_SECRET</code> for deployment.</p>
+    <p class="field-note">Set <code>CLUE_ADMIN_TOKEN</code> locally or configure <code>CLUE_ADMIN_TOKEN_SECRET</code> for deployment. Production expects the <code>clue-admin-token</code> Secret Manager value.</p>
     {% endif %}
   </section>
 </section>

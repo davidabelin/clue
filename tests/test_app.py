@@ -714,15 +714,34 @@ def test_unavailable_llm_turn_does_not_use_heuristic_fallback(client):
 
     assert response.status_code == 201
     payload = response.get_json()
+    llm_token = _token_from_join_url(payload["seat_links"][0]["url"])
     human_token = _token_from_join_url(payload["seat_links"][1]["url"])
+    other_human_token = _token_from_join_url(payload["seat_links"][2]["url"])
     snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": human_token}).get_json()
+    llm_snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": llm_token}).get_json()
+    other_snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": other_human_token}).get_json()
 
     assert snapshot["active_seat_id"] == "seat_scarlet"
-    assert any(event["event_type"] == "llm_unavailable" for event in snapshot["events"])
+    public_failure = next(event for event in snapshot["events"] if event["event_type"] == "llm_unavailable")
+    assert public_failure["visibility"] == "public"
+    assert public_failure["payload"] == {
+        "seat_id": "seat_scarlet",
+        "seat_kind": "llm",
+        "reason": "missing_api_key",
+        "mode": "turn",
+    }
+    assert "no heuristic move was used" in public_failure["message"]
+    assert "debug" not in public_failure["payload"]
+    assert "runtime" not in public_failure["payload"]
     metric = snapshot["analysis"]["recent_turn_metrics"][-1]
     assert metric["action"] == "llm_unavailable"
     assert metric["fallback_used"] is False
     assert metric["llm_error_reason"] == "missing_api_key"
+    assert snapshot["analysis"]["seat_debug"] == {}
+    assert other_snapshot["analysis"]["seat_debug"] == {}
+    assert llm_snapshot["analysis"]["seat_debug"]["decision"]["action"] == "llm_unavailable"
+    assert llm_snapshot["analysis"]["seat_debug"]["decision"]["agent_meta"]["llm_error_reason"] == "missing_api_key"
+    assert llm_snapshot["analysis"]["seat_debug"]["decision_debug"]["llm_runtime"]
 
 
 def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypatch):
@@ -972,7 +991,12 @@ def test_admin_endpoints_require_token_and_expose_memory(client, app, monkeypatc
     assert home.status_code == 200
     assert "Superplayer Admin" in home.get_data(as_text=True)
     assert admin_entry.status_code == 200
-    assert "Open Superplayer Admin" in admin_entry.get_data(as_text=True)
+    admin_entry_html = admin_entry.get_data(as_text=True)
+    assert "Open Superplayer Admin" in admin_entry_html
+    assert "CLUE_ADMIN_TOKEN" in admin_entry_html
+    assert "CLUE_ADMIN_TOKEN_SECRET" in admin_entry_html
+    assert "clue-admin-token" in admin_entry_html
+    assert "admin-test" not in admin_entry_html
     assert invalid_admin_entry.status_code == 403
     assert "Administrator token required." in invalid_admin_entry.get_data(as_text=True)
     assert page.status_code == 200
