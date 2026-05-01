@@ -3,6 +3,7 @@
 - As of 2026-05-01
 - Current version: 1.9.0
 - Next target: v1.9.1 same-day stabilization, then v2.0.0 release candidate in about two weeks
+  - v2.0.0 will feature json API actions/tools that ChatGPT chatbots can use to play a seat at the game table *during* live chats with them
 
 ## Rolling items
 
@@ -12,69 +13,15 @@ No rolling items are currently loose. The Clue OpenAI key work is promoted into 
 
 ## Later Triage Notes
 
-**Parked until the OpenAI key isolation priority is finished. Keep the pasted debug material only until it has been used to define a concrete follow-up issue.**
+**Raw gameplay dumps have been reduced into task items below. Do not paste full JSON blobs here unless a new failure shape needs to be preserved temporarily.**
 
-- [ ] Temporary malformed-chat JSON breadcrumb from the local game at `http://127.0.0.1:5002/admin/games/clue_20260429204357399738`:
-
-  - Trippy Spinster's LLM chat was unavailable and no heuristic chat was posted.
-		{
-		  "debug": {
-			"tool_writes": []
-		  },
-		  "error": "Invalid JSON when parsing {\"speak\":true,\"intent\":\"tease\",\"target_seat_id\":\"seat_mustard\",\"topic\":\"Mustard\u0027s theatrical opening suggestion\",\"tone\":\"wry\",\"thread_action\":\"open\",\"relationship_deltas\":[{\"seat_id for TypeAdapter(ChatIntentOutput); 1 validation error for ChatIntentOutput\n  Invalid JSON: EOF while parsing a string at line 1 column 181 [type=json_invalid, input_value=\u0027{\"speak\":true,\"intent\":\"...ship_deltas\":[{\"seat_id\u0027, input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid",
-		  "mode": "chat",
-		  "reason": "model_error",
-		  "runtime": {
-			"default_model": "gpt-5.4",
-			"eval_export_enabled": false,
-			"max_tool_calls": 12,
-			"max_turns": 18,
-			"reasoning_effort": "high",
-			"release_label": "v1.9.0",
-			"sdk_available": true,
-			"sdk_backend": "openai_agents_sdk",
-			"session_store": "local_encrypted_sqlalchemy_sqlite",
-			"session_ttl_seconds": 900,
-			"timeout_seconds": 42.0,
-			"trace_include_sensitive_data": false,
-			"tracing_enabled": false,
-			"version": "1.9.0"
-		  },
-		  "seat_id": "seat_peacock",
-		  "seat_kind": "llm"
-		}
-
-  - Trippy Spinster's LLM chat was unavailable and no heuristic chat was posted.
-		 {
-		  "debug": {
-			"tool_writes": []
-		  },
-		  "error": "Invalid JSON when parsing {\"speak\":false,\"intent\":\"meta_observe\",\"target_seat_id\":\"\",\"topic for TypeAdapter(ChatIntentOutput); 1 validation error for ChatIntentOutput\n  Invalid JSON: EOF while parsing a string at line 1 column 65 [type=json_invalid, input_value=\u0027{\"speak\":false,\"intent\":...rget_seat_id\":\"\",\"topic\u0027, input_type=str]\n    For further information visit https://errors.pydantic.dev/2.12/v/json_invalid",
-		  "mode": "chat",
-		  "reason": "model_error",
-		  "runtime": {
-			"default_model": "gpt-5.4",
-			"eval_export_enabled": false,
-			"max_tool_calls": 12,
-			"max_turns": 18,
-			"reasoning_effort": "high",
-			"release_label": "v1.9.0",
-			"sdk_available": true,
-			"sdk_backend": "openai_agents_sdk",
-			"session_store": "local_encrypted_sqlalchemy_sqlite",
-			"session_ttl_seconds": 900,
-			"timeout_seconds": 42.0,
-			"trace_include_sensitive_data": false,
-			"tracing_enabled": false,
-			"version": "1.9.0"
-		  },
-		  "seat_id": "seat_peacock",
-		  "seat_kind": "llm"
-		}
-  - How much of *everything* like this that is saved and recorded along with it used to set the state for next game's Players?
-  - Remove this debug material after using it to track down and properly define the problem.
-
-  - I will play another local game, and beforehand I want to set some NHP settings. Where do I edit those?  Would any particular settings be diagnostically useful, ie. for tracking down time-out and other lag problems.
+- [x] Extract the pasted local-game chat failures into actionable findings:
+  - Local game `clue_20260429204357399738` completed but recorded 24 private `trace_llm_unavailable` chat failures.
+  - Failures were `mode=chat`, `reason=model_error`, mostly Pydantic EOF errors while parsing partial `ChatIntentOutput` or `ChatUtteranceOutput` JSON.
+  - The slowest autonomous turn metric was about 44.3 seconds; tool snapshot latency stayed low, so model runtime is the likely bottleneck rather than deduction snapshot generation.
+  - Chat failures were private trace events and did not increment `llm_unavailable_count`, so admin/game health summaries understate optional-chat failure volume.
+- [ ] Answer before the next local diagnostic game: NHP runtime controls are in Admin Mode runtime settings for idle/proactive chat, while persistent model/profile defaults live in `clue_agents/profiles/models.yaml`.
+- [ ] For lag-focused diagnostic play, start with optional idle/proactive chat disabled, then re-enable chat with fast/mini chat profiles after core turn flow is measured.
 
 - [ ] Gameplay, UI, probability, and persona questions to re-organize and answer in context:
 
@@ -122,6 +69,15 @@ Goal: make one locally hosted game feel understandable, responsive, and compact 
 - [ ] Keep the create-table form state visible while loading so it does not feel like the click failed.
 - [ ] Surface create-game errors clearly and restore the button if table creation fails.
 
+### LLM Chat Failure And Optional Chatter Control
+
+- [ ] Fix malformed structured chat output: reproduce partial `ChatIntentOutput` / `ChatUtteranceOutput` EOF failures and decide whether the remedy is stricter schema mode, larger chat output token budgets, shorter schemas, retries, or a single-pass chat output.
+- [ ] Keep optional idle/proactive chat off the gameplay-critical request path so a failed or slow banter attempt cannot make the table feel frozen.
+- [ ] Count chat `trace_llm_unavailable` events in admin health summaries separately from gameplay-turn LLM failures.
+- [ ] Add an admin-visible per-game chat failure breakdown by seat, mode, model profile, reason, and sample error prefix.
+- [ ] Use faster/lower-budget chat defaults for v1.9.1 diagnostics; high-reasoning theatrical chat should not be a default while stabilizing playability.
+- [ ] Preserve deliberate model silence as non-error, but avoid repeated failed chat attempts against the same event/thread after a malformed-output failure.
+
 ### Gameplay Latency And Synchronization
 
 - [ ] Identify where the painful local-game delay is coming from: initial table creation, autonomous turn execution, OpenAI calls, polling delay, DOM rendering, or database writes.
@@ -129,6 +85,7 @@ Goal: make one locally hosted game feel understandable, responsive, and compact 
 - [ ] Tighten polling/snapshot behavior enough that separate seats converge quickly and do not appear to drift onto different versions of the table.
 - [ ] Reduce or defer any optional NHP chatter/runtime work that makes core turn flow feel stalled.
 - [ ] Treat code-caused smoothness problems as blockers for v1.9.1; only external model/API latency should remain outside our control.
+- [ ] Use the extracted local-game baseline while optimizing: 37 actions applied, 8 autonomous actions, max autonomous decision about 44.3 seconds, 24 optional chat failures, and low tool-snapshot latency.
 
 ### Beginner Mode Density And Navigation
 
