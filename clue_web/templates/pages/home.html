@@ -19,7 +19,7 @@
         <span>Title</span>
         <input type="text" name="title" value="Clue Table">
       </label>
-      <div class="panel">
+      <div class="create-summary">
         <strong>Table Setup</strong>
         <p>Choose 3 to 6 active seats. Set unused seats to NP.</p>
       </div>
@@ -60,17 +60,69 @@
       </div>
       {% endfor %}
     </div>
-    <button type="submit">Create Game</button>
+    <div class="create-actions">
+      <button id="create-submit" class="create-submit" type="submit">
+        <span class="create-submit-icon" aria-hidden="true"></span>
+        <span class="create-submit-label">Create Game</span>
+      </button>
+      <div id="create-progress" class="create-progress hidden" role="status" aria-live="polite">
+        <span class="create-progress-spinner" aria-hidden="true"></span>
+        <div>
+          <strong>Setting the table...</strong>
+          <p>Dealing cards and preparing autonomous seats. Your setup stays visible while Clue works.</p>
+        </div>
+      </div>
+    </div>
   </form>
-  <section id="create-result" class="panel result-panel hidden"></section>
+  <section id="create-result" class="panel result-panel hidden" aria-live="polite"></section>
 </section>
 <script>
   // This small script keeps the home page static-first while still allowing
   // direct game creation without adding a separate frontend build system.
   const createForm = document.getElementById("create-game-form");
   const result = document.getElementById("create-result");
+  const createSubmit = document.getElementById("create-submit");
+  const createSubmitLabel = createSubmit.querySelector(".create-submit-label");
+  const createProgress = document.getElementById("create-progress");
+  let createInFlight = false;
+
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[char]));
+
+  const setCreateBusy = (busy) => {
+    createInFlight = busy;
+    createForm.dataset.state = busy ? "creating" : "idle";
+    createSubmit.disabled = busy;
+    createSubmitLabel.textContent = busy
+      ? "Setting Table..."
+      : createForm.dataset.created === "true"
+        ? "Create Another Game"
+        : "Create Game";
+    createProgress.classList.toggle("hidden", !busy);
+  };
+
+  const showCreateError = (message) => {
+    result.className = "panel result-panel result-panel--error";
+    result.innerHTML = `
+      <p class="card-kicker">Setup stopped</p>
+      <h2>Could not create game</h2>
+      <p>${escapeHtml(message || "Unknown error.")}</p>
+    `;
+  };
+
   createForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (createInFlight) {
+      return;
+    }
+    result.className = "panel result-panel hidden";
+    result.innerHTML = "";
+    setCreateBusy(true);
     const formData = new FormData(createForm);
     const seats = [];
     const seatCards = createForm.querySelectorAll(".seat-card");
@@ -87,50 +139,55 @@
         ui_mode: formData.get(`ui_mode_${index}`) || "beginner",
       });
     });
-    const response = await fetch("api/v1/games", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: formData.get("title"),
-        seats,
-      }),
-    });
-    const payload = await response.json();
-    result.classList.remove("hidden");
-    if (!response.ok) {
+    try {
+      const response = await fetch("api/v1/games", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: formData.get("title"),
+          seats,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showCreateError(payload.error || `Request failed (${response.status}).`);
+        return;
+      }
+      const formatSeatKind = (seatKind) => {
+        const normalized = String(seatKind || "").trim().toLowerCase();
+        if (normalized === "llm" || normalized === "heuristic") {
+          return "LLM";
+        }
+        if (normalized === "human") {
+          return "Human";
+        }
+        if (normalized === "np") {
+          return "NP";
+        }
+        return normalized || "Unknown";
+      };
+      const formatUiMode = (uiMode) => {
+        const normalized = String(uiMode || "").trim().toLowerCase();
+        if (normalized === "player") {
+          return "Player";
+        }
+        return "Beginner";
+      };
+      createForm.dataset.created = "true";
+      result.className = "panel result-panel result-panel--success";
       result.innerHTML = `
-        <h2>Could not create game</h2>
-        <p>${payload.error || "Unknown error."}</p>
+        <p class="card-kicker">Table ready</p>
+        <h2>${escapeHtml(payload.title)}</h2>
+        <p>Open each seat link in its own browser tab.</p>
+        <ul class="seat-links">
+          ${payload.seat_links.map((item) => `<li><a href="${escapeHtml(item.url)}">${escapeHtml(item.display_name)} <span>(${escapeHtml(formatSeatKind(item.seat_kind))}, ${escapeHtml(formatUiMode(item.ui_mode))})</span></a></li>`).join("")}
+        </ul>
       `;
-      return;
+    } catch (error) {
+      showCreateError("Clue could not reach the game service. Check the server and try again.");
+    } finally {
+      setCreateBusy(false);
     }
-    const formatSeatKind = (seatKind) => {
-      const normalized = String(seatKind || "").trim().toLowerCase();
-      if (normalized === "llm" || normalized === "heuristic") {
-        return "LLM";
-      }
-      if (normalized === "human") {
-        return "Human";
-      }
-      if (normalized === "np") {
-        return "NP";
-      }
-      return normalized || "Unknown";
-    };
-    const formatUiMode = (uiMode) => {
-      const normalized = String(uiMode || "").trim().toLowerCase();
-      if (normalized === "player") {
-        return "Player";
-      }
-      return "Beginner";
-    };
-    result.innerHTML = `
-      <h2>${payload.title}</h2>
-      <p>Open each seat link in its own browser tab.</p>
-      <ul class="seat-links">
-        ${payload.seat_links.map((item) => `<li><a href="${item.url}">${item.display_name} (${formatSeatKind(item.seat_kind)}, ${formatUiMode(item.ui_mode)})</a></li>`).join("")}
-      </ul>
-    `;
   });
 </script>
 {% endblock %}

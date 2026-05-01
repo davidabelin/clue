@@ -40,6 +40,11 @@ def test_home_page_renders(client):
     assert "Mrs. Peacock" in html
     assert "Professor Plum" in html
     assert "Set unused seats to NP." in html
+    assert "Setting the table..." in html
+    assert "Your setup stays visible while Clue works." in html
+    assert 'id="create-submit"' in html
+    assert 'id="create-progress"' in html
+    assert "Create Another Game" in html
     assert 'name="ui_mode_0"' in html
     assert '<option value="beginner" selected>Beginner</option>' in html
     assert '<option value="player">Player</option>' in html

@@ -7,6 +7,7 @@
 - Lowered default chat-profile budgets and disabled slower full-size chat profiles while v1.9.1 focuses on playable core turn flow.
 - Added Admin Mode controls to terminate stale active games and permanently delete saved games that should no longer clutter review lists.
 - Changed the player-facing winner-eligibility copy from "Still in the case." to "On the case."
+- Added polished create-table progress feedback with duplicate-submit protection, preserved form state, and clearer error recovery.
 
 ## v1.9.0 - 2026-04-29
 - Added visible Superplayer Admin links and a token-entry screen at `/admin` so deployed maintainers can reach the protected dashboard without manually constructing a query URL.

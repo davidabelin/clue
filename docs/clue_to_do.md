@@ -75,9 +75,9 @@ Goal: make one locally hosted game feel understandable, responsive, and compact 
 
 ### Create-Table Feedback
 
-- [ ] Add an immediate loading state after `Create Table` is clicked: disable the button, show a spinner/progress message, and make it explicit that table creation can take time while NHP/LLM seats initialize.
-- [ ] Keep the create-table form state visible while loading so it does not feel like the click failed.
-- [ ] Surface create-game errors clearly and restore the button if table creation fails.
+- [x] Add an immediate loading state after `Create Table` is clicked: disable the button, show a spinner/progress message, and make it explicit that table creation can take time while NHP/LLM seats initialize.
+- [x] Keep the create-table form state visible while loading so it does not feel like the click failed.
+- [x] Surface create-game errors clearly and restore the button if table creation fails.
 
 ### LLM Chat Failure And Optional Chatter Control
 
