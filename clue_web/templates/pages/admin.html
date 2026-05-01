@@ -30,7 +30,7 @@
     <article class="panel admin-stat">
       <span class="card-kicker">LLM Failures</span>
       <strong>{{ dashboard.overview.llm_failures }}</strong>
-      <small>{{ dashboard.overview.sampling_timeouts }} sampling timeouts</small>
+      <small>{{ dashboard.overview.chat_failures }} optional chat failures / {{ dashboard.overview.sampling_timeouts }} sampling timeouts</small>
     </article>
     <article class="panel admin-stat">
       <span class="card-kicker">Latency Breaches</span>
@@ -97,6 +97,7 @@
             <th>LLM</th>
             <th>Latency</th>
             <th>Updated</th>
+            <th>Admin</th>
           </tr>
         </thead>
         <tbody>
@@ -110,12 +111,26 @@
             <td>{{ game.turn_index }} / {{ game.phase }}</td>
             <td>{{ game.seat_mix_label }}</td>
             <td>{{ game.winner_display_name or "-" }}</td>
-            <td>{{ game.llm_unavailable_count }} failures<br>{{ game.sampling_timeouts }} timeouts</td>
+            <td>{{ game.llm_unavailable_count }} turn failures<br>{{ game.chat_failure_count }} chat failures<br>{{ game.sampling_timeouts }} timeouts</td>
             <td>{{ "%.0f"|format(game.turn_latency_ms_max) }} ms<br>{{ game.latency_budget_breaches }} breaches</td>
             <td>{{ game.updated_at }}</td>
+            <td>
+              <div class="admin-row-actions">
+                {% if game.status == "active" %}
+                <form action="{{ url_for('main.admin_terminate_game_form', game_id=game.id) }}" method="post" onsubmit="return confirm('Terminate this active saved game?');">
+                  <input type="hidden" name="admin_token" value="{{ admin_token }}">
+                  <button class="secondary-action" type="submit">Terminate</button>
+                </form>
+                {% endif %}
+                <form action="{{ url_for('main.admin_delete_game_form', game_id=game.id) }}" method="post" onsubmit="return confirm('Permanently delete this saved game and its game-scoped records?');">
+                  <input type="hidden" name="admin_token" value="{{ admin_token }}">
+                  <button class="danger-action" type="submit">Delete</button>
+                </form>
+              </div>
+            </td>
           </tr>
           {% else %}
-          <tr><td colspan="8">No saved games yet.</td></tr>
+          <tr><td colspan="9">No saved games yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>

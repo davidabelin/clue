@@ -7,6 +7,7 @@ from pathlib import Path
 from clue_agents.base import ChatDecision, MemorySummaryDecision
 from clue_agents.heuristic import HeuristicSeatAgent
 from clue_core.deduction import ToolSnapshot
+from clue_core.events import make_event
 from clue_core.version import CLUE_RELEASE_LABEL
 from clue_web import create_app
 
@@ -259,9 +260,42 @@ def test_player_mode_board_movement_static_contract():
     assert '"caseboard desk"' in css
 
 
-def test_idle_chat_limits_one_npc_message_per_sweep(client, monkeypatch):
+def test_snapshot_does_not_run_optional_chat_by_default(client, app, monkeypatch):
+    """Stabilization defaults should keep optional chat off during normal snapshots."""
+
+    monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
+    calls = {"count": 0}
+
+    def _reply(self, *, snapshot):
+        calls["count"] += 1
+        raise AssertionError("optional chat should be disabled by default")
+
+    monkeypatch.setattr("clue_agents.llm.LLMSeatAgent.decide_chat", _reply)
+
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Quiet Default Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "llm"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+
+    assert _chat_events(snapshot) == []
+    assert calls["count"] == 0
+    assert app.extensions["game_service"].admin_runtime_settings()["effective"]["idle_chat_enabled"] is False
+
+
+def test_idle_chat_limits_one_npc_message_per_sweep(client, app, monkeypatch):
     """One snapshot refresh should append at most one NPC chat reply."""
 
+    app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": True})
     monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
     monkeypatch.setattr(
         "clue_agents.llm.LLMSeatAgent.decide_chat",
@@ -286,9 +320,10 @@ def test_idle_chat_limits_one_npc_message_per_sweep(client, monkeypatch):
     assert len(_chat_events(snapshot)) == 1
 
 
-def test_idle_chat_does_not_repeat_for_same_public_event(client, monkeypatch):
+def test_idle_chat_does_not_repeat_for_same_public_event(client, app, monkeypatch):
     """Repeated snapshot polls should not duplicate the same NPC reaction."""
 
+    app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": True})
     monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
     monkeypatch.setattr(
         "clue_agents.llm.LLMSeatAgent.decide_chat",
@@ -315,9 +350,10 @@ def test_idle_chat_does_not_repeat_for_same_public_event(client, monkeypatch):
     assert len(_chat_events(second)) == 1
 
 
-def test_proactive_idle_chat_runs_once_after_model_silence(client, monkeypatch):
+def test_proactive_idle_chat_runs_once_after_model_silence(client, app, monkeypatch):
     """After reactive silence, quiet-table proactive chat should be throttled per turn."""
 
+    app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": True, "proactive_chat_enabled": True})
     monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
     calls = {"count": 0}
 
@@ -354,6 +390,7 @@ def test_proactive_idle_chat_runs_once_after_model_silence(client, monkeypatch):
 def test_admin_runtime_setting_can_disable_idle_chat(client, app, monkeypatch):
     """The session-only idle-chat setting should stop snapshot-triggered NHP chat."""
 
+    app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": True})
     app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": False})
     monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
     calls = {"count": 0}
@@ -386,7 +423,7 @@ def test_admin_runtime_setting_can_disable_idle_chat(client, app, monkeypatch):
 def test_admin_runtime_setting_can_disable_only_proactive_chat(client, app, monkeypatch):
     """Disabling proactive chat should preserve reactive replies."""
 
-    app.extensions["game_service"].update_admin_runtime_settings({"proactive_chat_enabled": False})
+    app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": True, "proactive_chat_enabled": False})
     monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
     calls = {"count": 0}
 
@@ -425,9 +462,10 @@ def test_admin_runtime_setting_can_disable_only_proactive_chat(client, app, monk
     assert _chat_events(third)[-1]["payload"]["text"] == "Reactive still works."
 
 
-def test_human_chat_can_trigger_idle_npc_reply_without_advancing_turn(client, monkeypatch):
+def test_human_chat_can_trigger_idle_npc_reply_without_advancing_turn(client, app, monkeypatch):
     """Human off-turn chat should be able to provoke one NPC reply without changing turn control."""
 
+    app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": True})
     monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
 
     def _reply(self, *, snapshot):
@@ -461,9 +499,10 @@ def test_human_chat_can_trigger_idle_npc_reply_without_advancing_turn(client, mo
     assert chats[-1]["payload"]["seat_id"] == "seat_peacock"
 
 
-def test_idle_chat_skips_while_nonhuman_turn_is_pending(client, monkeypatch):
+def test_idle_chat_skips_while_nonhuman_turn_is_pending(client, app, monkeypatch):
     """Snapshot polling should not run idle chatter while a non-human rules action is queued."""
 
+    app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": True})
     monkeypatch.setattr("clue_web.runtime.GameService.maybe_run_agents", lambda self, game_id, max_cycles=32: None)
     monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
     monkeypatch.setattr(
@@ -490,9 +529,10 @@ def test_idle_chat_skips_while_nonhuman_turn_is_pending(client, monkeypatch):
     assert _chat_events(snapshot) == []
 
 
-def test_idle_chat_cooldown_requires_two_later_public_events(client, monkeypatch):
+def test_idle_chat_cooldown_requires_two_later_public_events(client, app, monkeypatch):
     """An NPC should stay quiet for two later public events before chatting again."""
 
+    app.extensions["game_service"].update_admin_runtime_settings({"idle_chat_enabled": True})
     monkeypatch.setattr("clue_web.runtime.GameService._idle_chat_roll", lambda self, game_id, seat_id, event_index: 0.0)
     monkeypatch.setattr(
         "clue_agents.llm.LLMSeatAgent.decide_chat",
@@ -1013,6 +1053,87 @@ def test_admin_endpoints_require_token_and_expose_memory(client, app, monkeypatc
     assert "Raw State" in game_html
 
 
+def test_admin_summaries_count_optional_chat_failures_separately(client, app, monkeypatch):
+    """Private chat traces should not be mixed into gameplay-turn LLM failures."""
+
+    payload = _create_table_without_agents(client, monkeypatch, title="Chat Failure Admin Table")
+    game_id = payload["game_id"]
+    repository = app.extensions["repository"]
+    state = repository.get_state(game_id)
+    metrics = state.setdefault("analysis", {}).setdefault("game_metrics", {})
+    metrics["llm_unavailable_count"] = 2
+    repository.save_state_and_events(
+        game_id,
+        state=state,
+        events=[
+            make_event(
+                "trace_llm_unavailable",
+                message="Colonel Mustard's LLM chat was unavailable.",
+                visibility="seat:seat_mustard",
+                payload={
+                    "seat_id": "seat_mustard",
+                    "seat_kind": "llm",
+                    "mode": "chat",
+                    "reason": "model_error",
+                    "runtime": {"default_model": "gpt-chat-test"},
+                    "debug": {"tool_writes": []},
+                    "error": "Pydantic EOF while parsing AgentChatOutput",
+                },
+            )
+        ],
+    )
+
+    dashboard = app.extensions["game_service"].admin_dashboard()
+    summary = next(game for game in dashboard["games"] if game["id"] == game_id)
+    review = app.extensions["game_service"].admin_game_review(game_id)
+
+    assert summary["llm_unavailable_count"] == 2
+    assert summary["chat_failure_count"] == 1
+    assert dashboard["overview"]["llm_failures"] == 2
+    assert dashboard["overview"]["chat_failures"] == 1
+    assert review["chat_failures"]["count"] == 1
+    assert review["chat_failures"]["breakdown"][0]["display_name"] == "Colonel Mustard"
+    assert review["chat_failures"]["breakdown"][0]["reason"] == "model_error"
+    assert "Pydantic EOF" in review["chat_failures"]["breakdown"][0]["sample_error_prefix"]
+
+
+def test_admin_can_terminate_and_delete_saved_games(client, app, monkeypatch):
+    """Admin dashboard controls should close stale games and remove dead clutter."""
+
+    app.config["CLUE_ADMIN_TOKEN"] = "admin-test"
+    payload = _create_table_without_agents(client, monkeypatch, title="Dead Game Table")
+    game_id = payload["game_id"]
+
+    page = client.get("/admin?admin_token=admin-test")
+    page_html = page.get_data(as_text=True)
+    assert "Terminate" in page_html
+    assert "Delete" in page_html
+
+    terminated = client.post(
+        f"/admin/games/{game_id}/terminate",
+        data={"admin_token": "admin-test"},
+        follow_redirects=True,
+    )
+    state = app.extensions["repository"].get_state(game_id)
+
+    assert terminated.status_code == 200
+    assert "Game terminated." in terminated.get_data(as_text=True)
+    assert state["status"] == "terminated"
+    assert state["phase"] == "admin_terminated"
+    assert any(event["event_type"] == "admin_game_terminated" for event in app.extensions["repository"].events_for_game(game_id))
+
+    deleted = client.post(
+        f"/admin/games/{game_id}/delete",
+        data={"admin_token": "admin-test"},
+        follow_redirects=True,
+    )
+
+    assert deleted.status_code == 200
+    assert "Game deleted." in deleted.get_data(as_text=True)
+    assert app.extensions["repository"].get_game_record(game_id) is None
+    assert client.get(f"/admin/games/{game_id}?admin_token=admin-test").status_code == 404
+
+
 def test_admin_runtime_settings_api_requires_token_and_clamps_values(client, app):
     """Administrator runtime settings should be protected and process-local."""
 
@@ -1024,8 +1145,8 @@ def test_admin_runtime_settings_api_requires_token_and_clamps_values(client, app
         "/api/v1/admin/runtime-settings",
         headers={"X-Clue-Admin-Token": "admin-test"},
         json={
-            "idle_chat_enabled": False,
-            "proactive_chat_enabled": False,
+            "idle_chat_enabled": True,
+            "proactive_chat_enabled": True,
             "proactive_chat_chance_multiplier": 9,
         },
     )
@@ -1037,12 +1158,14 @@ def test_admin_runtime_settings_api_requires_token_and_clamps_values(client, app
 
     assert blocked.status_code == 403
     assert allowed.status_code == 200
-    assert allowed.get_json()["effective"]["idle_chat_enabled"] is True
+    assert allowed.get_json()["effective"]["idle_chat_enabled"] is False
+    assert allowed.get_json()["effective"]["proactive_chat_enabled"] is False
     assert updated.status_code == 200
-    assert updated.get_json()["effective"]["idle_chat_enabled"] is False
-    assert updated.get_json()["effective"]["proactive_chat_enabled"] is False
+    assert updated.get_json()["effective"]["idle_chat_enabled"] is True
+    assert updated.get_json()["effective"]["proactive_chat_enabled"] is True
     assert updated.get_json()["effective"]["proactive_chat_chance_multiplier"] == 1.0
-    assert reset.get_json()["effective"]["idle_chat_enabled"] is True
+    assert reset.get_json()["effective"]["idle_chat_enabled"] is False
+    assert reset.get_json()["effective"]["proactive_chat_enabled"] is False
     assert app.extensions["runtime_overrides"] == {}
 
 

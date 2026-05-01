@@ -53,7 +53,7 @@ Standalone Clue lab for AIX, currently labeled **v1.9.0**.
 - `clue_agents.runtime.AgentRuntime` instantiates heuristic or LLM-backed seats behind one shared interface.
 - `clue_core.deduction.build_tool_snapshot()` prepares the seat-local deduction summary used by both heuristic and LLM policies.
 - `clue_agents.llm.LLMSeatAgent` uses the OpenAI Agents SDK with read tools, tightly bounded durable write tools, and output guardrails. If the live LLM path is unavailable or invalid, the seat fails loudly instead of using the heuristic policy.
-- Idle chat uses a separate chat profile path and a two-stage intent-plus-utterance run. Reactive chat remains first; proactive quiet-table chat is throttled once per turn.
+- Optional idle chat uses a separate chat profile path and one compact speak-or-stay-silent run. It is disabled by default for stabilization; Admin Mode or env vars can enable reactive and proactive chatter explicitly.
 - Completed games create durable LLM-authored memory jobs for each NHP. Ready memory is loaded into future NHP runtime snapshots; missing SDK/API credentials leave jobs pending for admin retry.
 
 ## Environment Contract
@@ -106,9 +106,9 @@ Clue does not currently load a repo `.env` file, and this repo does not contain 
 - `CLUE_AGENT_EVAL_EXPORT_ENABLED`
   Default: `0`
 - `CLUE_IDLE_CHAT_ENABLED`
-  Default: `1`; set `0` to disable all optional snapshot-triggered NHP idle chat.
+  Default: `0`; set `1` to enable optional snapshot-triggered NHP idle chat.
 - `CLUE_PROACTIVE_CHAT_ENABLED`
-  Default: `1`; set `0` to disable quiet-table proactive NHP chat.
+  Default: `0`; set `1` to enable quiet-table proactive NHP chat when idle chat is also enabled.
 - `CLUE_PROACTIVE_CHAT_CHANCE_MULTIPLIER`
   Default: `0.35`; clamps proactive chat chance without affecting reactive replies.
 - `OPENAI_CLUE_SA_KEY`
@@ -118,7 +118,7 @@ Clue does not currently load a repo `.env` file, and this repo does not contain 
 - `OPENAI_CLUE_PROJECT_ID`
   OpenAI project id used to attribute Clue model traffic; current Clue project is `proj_Lw53USO5NinnThSmUspUs1Kt`.
 
-The Superplayer administration dashboard can also apply process-local overrides for idle chat, proactive chat, and proactive chat chance. Those overrides reset on app restart and do not change the stored environment contract.
+The Superplayer administration dashboard can also apply process-local overrides for idle chat, proactive chat, and proactive chat chance. Start local diagnostic games with both chat toggles disabled, measure core turn latency first, then enable optional chat only when testing chatter. Those overrides reset on app restart and do not change the stored environment contract.
 
 Model-profile and chat-profile YAML defaults live in:
 - [`clue_agents/profiles/models.yaml`](./clue_agents/profiles/models.yaml)

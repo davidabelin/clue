@@ -98,6 +98,36 @@ def admin_game_page(game_id: str):
     return render_template("pages/admin_game.html", title=f"Clue Admin: {game['title']}", game=game, admin_token=token)
 
 
+@main_bp.post("/admin/games/<game_id>/terminate")
+def admin_terminate_game_form(game_id: str):
+    """Admin postback for marking a stale active game as terminated."""
+
+    payload = _admin_form_payload()
+    token = str(payload.get("admin_token", "")).strip()
+    if not _admin_token_is_valid(token):
+        return _admin_forbidden()
+    try:
+        current_app.extensions["game_service"].admin_terminate_game(game_id)
+    except KeyError:
+        return "Saved game not found.", 404
+    return redirect(url_for("main.admin_page", admin_token=token, notice="Game terminated."))
+
+
+@main_bp.post("/admin/games/<game_id>/delete")
+def admin_delete_game_form(game_id: str):
+    """Admin postback for permanently deleting a saved game."""
+
+    payload = _admin_form_payload()
+    token = str(payload.get("admin_token", "")).strip()
+    if not _admin_token_is_valid(token):
+        return _admin_forbidden()
+    try:
+        current_app.extensions["game_service"].admin_delete_game(game_id)
+    except KeyError:
+        return "Saved game not found.", 404
+    return redirect(url_for("main.admin_page", admin_token=token, notice="Game deleted."))
+
+
 @main_bp.post("/admin/runtime-settings")
 def admin_runtime_settings_form():
     """Update process-local optional-chat settings from the admin dashboard."""

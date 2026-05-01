@@ -530,6 +530,23 @@ class ClueRepository:
             )
             self._insert_events(conn, game_id=game_id, events=events)
 
+    def delete_game(self, game_id: str) -> None:
+        """Permanently remove one saved game and its game-scoped dependent rows."""
+
+        if self.get_game_record(game_id) is None:
+            raise KeyError(f"Unknown game: {game_id}")
+        delete_steps = (
+            ("nhp_notes", "source_game_id"),
+            ("nhp_memory", "source_game_id"),
+            ("seat_tokens", "game_id"),
+            ("events", "game_id"),
+            ("seats", "game_id"),
+            ("games", "id"),
+        )
+        with self._lock, self.engine.begin() as conn:
+            for table, column in delete_steps:
+                conn.execute(text(f"DELETE FROM {table} WHERE {column} = :game_id"), {"game_id": game_id})
+
     def list_seats(self, game_id: str) -> list[dict[str, Any]]:
         """Return the seat rows for one game in creation order."""
 

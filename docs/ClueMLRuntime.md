@@ -1,7 +1,7 @@
 # Clue ML Runtime Guide
 
 ## Purpose
-This document describes the shipped OpenAI seat runtime in **v1.9.0**. It is for the maintainer changing prompts, profiles, tools, tracing, failure behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
+This document describes the current OpenAI seat runtime for the v1.9.x stabilization line. It is for the maintainer changing prompts, profiles, tools, tracing, failure behavior, or social-memory integration without breaking Clue's deterministic gameplay guarantees.
 
 ## Runtime Boundary
 - `clue_core` owns rules, hidden setup, legality, turn progression, refutation order, accusations, and filtered snapshots.
@@ -24,12 +24,11 @@ This document describes the shipped OpenAI seat runtime in **v1.9.0**. It is for
 - Grounded by a shared deduction snapshot built by `clue_core.deduction.build_tool_snapshot()`
 
 ### Idle chat path
-- Chat is separate from gameplay decisions
+- Chat is separate from gameplay decisions and is disabled by default for v1.9.1 stabilization
 - `GameService.maybe_run_idle_chat()` decides whether one non-human seat may speak after new player-facing public activity
 - If all new public activity has been processed and no autonomous rules action is pending, proactive quiet-table chat may run once per game turn
-- The chat runtime uses a two-stage SDK flow:
-  1. `ChatIntentOutput`
-  2. `ChatUtteranceOutput`
+- The chat runtime uses one compact SDK output, `AgentChatOutput`, which either chooses silence or returns one safe public line
+- Chat relationship writes can still happen through durable write tools, but structured chat `relationship_deltas` are not part of the v1.9.1 optional-chat output path
 - Chat session ids are separate from turn session ids: `game_id:seat_id:chat`
 
 ### Durable memory path
@@ -51,7 +50,8 @@ Current defaults:
 - reasoning effort: `medium`
 - base env timeout: `12` seconds locally; AIX deployment sets `45` seconds
 - YAML turn-profile default budget: `30` seconds, `12` tool calls, `18` SDK turns
-- YAML chat-profile default budget: `30` seconds, `10` tool calls, `16` SDK turns
+- YAML chat-profile default budget: `12` seconds, `4` tool calls, `6` SDK turns
+- Optional chat agent output budget: one compact `AgentChatOutput` with a low token cap
 - tracing enabled: `false`
 - sensitive trace data: `false`
 - session TTL: `900` seconds
@@ -63,7 +63,7 @@ Superplayer Administrator Mode can set process-local overrides for optional idle
 - proactive quiet-table chat enabled/disabled
 - proactive quiet-table chat chance multiplier
 
-These overrides reset on app restart. They do not change stored game state, model profiles, API keys, or the rules engine.
+The env defaults are `CLUE_IDLE_CHAT_ENABLED=0` and `CLUE_PROACTIVE_CHAT_ENABLED=0`. Start diagnostics with both toggles off, measure core turn latency, then enable optional chat only for chatter-specific testing. These overrides reset on app restart. They do not change stored game state, model profiles, API keys, or the rules engine.
 
 ### Profile precedence
 - Runtime config starts with normalized env defaults.
@@ -79,7 +79,7 @@ Each SDK run gets a code-owned `SeatAgentContext` containing:
 - the deduction/tool snapshot
 - the accusation pacing gate
 - the trace id and local session id
-- chat-plan data for the second chat stage
+- chat mode, if the optional single-pass chat path is running
 - durable memory context injected only for internal NHP runtime calls
 - the repository-backed write sink for durable NHP memory/social writes
 - tool-access logs for diagnostics
@@ -124,11 +124,11 @@ The output guardrails reject or trip on:
 - missing required accusation or suggestion fields
 - accusations before the pacing gate allows them
 - unsafe public chat that looks like hidden-ownership leakage
-- invalid chat intent enums or target seat ids
+- invalid legacy chat intent enums or target seat ids
 - obviously fabricated public-fact references that contradict recent visible history
 - empty durable memory summaries or relationship updates without targets
 
-When output validation fails for a turn, the LLM decision is discarded and the runtime records an explicit LLM failure instead of generating a heuristic move. The chat path may still choose deliberate silence for model-authored no-speak or unsafe-public-chat outcomes; it does not use heuristic chat text as a substitute.
+When output validation fails for a turn, the LLM decision is discarded and the runtime records an explicit LLM failure instead of generating a heuristic move. The compact chat path may still choose deliberate silence for model-authored no-speak or unsafe-public-chat outcomes; it does not use heuristic chat text as a substitute.
 Memory-summary validation failures mark the durable memory job failed or pending; they do not synthesize replacement memory.
 
 ### Tool guardrails
@@ -212,7 +212,7 @@ Failure causes include:
 - general model/runtime exceptions
 
 Turn failures raise `LLMDecisionError`. `GameService.maybe_run_agents()` catches that error, records an `llm_unavailable` public event plus a seat-private trace, and leaves the game on that NHP turn. No heuristic move is produced.
-Chat runtime failures also raise `LLMDecisionError`; idle-chat orchestration records a seat-private `trace_llm_unavailable` event and posts no substitute chat. Deliberate model silence remains a valid non-error outcome.
+Chat runtime failures also raise `LLMDecisionError`; idle-chat orchestration records a seat-private `trace_llm_unavailable` event and posts no substitute chat. Administrator Mode counts those optional-chat traces separately from gameplay-turn `llm_unavailable_count`, with per-game breakdowns by seat, model/profile, reason, and sample error prefix. Deliberate model silence remains a valid non-error outcome.
 Durable memory model/runtime failure leaves a retryable memory job.
 
 ## What To Check Before Changing This Runtime

@@ -705,7 +705,7 @@ if (app) {
           <h4>${escapeHtml(seat.display_name)}</h4>
           <p>${seat.display_name === seat.character ? "Character marker" : escapeHtml(seat.character)}</p>
           <p class="position-node">${escapeHtml(labels.get(seat.position) || seat.position)}</p>
-          <p>${seat.can_win ? "Still in the case." : "Eliminated from winning."}</p>
+          <p>${seat.can_win ? "On the case." : "Eliminated from winning."}</p>
           <span class="seat-swatch" style="--seat-color: ${escapeHtml(decorated.color)}"></span>
         </article>
       `;

@@ -789,6 +789,10 @@ if AGENTS_SDK_AVAILABLE:
         sanitized_text = sanitize_public_chat(agent_output.text or "")
         if agent_output.speak and not sanitized_text:
             issues.append("unsafe_or_empty_public_chat")
+        if agent_output.speak:
+            fabricated_issue = _fabricated_public_fact_issue(context.context, agent_output.text or "")
+            if fabricated_issue:
+                issues.append(fabricated_issue)
 
         return GuardrailFunctionOutput(
             output_info={
@@ -915,8 +919,6 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
         get_recent_public_chat_turns,
         get_recent_public_narrative_turns,
     ]
-    if mode_label == "chat":
-        mode_label = "chat_intent"
     if mode_label == "memory_summary":
         return Agent(
             name="Clue Seat Durable Memory Agent",
@@ -939,6 +941,29 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
             ),
             output_type=AgentOutputSchema(MemorySummaryOutput, strict_json_schema=False),
             output_guardrails=[clue_memory_summary_output_guardrail],
+        )
+    if mode_label == "chat":
+        return Agent(
+            name="Clue Seat Chat Agent",
+            instructions=_chat_agent_instructions,
+            tools=[*social_read_tools, *write_tools],
+            model=runtime_config.model,
+            model_settings=ModelSettings(
+                tool_choice="auto",
+                parallel_tool_calls=False,
+                max_tokens=220,
+                reasoning={"effort": runtime_config.reasoning_effort},
+                verbosity="low",
+                store=True,
+                extra_args={"timeout": runtime_config.timeout_seconds},
+                metadata={
+                    "app": "clue",
+                    "mode": "chat",
+                    "release": runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE)["release_label"],  # type: ignore[index]
+                },
+            ),
+            output_type=AgentOutputSchema(AgentChatOutput, strict_json_schema=False),
+            output_guardrails=[clue_chat_output_guardrail],
         )
     if mode_label == "chat_intent":
         return Agent(
@@ -1062,6 +1087,21 @@ def _chat_intent_agent_instructions(context: RunContextWrapper[SeatAgentContext]
         "When speaking, choose a clear target seat when one fits, a short thread topic, a grounded tone, and small bounded relationship deltas.\n"
         "Use write tools to record the social intent or relationship shift when the exchange should matter later.\n"
         "Keep rationale_private short and useful for maintainers."
+    )
+
+
+def _chat_agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Agent[SeatAgentContext]) -> str:
+    """Build the compact single-pass optional-chat instructions for one autonomous seat."""
+
+    seat = dict(context.context.snapshot.get("seat") or {})
+    return (
+        "You are deciding whether one autonomous Clue seat should add an optional public chat line right now.\n"
+        "This is not a rules action. If silence is better than adding useful table color, return `speak=false` with empty text.\n"
+        "If speaking, write exactly one concise public line in character. Do not reveal private card knowledge, invent public facts, or claim hidden certainty.\n"
+        "Use social and memory tools only when they are clearly useful; optional chat should stay brief and responsive.\n"
+        f"Seat: {seat.get('display_name', 'Unknown')} ({seat.get('character', 'Unknown')}).\n"
+        f"Chat persona guidance:\n{social_prompt(str(seat.get('character') or ''))}\n"
+        "Return only `speak`, `text`, and short maintainer-facing rationale/debug fields."
     )
 
 

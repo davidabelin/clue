@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Changed optional NHP idle/proactive chat defaults to off for stabilization; Admin Mode or env vars can opt back in.
+- Replaced optional chat's two-stage intent/utterance SDK path with one compact `AgentChatOutput` speak-or-silence call.
+- Added Administrator Mode counts and per-game breakdowns for optional-chat `trace_llm_unavailable` failures separate from gameplay-turn LLM failures.
+- Lowered default chat-profile budgets and disabled slower full-size chat profiles while v1.9.1 focuses on playable core turn flow.
+- Added Admin Mode controls to terminate stale active games and permanently delete saved games that should no longer clutter review lists.
+- Changed the player-facing winner-eligibility copy from "Still in the case." to "On the case."
 
 ## v1.9.0 - 2026-04-29
 - Added visible Superplayer Admin links and a token-entry screen at `/admin` so deployed maintainers can reach the protected dashboard without manually constructing a query URL.

@@ -11,8 +11,6 @@ from clue_agents.config import LLMRuntimeConfig
 from clue_agents.sdk_runtime import (
     AgentChatOutput,
     AgentTurnOutput,
-    ChatIntentOutput,
-    ChatUtteranceOutput,
     MemorySummaryOutput,
     SeatAgentContext,
     build_run_config,
@@ -408,29 +406,14 @@ def test_llm_agent_clear_session_uses_local_session_store(monkeypatch):
 
 
 def test_llm_agent_chat_uses_separate_session_metadata(monkeypatch):
-    """Idle-chat runs should surface the dedicated chat session id and intent metadata."""
+    """Idle-chat runs should use one compact call and surface chat session metadata."""
 
     monkeypatch.setattr(
         LLMSeatAgent,
         "_run_agent",
         lambda self, context: (
-            (
-                ChatIntentOutput(
-                    speak=True,
-                    intent="challenge",
-                    target_seat_id="seat_mustard",
-                    topic="mustard_reaction",
-                    tone="cutting",
-                    thread_action="continue",
-                    rationale_private="Press the colonel.",
-                ),
-                _artifacts(session_id="game_test:seat_scarlet:chat", trace_id="trace_chat_intent"),
-            )
-            if context.mode == "chat_intent"
-            else (
-                ChatUtteranceOutput(text="We are all showing far too much.", rationale_private="chat"),
-                _artifacts(session_id="game_test:seat_scarlet:chat", trace_id="trace_chat_utterance"),
-            )
+            AgentChatOutput(speak=True, text="We are all showing far too much.", rationale_private="chat"),
+            _artifacts(session_id="game_test:seat_scarlet:chat", trace_id="trace_chat"),
         ),
     )
 
@@ -439,8 +422,6 @@ def test_llm_agent_chat_uses_separate_session_metadata(monkeypatch):
 
     assert decision.speak is True
     assert decision.text == "We are all showing far too much."
-    assert decision.intent == "challenge"
-    assert decision.target_seat_id == "seat_mustard"
     assert decision.agent_meta["session_id"] == "game_test:seat_scarlet:chat"
     assert decision.debug_private["sdk_session_id"] == "game_test:seat_scarlet:chat"
 
@@ -468,23 +449,8 @@ def test_llm_agent_chat_drops_unsafe_public_leak(monkeypatch):
         LLMSeatAgent,
         "_run_agent",
         lambda self, context: (
-            (
-                ChatIntentOutput(
-                    speak=True,
-                    intent="challenge",
-                    target_seat_id="seat_mustard",
-                    topic="mustard_cards",
-                    tone="cutting",
-                    thread_action="open",
-                    rationale_private="push him",
-                ),
-                _artifacts(),
-            )
-            if context.mode == "chat_intent"
-            else (
-                ChatUtteranceOutput(text="Colonel Mustard has the Rope.", rationale_private="chat"),
-                _artifacts(),
-            )
+            AgentChatOutput(speak=True, text="Colonel Mustard has the Rope.", rationale_private="chat"),
+            _artifacts(),
         ),
     )
 
@@ -494,6 +460,44 @@ def test_llm_agent_chat_drops_unsafe_public_leak(monkeypatch):
     assert decision.speak is False
     assert decision.text == ""
     assert decision.agent_meta["fallback_reason"] == "unsafe_public_chat"
+
+
+def test_llm_agent_chat_preserves_model_silence(monkeypatch):
+    """A deliberate compact-chat no-speak output should remain a non-error silence."""
+
+    monkeypatch.setattr(
+        LLMSeatAgent,
+        "_run_agent",
+        lambda self, context: (
+            AgentChatOutput(speak=False, text="", rationale_private="Nothing useful to add."),
+            _artifacts(session_id="game_test:seat_scarlet:chat"),
+        ),
+    )
+
+    agent = LLMSeatAgent(api_key="test-key")
+    decision = agent.decide_chat(snapshot=_snapshot())
+
+    assert decision.speak is False
+    assert decision.text == ""
+    assert decision.agent_meta["fallback_reason"] == "model_chose_silence"
+    assert decision.agent_meta["session_id"] == "game_test:seat_scarlet:chat"
+
+
+def test_llm_agent_chat_malformed_output_fails_loudly(monkeypatch):
+    """Malformed compact-chat model output should be visible as an LLM chat failure."""
+
+    def _raise_model_error(self, context):
+        raise RuntimeError("Pydantic EOF while parsing AgentChatOutput")
+
+    monkeypatch.setattr(LLMSeatAgent, "_run_agent", _raise_model_error)
+
+    agent = LLMSeatAgent(api_key="test-key")
+    with pytest.raises(LLMDecisionError) as excinfo:
+        agent.decide_chat(snapshot=_snapshot())
+
+    assert excinfo.value.reason == "model_error"
+    assert excinfo.value.mode == "chat"
+    assert "AgentChatOutput" in str(excinfo.value.error)
 
 
 def test_llm_agent_memory_summary_records_metadata(monkeypatch):

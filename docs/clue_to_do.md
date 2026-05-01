@@ -9,7 +9,33 @@
 
 **This list stays at the top for loose hints and breadcrumbs. Move items into the structured lists below as soon as they become actionable.**
 
-No rolling items are currently loose. The Clue OpenAI key work is promoted into the v1.9.1 target, and the local-game observations are parked for later triage.
+No loose rolling items are currently pending.
+
+Completed before the next repo commit and app deploy:
+
+- [x] Add an Admin Mode button to terminate hanging games marked `active` that are not really active.
+- [x] Add an Admin Mode button to permanently delete dead games that clutter the saved-game list.
+- [x] Replace "Still in the case." with "On the case." in the player-facing seat status copy.
+
+### *Still to do **before** next version uptick!*
+
+- We need to talk *in depth* about the flow, the whole flow, and only the flow
+  - walk me all the way through a Responses action
+  - what must be sent where, and how often, to maintain a table-wide context?
+  - Same but to maintain Seat context.
+  - How are the *probabilities for best next moves* calculated, exactly, and how (optimally) served to the NHP's when they need it?
+    - Which NHP parameters affect how they use those likelihoods?
+
+### More random to-do's to do *today*
+
+- What screenshots would you like me to take for you to see what I see as a user of the app in Chrome on Windows?
+  - Rather than me just taking scattershot screenshots hoping for clarity and relevance.
+- There is still too much temporal "jaggedness" to gameplay flow; some of it waiting for NHP's and for other reasons too. We need to optimize asynchronous game flow or this game will not be playable, so **nothing else matters if we don't figure that out** first.
+- There is still too much space being taken up with panel padding, poor panel adjustment, some extra-large fontsizes, and just bad design of the spatial layout.
+- No anachronistic 'Victorianisms'; at best there should be anachronistic Edwardianisms but aren't NHP's supposed to be speaking in Agathie Christienisms?
+    - *I don't like it.* The NHPs should be ironic about their in-game role-playing, ie. NOT take it too seriously.
+      - Like a group of modern partygoers who have all agreed to play their roles ironically conscious of *playing* them.
+    - Where can we define this stage-direction so all the partygoers know about it?
 
 ## Later Triage Notes
 
@@ -20,24 +46,8 @@ No rolling items are currently loose. The Clue OpenAI key work is promoted into 
   - Failures were `mode=chat`, `reason=model_error`, mostly Pydantic EOF errors while parsing partial `ChatIntentOutput` or `ChatUtteranceOutput` JSON.
   - The slowest autonomous turn metric was about 44.3 seconds; tool snapshot latency stayed low, so model runtime is the likely bottleneck rather than deduction snapshot generation.
   - Chat failures were private trace events and did not increment `llm_unavailable_count`, so admin/game health summaries understate optional-chat failure volume.
-- [ ] Answer before the next local diagnostic game: NHP runtime controls are in Admin Mode runtime settings for idle/proactive chat, while persistent model/profile defaults live in `clue_agents/profiles/models.yaml`.
-- [ ] For lag-focused diagnostic play, start with optional idle/proactive chat disabled, then re-enable chat with fast/mini chat profiles after core turn flow is measured.
-
-- [ ] Gameplay, UI, probability, and persona questions to re-organize and answer in context:
-
-  - There is still too much temporal "jaggedness" to gameplay flow; some of it waiting for NHP's and for other reasons too. We need to optimize asynchronous game flow or this game will not be playable, so **nothing else matters if we don't figure that out** first.
-
-  - There is still too much space being taken up with panel padding, poor panel adjustment, some extra-large fontsizes, and just bad design of the spatial layout.
-
-  - How are the *probabilities for best next moves* calculated, exactly, and how (optimally) served to the NHP's when they need it? Which NHP parameters affect how they use those likelihoods?
-
-  - "Still in the case," what kind of English is this? Let's have "On the case" like in American 50s Noir.
-
-  - No anachronistic 'Victorianisms'; at best there should be anachronistic Edwardianisms but aren't NHP's supposed to be speaking in Agathie Christienisms?
-    - *I don't like it.* The NHPs should be ironic about their in-game role-playing, ie. NOT take it too seriously.
-      - Like a group of modern partygoers who have all agreed to play their roles ironically conscious of *playing* them.
-    - Where can we define this stage-direction so all the partygoers know about it?
-
+- [x] Answer before the next local diagnostic game: NHP runtime controls are in Admin Mode runtime settings for idle/proactive chat, while persistent model/profile defaults live in `clue_agents/profiles/models.yaml`.
+- [x] For lag-focused diagnostic play, start with optional idle/proactive chat disabled, then re-enable chat with fast/mini chat profiles after core turn flow is measured.
 
 ## v1.9.0 Stabilization Pass
 
@@ -71,12 +81,12 @@ Goal: make one locally hosted game feel understandable, responsive, and compact 
 
 ### LLM Chat Failure And Optional Chatter Control
 
-- [ ] Fix malformed structured chat output: reproduce partial `ChatIntentOutput` / `ChatUtteranceOutput` EOF failures and decide whether the remedy is stricter schema mode, larger chat output token budgets, shorter schemas, retries, or a single-pass chat output.
-- [ ] Keep optional idle/proactive chat off the gameplay-critical request path so a failed or slow banter attempt cannot make the table feel frozen.
-- [ ] Count chat `trace_llm_unavailable` events in admin health summaries separately from gameplay-turn LLM failures.
-- [ ] Add an admin-visible per-game chat failure breakdown by seat, mode, model profile, reason, and sample error prefix.
-- [ ] Use faster/lower-budget chat defaults for v1.9.1 diagnostics; high-reasoning theatrical chat should not be a default while stabilizing playability.
-- [ ] Preserve deliberate model silence as non-error, but avoid repeated failed chat attempts against the same event/thread after a malformed-output failure.
+- [x] Fix malformed structured chat output: replace the fragile two-stage `ChatIntentOutput` / `ChatUtteranceOutput` optional-chat path with one compact `AgentChatOutput` speak-or-silence call for v1.9.1.
+- [x] Keep optional idle/proactive chat off the gameplay-critical request path by default with `CLUE_IDLE_CHAT_ENABLED=0` and `CLUE_PROACTIVE_CHAT_ENABLED=0`; Admin Mode can still opt in at runtime.
+- [x] Count chat `trace_llm_unavailable` events in admin health summaries separately from gameplay-turn LLM failures.
+- [x] Add an admin-visible per-game chat failure breakdown by seat, model/profile, reason, and sample error prefix.
+- [x] Use faster/lower-budget chat defaults for v1.9.1 diagnostics; high-reasoning theatrical chat is disabled from default chat-profile selection while stabilizing playability.
+- [x] Preserve deliberate model silence as non-error, and avoid repeated failed chat attempts against the same event/thread by marking processed public events before optional chat execution.
 
 ### Gameplay Latency And Synchronization
 

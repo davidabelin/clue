@@ -168,9 +168,9 @@ character_bias:
       gpt54_xdeep: 1.2
 
 chat_runtime_defaults:
-  timeout_seconds: 30
-  max_tool_calls: 10
-  max_turns: 16
+  timeout_seconds: 12
+  max_tool_calls: 4
+  max_turns: 6
   tracing_enabled: false
   trace_include_sensitive_data: false
 
@@ -182,18 +182,18 @@ chat_selection:
   allow_same_model_with_different_effort: true
   apply_character_bias: true
   character_bias_mode: "base_weight_multiplier"
-  fallback_profile: "chat_gpt54_mini_balanced"
+  fallback_profile: "chat_gpt54_mini_quick"
 
 chat_profiles:
   chat_gpt54_mini_quick:
     enabled: true
-    weight: 4
+    weight: 8
     public_label: "Chat GPT-5.4 Mini / Quick"
     model: "gpt-5.4-mini-2026-03-17"
     reasoning_effort: "low"
-    timeout_seconds: 24
-    max_tool_calls: 8
-    max_turns: 14
+    timeout_seconds: 10
+    max_tool_calls: 4
+    max_turns: 6
     context_grasp_score: 2
     latency_class: "fast"
     cost_class: "low"
@@ -202,13 +202,13 @@ chat_profiles:
 
   chat_gpt54_mini_balanced:
     enabled: true
-    weight: 6
+    weight: 2
     public_label: "Chat GPT-5.4 Mini / Balanced"
     model: "gpt-5.4-mini-2026-03-17"
-    reasoning_effort: "medium"
-    timeout_seconds: 30
-    max_tool_calls: 10
-    max_turns: 16
+    reasoning_effort: "low"
+    timeout_seconds: 12
+    max_tool_calls: 4
+    max_turns: 6
     context_grasp_score: 3
     latency_class: "fast"
     cost_class: "low"
@@ -216,8 +216,8 @@ chat_profiles:
       - "Default chat profile for most autonomous seats."
 
   chat_gpt54_expressive:
-    enabled: true
-    weight: 3
+    enabled: false
+    weight: 0
     public_label: "Chat GPT-5.4 / Expressive"
     model: "gpt-5.4"
     reasoning_effort: "medium"
@@ -231,8 +231,8 @@ chat_profiles:
       - "Better continuity for social threads and sharper persona voice."
 
   chat_gpt54_theatrical:
-    enabled: true
-    weight: 2
+    enabled: false
+    weight: 0
     public_label: "Chat GPT-5.4 / Theatrical"
     model: "gpt-5.4"
     reasoning_effort: "high"

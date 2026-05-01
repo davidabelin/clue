@@ -25,7 +25,7 @@
     <article class="panel admin-stat">
       <span class="card-kicker">LLM Failures</span>
       <strong>{{ game.summary.llm_unavailable_count }}</strong>
-      <small>{{ game.summary.sampling_timeouts }} sampling timeouts</small>
+      <small>{{ game.summary.chat_failure_count }} optional chat failures / {{ game.summary.sampling_timeouts }} sampling timeouts</small>
     </article>
     <article class="panel admin-stat">
       <span class="card-kicker">Max Turn Latency</span>
@@ -129,6 +129,30 @@
           </tr>
           {% else %}
           <tr><td colspan="6">No turn metrics recorded.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel admin-section">
+    <div class="panel-head compact">
+      <h2>Optional Chat Failures</h2>
+    </div>
+    <div class="admin-table-wrap">
+      <table class="admin-table">
+        <thead><tr><th>Seat</th><th>Count</th><th>Reason</th><th>Model / Profile</th><th>Sample Error</th></tr></thead>
+        <tbody>
+          {% for item in game.chat_failures.breakdown %}
+          <tr>
+            <td>{{ item.display_name }}<br><small>{{ item.seat_id }}</small></td>
+            <td>{{ item.count }}</td>
+            <td>{{ item.reason }}</td>
+            <td>{{ item.model or "-" }}<br><small>{{ item.profile or "-" }}</small></td>
+            <td>{{ item.sample_error_prefix or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">No optional-chat LLM failures recorded.</td></tr>
           {% endfor %}
         </tbody>
       </table>

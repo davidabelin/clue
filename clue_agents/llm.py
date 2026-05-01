@@ -18,6 +18,7 @@ from clue_agents.policy import accusation_window
 from clue_agents.profile_loader import chat_model_profile, model_profile, model_runtime_defaults
 from clue_agents.sdk_runtime import (
     AGENTS_SDK_AVAILABLE,
+    AgentChatOutput,
     AgentTurnOutput,
     ChatIntentOutput,
     ChatUtteranceOutput,
@@ -336,12 +337,16 @@ class LLMSeatAgent(SeatAgent):
                 "Plan the next public social move for this autonomous Clue seat."
                 if mode_label == "chat_intent"
                 else (
-                    "Write one safe, in-character public chat line for this autonomous Clue seat."
-                    if mode_label == "chat_utterance"
+                    "Decide whether to add one safe, optional public chat line for this autonomous Clue seat."
+                    if mode_label == "chat"
                     else (
-                        "Write the durable first-person memory summary for this completed Clue game."
-                        if mode_label == "memory_summary"
-                        else "Inspect the current seat-local state and return the single best next Clue action."
+                        "Write one safe, in-character public chat line for this autonomous Clue seat."
+                        if mode_label == "chat_utterance"
+                        else (
+                            "Write the durable first-person memory summary for this completed Clue game."
+                            if mode_label == "memory_summary"
+                            else "Inspect the current seat-local state and return the single best next Clue action."
+                        )
                     )
                 )
             ),
@@ -351,12 +356,16 @@ class LLMSeatAgent(SeatAgent):
             session=session,
         )
         output_type = (
-            ChatIntentOutput
-            if mode_label == "chat_intent"
+            AgentChatOutput
+            if mode_label == "chat"
             else (
-                ChatUtteranceOutput
-                if mode_label == "chat_utterance"
-                else (MemorySummaryOutput if mode_label == "memory_summary" else AgentTurnOutput)
+                ChatIntentOutput
+                if mode_label == "chat_intent"
+                else (
+                    ChatUtteranceOutput
+                    if mode_label == "chat_utterance"
+                    else (MemorySummaryOutput if mode_label == "memory_summary" else AgentTurnOutput)
+                )
             )
         )
         output = result.final_output_as(output_type, raise_if_incorrect_type=True)
@@ -586,109 +595,44 @@ class LLMSeatAgent(SeatAgent):
         if not AGENTS_SDK_AVAILABLE or not self._api_key:
             self._raise_chat_error("missing_agents_sdk" if not AGENTS_SDK_AVAILABLE else "missing_api_key")
 
-        intent_context = build_seat_context(
+        context = build_seat_context(
             snapshot=snapshot,
             tool_snapshot={},
             accusation_gate={"ready": False},
             runtime_config=self._chat_runtime_config,
-            mode="chat_intent",
+            mode="chat",
             write_sink=self._write_sink,
         )
         try:
-            raw_intent, intent_artifacts = self._run_agent(intent_context)
+            raw_output, artifacts = self._run_agent(context)
+            tool_call_count = len(list(artifacts.get("tool_calls") or []))
             shared_meta = {
-                "session_id": str(intent_artifacts.get("session_id") or ""),
-                "intent_trace_id": str(intent_artifacts.get("trace_id") or ""),
-                "intent_last_response_id": str(intent_artifacts.get("last_response_id") or ""),
-                "intent_tool_writes": list(intent_artifacts.get("tool_writes") or []),
+                "trace_id": str(artifacts.get("trace_id") or ""),
+                "session_id": str(artifacts.get("session_id") or ""),
+                "last_response_id": str(artifacts.get("last_response_id") or ""),
+                "tool_call_count": tool_call_count,
+                "tool_calls": list(artifacts.get("tool_calls") or []),
+                "tool_writes": list(artifacts.get("tool_writes") or []),
             }
-            if hasattr(raw_intent, "text"):
-                sanitized_text = sanitize_public_chat(str(getattr(raw_intent, "text", "") or ""))
-                if not bool(getattr(raw_intent, "speak", False)):
-                    silent = self._silent_chat_decision(reason="model_chose_silence", extra_meta=shared_meta)
-                    silent.debug_private["legacy_chat_output"] = True
-                    return silent
-                if not sanitized_text:
-                    silent = self._silent_chat_decision(reason="unsafe_public_chat", extra_meta=shared_meta)
-                    silent.debug_private["legacy_chat_output"] = True
-                    return silent
-                return ChatDecision(
-                    speak=True,
-                    text=sanitized_text,
-                    rationale_private=str(getattr(raw_intent, "rationale_private", "") or ""),
-                    debug_private={
-                        "mode": "llm_idle_chat_legacy",
-                        "llm_runtime": self._chat_runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE),
-                        "sdk_trace_id": str(intent_artifacts.get("trace_id") or ""),
-                        "sdk_session_id": str(intent_artifacts.get("session_id") or ""),
-                        "sdk_tool_writes": list(intent_artifacts.get("tool_writes") or []),
-                    },
-                    agent_meta={
-                        **self._chat_runtime_meta(),
-                        "fallback_used": False,
-                        "guardrail_blocked": bool(getattr(raw_intent, "text", "") and getattr(raw_intent, "text", "") != sanitized_text),
-                        "trace_id": str(intent_artifacts.get("trace_id") or ""),
-                        "session_id": str(intent_artifacts.get("session_id") or ""),
-                        "last_response_id": str(intent_artifacts.get("last_response_id") or ""),
-                        "tool_call_count": len(list(intent_artifacts.get("tool_calls") or [])),
-                        "tool_calls": list(intent_artifacts.get("tool_calls") or []),
-                        "tool_writes": list(intent_artifacts.get("tool_writes") or []),
-                    },
-                )
-            if not raw_intent.speak:
+            if not raw_output.speak:
                 silent = self._silent_chat_decision(reason="model_chose_silence", extra_meta=shared_meta)
-                silent.debug_private["intent_rationale"] = raw_intent.rationale_private
-                silent.debug_private["intent_plan"] = raw_intent.model_dump()
-                silent.debug_private["sdk_intent_tool_calls"] = list(intent_artifacts.get("tool_calls") or [])
-                silent.debug_private["sdk_intent_tool_writes"] = list(intent_artifacts.get("tool_writes") or [])
-                silent.debug_private["sdk_output_guardrails"] = list(intent_artifacts.get("output_guardrails") or [])
+                silent.debug_private["model_rationale"] = raw_output.rationale_private
+                silent.debug_private["sdk_output_guardrails"] = list(artifacts.get("output_guardrails") or [])
+                silent.debug_private["model_debug_private"] = dict(raw_output.debug_private or {})
                 return silent
 
-            utterance_context = build_seat_context(
-                snapshot=snapshot,
-                tool_snapshot={},
-                accusation_gate={"ready": False},
-                runtime_config=self._chat_runtime_config,
-                mode="chat_utterance",
-                chat_plan=raw_intent.model_dump(),
-                write_sink=self._write_sink,
-            )
-            raw_utterance, utterance_artifacts = self._run_agent(utterance_context)
-            sanitized_text = sanitize_public_chat(raw_utterance.text or "")
-            combined_tool_calls = [*list(intent_artifacts.get("tool_calls") or []), *list(utterance_artifacts.get("tool_calls") or [])]
-            combined_tool_writes = [*list(intent_artifacts.get("tool_writes") or []), *list(utterance_artifacts.get("tool_writes") or [])]
-            shared_meta = {
-                **shared_meta,
-                "trace_id": str(utterance_artifacts.get("trace_id") or ""),
-                "utterance_trace_id": str(utterance_artifacts.get("trace_id") or ""),
-                "last_response_id": str(utterance_artifacts.get("last_response_id") or ""),
-                "tool_call_count": len(combined_tool_calls),
-                "tool_calls": combined_tool_calls,
-                "tool_writes": combined_tool_writes,
-            }
+            sanitized_text = sanitize_public_chat(raw_output.text or "")
             if not sanitized_text:
                 silent = self._silent_chat_decision(reason="unsafe_public_chat", extra_meta=shared_meta)
-                silent.debug_private["intent_rationale"] = raw_intent.rationale_private
-                silent.debug_private["utterance_rationale"] = raw_utterance.rationale_private
-                silent.debug_private["intent_plan"] = raw_intent.model_dump()
-                silent.debug_private["sdk_output_guardrails"] = [
-                    *list(intent_artifacts.get("output_guardrails") or []),
-                    *list(utterance_artifacts.get("output_guardrails") or []),
-                ]
+                silent.debug_private["model_rationale"] = raw_output.rationale_private
+                silent.debug_private["sdk_output_guardrails"] = list(artifacts.get("output_guardrails") or [])
+                silent.debug_private["model_debug_private"] = dict(raw_output.debug_private or {})
                 return silent
 
-            relationship_deltas = [item.model_dump() for item in list(raw_intent.relationship_deltas or [])]
             return ChatDecision(
                 speak=True,
                 text=sanitized_text,
-                intent=raw_intent.intent,
-                target_seat_id=str(raw_intent.target_seat_id or ""),
-                topic=str(raw_intent.topic or ""),
-                tone=str(raw_intent.tone or ""),
-                thread_action=str(raw_intent.thread_action or ""),
-                relationship_deltas=relationship_deltas,
-                action_pressure_hint=str(raw_intent.action_pressure_hint or ""),
-                rationale_private=str(raw_utterance.rationale_private or raw_intent.rationale_private or ""),
+                rationale_private=str(raw_output.rationale_private or ""),
                 debug_private={
                     "mode": "llm_idle_chat",
                     "llm_runtime": self._chat_runtime_config.public_summary(sdk_available=AGENTS_SDK_AVAILABLE),
@@ -696,29 +640,20 @@ class LLMSeatAgent(SeatAgent):
                     "selected_profile_label": self._chat_profile_label,
                     "selected_turn_profile_id": self._profile_id,
                     "selected_turn_profile_label": self._profile_label,
-                    "chat_intent": raw_intent.model_dump(),
-                    "relationship_deltas": relationship_deltas,
-                    "sdk_trace_id": str(utterance_artifacts.get("trace_id") or ""),
-                    "sdk_session_id": str(utterance_artifacts.get("session_id") or intent_artifacts.get("session_id") or ""),
-                    "sdk_last_response_id": str(utterance_artifacts.get("last_response_id") or ""),
-                    "sdk_intent_tool_calls": list(intent_artifacts.get("tool_calls") or []),
-                    "sdk_utterance_tool_calls": list(utterance_artifacts.get("tool_calls") or []),
-                    "sdk_intent_tool_writes": list(intent_artifacts.get("tool_writes") or []),
-                    "sdk_utterance_tool_writes": list(utterance_artifacts.get("tool_writes") or []),
-                    "sdk_output_guardrails": [
-                        *list(intent_artifacts.get("output_guardrails") or []),
-                        *list(utterance_artifacts.get("output_guardrails") or []),
-                    ],
-                    "sdk_tool_input_guardrails": [
-                        *list(intent_artifacts.get("tool_input_guardrails") or []),
-                        *list(utterance_artifacts.get("tool_input_guardrails") or []),
-                    ],
-                    "utterance_debug_private": dict(raw_utterance.debug_private or {}),
+                    "model_rationale": raw_output.rationale_private,
+                    "sdk_trace_id": str(artifacts.get("trace_id") or ""),
+                    "sdk_session_id": str(artifacts.get("session_id") or ""),
+                    "sdk_last_response_id": str(artifacts.get("last_response_id") or ""),
+                    "sdk_tool_calls": list(artifacts.get("tool_calls") or []),
+                    "sdk_tool_writes": list(artifacts.get("tool_writes") or []),
+                    "sdk_output_guardrails": list(artifacts.get("output_guardrails") or []),
+                    "sdk_tool_input_guardrails": list(artifacts.get("tool_input_guardrails") or []),
+                    "model_debug_private": dict(raw_output.debug_private or {}),
                 },
                 agent_meta={
                     **self._chat_runtime_meta(),
                     "fallback_used": False,
-                    "guardrail_blocked": bool(raw_utterance.text and raw_utterance.text != sanitized_text),
+                    "guardrail_blocked": bool(raw_output.text and raw_output.text != sanitized_text),
                     **shared_meta,
                 },
             )
@@ -729,28 +664,18 @@ class LLMSeatAgent(SeatAgent):
                 "output_guardrail_blocked",
                 error=exc,
                 extra_debug=guardrail_exception_payload(exc)
-                | {
-                    "tool_writes": [
-                        *list(intent_context.tool_write_log),
-                        *list(locals().get("utterance_context").tool_write_log if locals().get("utterance_context") else []),
-                    ]
-                },
+                | {"tool_writes": list(context.tool_write_log)},
             )
         except InputGuardrailTripwireTriggered as exc:
             self._raise_chat_error(
                 "input_guardrail_blocked",
                 error=exc,
                 extra_debug=guardrail_exception_payload(exc)
-                | {
-                    "tool_writes": [
-                        *list(intent_context.tool_write_log),
-                        *list(locals().get("utterance_context").tool_write_log if locals().get("utterance_context") else []),
-                    ]
-                },
+                | {"tool_writes": list(context.tool_write_log)},
             )
         except MaxTurnsExceeded as exc:
-            self._raise_chat_error("max_turns_exceeded", error=exc, extra_debug={"tool_writes": list(intent_context.tool_write_log)})
+            self._raise_chat_error("max_turns_exceeded", error=exc, extra_debug={"tool_writes": list(context.tool_write_log)})
         except TimeoutError as exc:
-            self._raise_chat_error("timeout", error=exc, extra_debug={"tool_writes": list(intent_context.tool_write_log)})
+            self._raise_chat_error("timeout", error=exc, extra_debug={"tool_writes": list(context.tool_write_log)})
         except Exception as exc:
-            self._raise_chat_error("model_error", error=exc, extra_debug={"tool_writes": list(intent_context.tool_write_log)})
+            self._raise_chat_error("model_error", error=exc, extra_debug={"tool_writes": list(context.tool_write_log)})

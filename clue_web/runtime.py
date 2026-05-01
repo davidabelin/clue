@@ -309,8 +309,8 @@ class GameService:
         """Return process env-backed defaults before admin session overrides."""
 
         return {
-            "idle_chat_enabled": self._env_bool("CLUE_IDLE_CHAT_ENABLED", True),
-            "proactive_chat_enabled": self._env_bool("CLUE_PROACTIVE_CHAT_ENABLED", True),
+            "idle_chat_enabled": self._env_bool("CLUE_IDLE_CHAT_ENABLED", False),
+            "proactive_chat_enabled": self._env_bool("CLUE_PROACTIVE_CHAT_ENABLED", False),
             "proactive_chat_chance_multiplier": self._parse_multiplier(
                 os.getenv("CLUE_PROACTIVE_CHAT_CHANCE_MULTIPLIER", "0.35"),
                 default=0.35,
@@ -1175,12 +1175,71 @@ class GameService:
         parts.extend(f"{value} {key}" for key, value in sorted(seat_mix.items()) if key not in order and int(value or 0))
         return ", ".join(parts) or "No seats"
 
+    @staticmethod
+    def _chat_failure_summary(events: list[dict[str, Any]], *, state: dict[str, Any]) -> dict[str, Any]:
+        """Summarize optional-chat failures from existing private trace events."""
+
+        seats = dict(state.get("seats") or {})
+        failures: list[dict[str, Any]] = []
+        breakdown: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+        for event in events:
+            if str(event.get("event_type") or "") != "trace_llm_unavailable":
+                continue
+            payload = dict(event.get("payload") or {})
+            if str(payload.get("mode") or "") != "chat":
+                continue
+            seat_id = str(payload.get("seat_id") or "")
+            seat = dict(seats.get(seat_id) or {})
+            runtime = dict(payload.get("runtime") or {})
+            reason = str(payload.get("reason") or "unknown")
+            model = str(runtime.get("default_model") or seat.get("agent_chat_model") or "")
+            profile = str(seat.get("agent_chat_profile") or "")
+            error_prefix = str(payload.get("error") or "")[:180]
+            item = {
+                "event_index": int(event.get("event_index") or 0),
+                "seat_id": seat_id,
+                "display_name": str(seat.get("display_name") or seat.get("character") or seat_id),
+                "reason": reason,
+                "model": model,
+                "profile": profile,
+                "error_prefix": error_prefix,
+            }
+            failures.append(item)
+            key = (seat_id, reason, model, profile)
+            group = breakdown.setdefault(
+                key,
+                {
+                    "seat_id": seat_id,
+                    "display_name": item["display_name"],
+                    "reason": reason,
+                    "model": model,
+                    "profile": profile,
+                    "count": 0,
+                    "sample_error_prefix": error_prefix,
+                },
+            )
+            group["count"] = int(group["count"]) + 1
+            if not group.get("sample_error_prefix") and error_prefix:
+                group["sample_error_prefix"] = error_prefix
+        return {
+            "count": len(failures),
+            "breakdown": sorted(
+                breakdown.values(),
+                key=lambda item: (-int(item.get("count", 0) or 0), str(item.get("display_name") or "")),
+            ),
+            "recent": failures[-10:],
+        }
+
     def _admin_game_summary_from_record(self, record: dict[str, Any]) -> dict[str, Any]:
         """Shape one saved game into the dashboard's compact review row."""
 
         state = dict(record.get("state") or {})
         analysis = dict(state.get("analysis") or {})
         metrics = dict(analysis.get("game_metrics") or {})
+        chat_failures = self._chat_failure_summary(
+            self._repository.events_for_game(str(record.get("id") or "")),
+            state=state,
+        )
         seats = dict(state.get("seats") or {})
         seat_mix: dict[str, int] = {}
         for seat in seats.values():
@@ -1211,6 +1270,8 @@ class GameService:
             "actions_applied": int(metrics.get("actions_applied", 0) or 0),
             "autonomous_actions": int(metrics.get("autonomous_actions", 0) or 0),
             "llm_unavailable_count": int(metrics.get("llm_unavailable_count", 0) or 0),
+            "chat_failure_count": int(chat_failures["count"]),
+            "chat_failure_breakdown": list(chat_failures["breakdown"]),
             "sampling_timeouts": int(metrics.get("sampling_timeouts", 0) or 0),
             "latency_budget_breaches": int(metrics.get("latency_budget_breaches", 0) or 0),
             "turn_latency_ms_max": float(metrics.get("turn_latency_ms_max", 0.0) or 0.0),
@@ -1233,6 +1294,8 @@ class GameService:
                 "winner_display_name": "",
                 "seat_mix_label": "Unavailable",
                 "llm_unavailable_count": 0,
+                "chat_failure_count": 0,
+                "chat_failure_breakdown": [],
                 "sampling_timeouts": 0,
                 "latency_budget_breaches": 0,
                 "turn_latency_ms_max": 0.0,
@@ -1261,6 +1324,7 @@ class GameService:
             "durable_notes": len(notes),
             "relationships": len(relationships),
             "llm_failures": sum(int(game.get("llm_unavailable_count", 0) or 0) for game in games),
+            "chat_failures": sum(int(game.get("chat_failure_count", 0) or 0) for game in games),
             "sampling_timeouts": sum(int(game.get("sampling_timeouts", 0) or 0) for game in games),
             "latency_budget_breaches": sum(int(game.get("latency_budget_breaches", 0) or 0) for game in games),
             "turn_latency_ms_max": max((float(game.get("turn_latency_ms_max", 0.0) or 0.0) for game in games), default=0.0),
@@ -1297,6 +1361,36 @@ class GameService:
 
         return self._repository.admin_game_detail(game_id)
 
+    def admin_terminate_game(self, game_id: str) -> dict[str, Any]:
+        """Mark one saved game as admin-terminated without deleting its audit trail."""
+
+        state = self._repository.get_state(game_id)
+        if str(state.get("status") or "") == "terminated":
+            return {"game_id": game_id, "status": "terminated", "changed": False}
+        state["status"] = "terminated"
+        state["phase"] = "admin_terminated"
+        state.setdefault("analysis", {}).setdefault("admin_actions", []).append(
+            {"action": "terminate_game", "recorded_at": datetime.now(UTC).isoformat()}
+        )
+        self._repository.save_state_and_events(
+            game_id,
+            state=state,
+            events=[
+                make_event(
+                    "admin_game_terminated",
+                    message="Administrator terminated this saved game.",
+                    payload={"game_id": game_id},
+                )
+            ],
+        )
+        return {"game_id": game_id, "status": "terminated", "changed": True}
+
+    def admin_delete_game(self, game_id: str) -> dict[str, Any]:
+        """Permanently delete one saved game and game-scoped rows."""
+
+        self._repository.delete_game(game_id)
+        return {"game_id": game_id, "status": "deleted"}
+
     def admin_game_review(self, game_id: str) -> dict[str, Any]:
         """Return one saved game with admin-truth fields shaped for the UI."""
 
@@ -1321,6 +1415,7 @@ class GameService:
                 }
             )
         events = [dict(event) for event in list(detail.get("events") or [])]
+        chat_failures = self._chat_failure_summary(events, state=state)
         trace_events = [event for event in events if str(event.get("event_type") or "").startswith("trace_")]
         private_events = [event for event in events if str(event.get("visibility") or "").startswith("seat:")]
         public_events = [event for event in events if str(event.get("visibility") or "") == "public"]
@@ -1336,6 +1431,7 @@ class GameService:
             "agent_runtime": dict(analysis.get("agent_runtime") or {}),
             "turn_metrics": list(analysis.get("turn_metrics") or []),
             "social": dict(state.get("social") or {}),
+            "chat_failures": chat_failures,
             "public_events": public_events,
             "private_events": private_events,
             "trace_events": trace_events,

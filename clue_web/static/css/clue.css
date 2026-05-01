@@ -615,6 +615,21 @@ button:disabled {
   align-items: center;
 }
 
+.admin-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.admin-row-actions form {
+  margin: 0;
+}
+
+.admin-row-actions button {
+  padding: 0.48rem 0.66rem;
+}
+
 .admin-two-column {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
