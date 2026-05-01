@@ -7,15 +7,21 @@ from functools import lru_cache
 
 
 def resolve_openai_api_key(*, api_key: str = "") -> str:
-    """Prefer an explicit key, then env, then Secret Manager indirection."""
+    """Prefer an explicit key, then Clue-owned env, then Clue Secret Manager indirection."""
 
-    direct_value = str(api_key or os.getenv("OPENAI_API_KEY", "")).strip()
+    direct_value = str(api_key or os.getenv("OPENAI_CLUE_SA_KEY", "")).strip()
     if direct_value:
         return direct_value
-    secret_version = str(os.getenv("OPENAI_API_KEY_SECRET_VERSION", "")).strip()
+    secret_version = str(os.getenv("OPENAI_CLUE_SA_KEY_SECRET_VERSION", "")).strip()
     if not secret_version:
         return ""
     return _access_secret_version(secret_version)
+
+
+def resolve_openai_project_id(*, project_id: str = "") -> str:
+    """Return the OpenAI project id that Clue traffic should be attributed to."""
+
+    return str(project_id or os.getenv("OPENAI_CLUE_PROJECT_ID", "")).strip()
 
 
 def _create_secret_manager_client():

@@ -7,8 +7,17 @@ import types
 import pytest
 
 from clue_agents.llm import LLMDecisionError, LLMSeatAgent, MemorySummaryError
-from clue_agents.sdk_runtime import AgentChatOutput, AgentTurnOutput, ChatIntentOutput, ChatUtteranceOutput, MemorySummaryOutput
-from clue_agents.secrets import _access_secret_version, resolve_openai_api_key
+from clue_agents.config import LLMRuntimeConfig
+from clue_agents.sdk_runtime import (
+    AgentChatOutput,
+    AgentTurnOutput,
+    ChatIntentOutput,
+    ChatUtteranceOutput,
+    MemorySummaryOutput,
+    SeatAgentContext,
+    build_run_config,
+)
+from clue_agents.secrets import _access_secret_version, resolve_openai_api_key, resolve_openai_project_id
 
 
 def _snapshot(*, legal_actions: dict | None = None) -> dict:
@@ -48,6 +57,8 @@ def _artifacts(**overrides) -> dict:
 def test_llm_agent_raises_without_api_key(monkeypatch):
     """Without an API key, the LLM seat should fail loudly instead of faking a move."""
 
+    monkeypatch.delenv("OPENAI_CLUE_SA_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_CLUE_SA_KEY_SECRET_VERSION", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY_SECRET_VERSION", raising=False)
     agent = LLMSeatAgent(api_key="")
@@ -57,8 +68,28 @@ def test_llm_agent_raises_without_api_key(monkeypatch):
     assert excinfo.value.mode == "turn"
 
 
-def test_resolve_openai_api_key_reads_secret_manager(monkeypatch):
-    """Secret Manager indirection should populate the OpenAI API key when env is blank."""
+def test_resolve_openai_api_key_prefers_clue_key_over_generic_env(monkeypatch):
+    """Clue should use the Clue service-account key, not a generic shared key."""
+
+    monkeypatch.setenv("OPENAI_API_KEY", "generic-zenbot-key")
+    monkeypatch.setenv("OPENAI_CLUE_SA_KEY", "clue-service-account-key")
+
+    assert resolve_openai_api_key() == "clue-service-account-key"
+
+
+def test_resolve_openai_api_key_ignores_generic_env(monkeypatch):
+    """Generic OpenAI env vars should not satisfy Clue's LLM credential contract."""
+
+    monkeypatch.setenv("OPENAI_API_KEY", "generic-zenbot-key")
+    monkeypatch.setenv("OPENAI_API_KEY_SECRET_VERSION", "projects/aix-labs/secrets/openai-api-key/versions/latest")
+    monkeypatch.delenv("OPENAI_CLUE_SA_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_CLUE_SA_KEY_SECRET_VERSION", raising=False)
+
+    assert resolve_openai_api_key() == ""
+
+
+def test_resolve_openai_api_key_reads_clue_secret_manager(monkeypatch):
+    """Secret Manager indirection should populate the Clue OpenAI API key when env is blank."""
 
     class FakeClient:
         """Minimal fake Secret Manager client for unit tests."""
@@ -66,19 +97,73 @@ def test_resolve_openai_api_key_reads_secret_manager(monkeypatch):
         def access_secret_version(self, request: dict) -> types.SimpleNamespace:
             """Return a canned secret payload for the requested resource name."""
 
-            assert request["name"] == "projects/aix-labs/secrets/openai-api-key/versions/latest"
+            assert request["name"] == "projects/aix-labs/secrets/clue-openai-api-key/versions/latest"
             return types.SimpleNamespace(payload=types.SimpleNamespace(data=b"secret-from-sm"))
 
     _access_secret_version.cache_clear()
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_CLUE_SA_KEY", raising=False)
     monkeypatch.setenv(
-        "OPENAI_API_KEY_SECRET_VERSION",
-        "projects/aix-labs/secrets/openai-api-key/versions/latest",
+        "OPENAI_CLUE_SA_KEY_SECRET_VERSION",
+        "projects/aix-labs/secrets/clue-openai-api-key/versions/latest",
     )
     monkeypatch.setattr("clue_agents.secrets._create_secret_manager_client", lambda: FakeClient())
 
     assert resolve_openai_api_key() == "secret-from-sm"
     _access_secret_version.cache_clear()
+
+
+def test_resolve_openai_project_id_reads_clue_project_env(monkeypatch):
+    """Clue traffic should be explicitly attributed to the configured OpenAI project."""
+
+    monkeypatch.setenv("OPENAI_CLUE_PROJECT_ID", "proj_Lw53USO5NinnThSmUspUs1Kt")
+
+    assert resolve_openai_project_id() == "proj_Lw53USO5NinnThSmUspUs1Kt"
+
+
+def test_build_run_config_passes_clue_project_to_openai_provider(monkeypatch, tmp_path):
+    """The Agents SDK provider should receive the Clue OpenAI project id explicitly."""
+
+    class FakeProvider:
+        def __init__(self, **kwargs):
+            self.kwargs = dict(kwargs)
+
+    class FakeRunConfig:
+        def __init__(self, **kwargs):
+            self.kwargs = dict(kwargs)
+            self.model_provider = kwargs["model_provider"]
+
+    monkeypatch.setenv("OPENAI_CLUE_PROJECT_ID", "proj_Lw53USO5NinnThSmUspUs1Kt")
+    monkeypatch.setattr("clue_agents.sdk_runtime.AGENTS_SDK_AVAILABLE", True)
+    monkeypatch.setattr("clue_agents.sdk_runtime.OpenAIProvider", FakeProvider)
+    monkeypatch.setattr("clue_agents.sdk_runtime.RunConfig", FakeRunConfig)
+
+    runtime_config = LLMRuntimeConfig(
+        model="gpt-test",
+        reasoning_effort="medium",
+        timeout_seconds=12.0,
+        max_tool_calls=6,
+        max_turns=8,
+        tracing_enabled=False,
+        trace_include_sensitive_data=False,
+        session_ttl_seconds=900,
+        session_db_path=str(tmp_path / "sessions.db"),
+        session_encryption_key="test-session-key",
+        eval_export_enabled=False,
+    )
+    context = SeatAgentContext(
+        runtime_config=runtime_config,
+        snapshot=_snapshot(),
+        tool_snapshot={},
+        accusation_gate={"ready": False},
+        trace_id="trace_test",
+        session_id="game_test:seat_scarlet",
+    )
+
+    run_config = build_run_config(context, "clue-service-account-key")
+
+    assert run_config.model_provider.kwargs["api_key"] == "clue-service-account-key"
+    assert run_config.model_provider.kwargs["project"] == "proj_Lw53USO5NinnThSmUspUs1Kt"
+    assert run_config.model_provider.kwargs["use_responses"] is True
 
 
 def test_llm_agent_raises_on_model_error(monkeypatch):
@@ -363,6 +448,8 @@ def test_llm_agent_chat_uses_separate_session_metadata(monkeypatch):
 def test_llm_agent_chat_raises_without_api_key(monkeypatch):
     """Idle chat should not use heuristic chat text when OpenAI credentials are absent."""
 
+    monkeypatch.delenv("OPENAI_CLUE_SA_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_CLUE_SA_KEY_SECRET_VERSION", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY_SECRET_VERSION", raising=False)
     agent = LLMSeatAgent(api_key="")
@@ -448,6 +535,8 @@ def test_llm_agent_memory_summary_records_metadata(monkeypatch):
 def test_llm_agent_memory_summary_has_no_missing_api_fallback(monkeypatch):
     """The durable memory path should raise instead of using heuristic prose fallback."""
 
+    monkeypatch.delenv("OPENAI_CLUE_SA_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_CLUE_SA_KEY_SECRET_VERSION", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY_SECRET_VERSION", raising=False)
     agent = LLMSeatAgent(api_key="")

@@ -30,6 +30,7 @@ env_variables:
   CLUE_AGENT_SESSION_DB_PATH: /tmp/clue_agent_sessions.db
   CLUE_AGENT_SESSION_ENCRYPTION_KEY: ""
   CLUE_AGENT_EVAL_EXPORT_ENABLED: "0"
-  OPENAI_API_KEY_SECRET_VERSION: projects/aix-labs/secrets/openai-api-key/versions/latest
+  OPENAI_CLUE_PROJECT_ID: proj_Lw53USO5NinnThSmUspUs1Kt
+  OPENAI_CLUE_SA_KEY_SECRET_VERSION: projects/aix-labs/secrets/clue-openai-api-key/versions/latest
 
 service_account: aix-admin@aix-labs.iam.gserviceaccount.com

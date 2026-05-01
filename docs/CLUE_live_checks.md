@@ -12,6 +12,8 @@ run-local.bat
 
 This starts local Clue with `CLUE_ADMIN_TOKEN=local-admin` and `CLUE_DB_PATH=data\clue-dev.db`. Open `http://127.0.0.1:5002/admin` and paste `local-admin`.
 
+For local LLM runs, keep the Clue OpenAI service-account key in untracked `set_clue_env.bat` as `OPENAI_CLUE_SA_KEY`. Clue ignores generic `OPENAI_API_KEY` so it does not accidentally use a shared Zenbot key.
+
 To put the local admin token on the clipboard:
 
 ```bat
@@ -24,7 +26,8 @@ PowerShell equivalent:
 pip install -r requirements.txt
 $env:CLUE_DB_PATH = "$PWD\data\clue-live-smoke.db"
 $env:CLUE_ADMIN_TOKEN = "local-admin"
-$env:OPENAI_API_KEY = "<local key or omit when using OPENAI_API_KEY_SECRET_VERSION>"
+$env:OPENAI_CLUE_PROJECT_ID = "proj_Lw53USO5NinnThSmUspUs1Kt"
+$env:OPENAI_CLUE_SA_KEY = "<Clue service-account key or omit when using OPENAI_CLUE_SA_KEY_SECRET_VERSION>"
 python run.py
 ```
 
@@ -72,7 +75,7 @@ Required smoke secrets:
 clue-smoke-database-url
 clue-smoke-secret-key
 clue-smoke-admin-token
-openai-api-key
+clue-openai-api-key
 ```
 
 The smoke database secret must point at an isolated smoke database such as `clue_smoke`, never the production `clue` database.

@@ -229,4 +229,4 @@ Durable memory model/runtime failure leaves a retryable memory job.
 - seat-private debug data remains private
 - durable write-tool rows are visible in Administrator Mode but not normal player snapshots
 - session storage stays local-first unless explicitly redesigned
-- deployment still works with Secret Manager-backed API keys and database URLs
+- deployment still works with the Clue-specific Secret Manager-backed OpenAI key and database URLs

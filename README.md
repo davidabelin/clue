@@ -111,10 +111,12 @@ Clue does not currently load a repo `.env` file, and this repo does not contain 
   Default: `1`; set `0` to disable quiet-table proactive NHP chat.
 - `CLUE_PROACTIVE_CHAT_CHANCE_MULTIPLIER`
   Default: `0.35`; clamps proactive chat chance without affecting reactive replies.
-- `OPENAI_API_KEY`
-  Direct local override for the OpenAI API key
-- `OPENAI_API_KEY_SECRET_VERSION`
-  Secret Manager indirection for deployment
+- `OPENAI_CLUE_SA_KEY`
+  Direct local Clue service-account key for OpenAI calls. Clue intentionally ignores generic `OPENAI_API_KEY`.
+- `OPENAI_CLUE_SA_KEY_SECRET_VERSION`
+  Secret Manager indirection for the Clue service-account key in deployment.
+- `OPENAI_CLUE_PROJECT_ID`
+  OpenAI project id used to attribute Clue model traffic; current Clue project is `proj_Lw53USO5NinnThSmUspUs1Kt`.
 
 The Superplayer administration dashboard can also apply process-local overrides for idle chat, proactive chat, and proactive chat chance. Those overrides reset on app restart and do not change the stored environment contract.
 
@@ -134,7 +136,10 @@ run-local.bat
 ```bat
 CLUE_ADMIN_TOKEN=local-admin
 CLUE_DB_PATH=<repo>\data\clue-dev.db
+OPENAI_CLUE_PROJECT_ID=proj_Lw53USO5NinnThSmUspUs1Kt
 ```
+
+If an untracked `set_clue_env.bat` file exists, `run-local.bat` loads it first. Keep `OPENAI_CLUE_SA_KEY` there for local LLM runs; do not commit that file.
 
 Then open `http://127.0.0.1:5002/`.
 
@@ -156,6 +161,8 @@ PowerShell also works, but is not required:
 pip install -r requirements.txt
 $env:CLUE_ADMIN_TOKEN = "local-admin"
 $env:CLUE_DB_PATH = "$PWD\data\clue-dev.db"
+$env:OPENAI_CLUE_PROJECT_ID = "proj_Lw53USO5NinnThSmUspUs1Kt"
+$env:OPENAI_CLUE_SA_KEY = "<Clue service-account key>"
 python run.py
 ```
 
@@ -195,8 +202,8 @@ pytest -q
 - `app.aix.yaml` runs the app behind Gunicorn on App Engine.
 - `app.smoke.yaml` deploys a separate `clue-smoke` App Engine service for live smoke tests against an isolated smoke database secret.
 - Game state can live in SQLite or PostgreSQL/Cloud SQL through `CLUE_DATABASE_URL`.
-- The production deployed config expects Secret Manager-backed `clue-database-url`, `clue-secret-key`, `clue-admin-token`, and `openai-api-key`.
-- The smoke deployed config expects `clue-smoke-database-url`, `clue-smoke-secret-key`, and `clue-smoke-admin-token`; write-based smoke checks must use `clue-smoke`, not production Clue storage.
+- The production deployed config expects Secret Manager-backed `clue-database-url`, `clue-secret-key`, `clue-admin-token`, and `clue-openai-api-key`.
+- The smoke deployed config expects `clue-smoke-database-url`, `clue-smoke-secret-key`, `clue-smoke-admin-token`, and `clue-openai-api-key`; write-based smoke checks must use `clue-smoke`, not production Clue storage.
 - `APP_BASE_PATH=/clue` plus `PathPrefixMiddleware` keeps standalone routes mount-safe under AIX.
 
 ## Documentation Map

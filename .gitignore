@@ -1,4 +1,5 @@
 data/*.db
+set_clue_env.bat
 __pycache__/
 .pytest_cache/
 .gcloudignore

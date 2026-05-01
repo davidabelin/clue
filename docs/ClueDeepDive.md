@@ -267,7 +267,8 @@ This is why notebook text, chat text, and action dropdown drafts are tracked sep
 
 ### Deployment secrets
 - `CLUE_DATABASE_URL_SECRET` can fill the database URL from Secret Manager
-- `OPENAI_API_KEY_SECRET_VERSION` can fill the OpenAI API key from Secret Manager
+- `OPENAI_CLUE_SA_KEY_SECRET_VERSION` can fill the Clue OpenAI service-account key from Secret Manager
+- `OPENAI_CLUE_PROJECT_ID` pins Clue model traffic to the Clue OpenAI project
 - `CLUE_SECRET_KEY_SECRET` can fill the Flask/seat-token signing secret from Secret Manager
 - `CLUE_ADMIN_TOKEN_SECRET` can fill the Administrator Mode token from Secret Manager
 - `CLUE_ADMIN_TOKEN` protects Administrator Mode and admin APIs

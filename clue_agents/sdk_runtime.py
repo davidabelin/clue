@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from clue_agents.config import LLMRuntimeConfig
 from clue_agents.policy import persona_prompt, public_chat_events, public_narrative_events, social_prompt
 from clue_agents.safety import sanitize_public_chat
+from clue_agents.secrets import resolve_openai_project_id
 
 try:
     from agents import Agent, AgentOutputSchema, ModelSettings, RunConfig, Runner, function_tool, output_guardrail
@@ -1125,8 +1126,9 @@ def build_run_config(context: SeatAgentContext, api_key: str) -> RunConfig:
         raise RuntimeError("OpenAI Agents SDK is not available in this environment.")
     is_chat = str(context.mode).startswith("chat")
     is_memory = str(context.mode) == "memory_summary"
+    project_id = resolve_openai_project_id()
     return RunConfig(
-        model_provider=OpenAIProvider(api_key=api_key, use_responses=True),
+        model_provider=OpenAIProvider(api_key=api_key, project=project_id or None, use_responses=True),
         tracing_disabled=not context.runtime_config.tracing_enabled,
         trace_include_sensitive_data=context.runtime_config.trace_include_sensitive_data,
         workflow_name=("Clue Seat Chat" if is_chat else ("Clue Seat Memory" if is_memory else "Clue Seat Decision")),
