@@ -9,33 +9,39 @@
 
 **This list stays at the top for loose hints and breadcrumbs. Move items into the structured lists below as soon as they become actionable.**
 
-No loose rolling items are currently pending.
+### More random to-do's to do *today* to get to v1.9.1 *two days ago*
 
-Completed before the next repo commit and app deploy:
+*priority* **UI**
+
+- [x] **Shrink *everything* to 75%**
+  - There is still way too much space being taken up with panel padding, poor panel adjustment, some extra-large fontsizes, and just bad design of the spatial layout.
+    - [x] Keep it simple! Shrink everything by the same proportion, including fontsizes and panel padding.
+    - [x] Then, recompose the page layout to *minimize the need to scroll* for important info/action. 
+- [] Screenshots. What screenshots would you like me to take for you to see what I see as a user of the app in Chrome on Windows?
+  - Specify, rather than me just taking scattershot screenshots hoping for clarity and relevance.
+
+*priority* **UX**
+
+- [x] No anachronistic 'Victorianisms'; at best there should be anachronistic Edwardianisms but aren't NHP's supposed to be speaking in Agathie Christienisms?
+    - *I don't like it.* The NHPs should be ironic about their in-game role-playing, ie. NOT take it too seriously.
+      - Like a group of modern partygoers who have all agreed to play their roles ironically conscious of *playing* them.
+    - Where can we define this stage-direction so all the partygoers know about it?
+- [x] There is still too much temporal "jaggedness" to gameplay flow; some of it waiting for NHP's and for other reasons too. We need to optimize asynchronous game flow or this game will not be playable, so **nothing else matters if we don't figure that out** first.
+
+### *Still to do **before** next version uptick!*
+
+- [] We need to talk *in depth* about the flow, the whole flow, and only the flow
+  - [] walk me all the way through a Responses action
+  - [] what must be sent where, and how often, to maintain a table-wide context?
+  - [] Same but to maintain Seat context.
+  - [] How are the *probabilities for best next moves* calculated, exactly, and how (optimally) served to the NHP's when they need it?
+    - [] Which NHP parameters affect how they use those likelihoods?
+
+### Completed yesterday:
 
 - [x] Add an Admin Mode button to terminate hanging games marked `active` that are not really active.
 - [x] Add an Admin Mode button to permanently delete dead games that clutter the saved-game list.
 - [x] Replace "Still in the case." with "On the case." in the player-facing seat status copy.
-
-### *Still to do **before** next version uptick!*
-
-- We need to talk *in depth* about the flow, the whole flow, and only the flow
-  - walk me all the way through a Responses action
-  - what must be sent where, and how often, to maintain a table-wide context?
-  - Same but to maintain Seat context.
-  - How are the *probabilities for best next moves* calculated, exactly, and how (optimally) served to the NHP's when they need it?
-    - Which NHP parameters affect how they use those likelihoods?
-
-### More random to-do's to do *today*
-
-- What screenshots would you like me to take for you to see what I see as a user of the app in Chrome on Windows?
-  - Rather than me just taking scattershot screenshots hoping for clarity and relevance.
-- There is still too much temporal "jaggedness" to gameplay flow; some of it waiting for NHP's and for other reasons too. We need to optimize asynchronous game flow or this game will not be playable, so **nothing else matters if we don't figure that out** first.
-- There is still too much space being taken up with panel padding, poor panel adjustment, some extra-large fontsizes, and just bad design of the spatial layout.
-- No anachronistic 'Victorianisms'; at best there should be anachronistic Edwardianisms but aren't NHP's supposed to be speaking in Agathie Christienisms?
-    - *I don't like it.* The NHPs should be ironic about their in-game role-playing, ie. NOT take it too seriously.
-      - Like a group of modern partygoers who have all agreed to play their roles ironically conscious of *playing* them.
-    - Where can we define this stage-direction so all the partygoers know about it?
 
 ## Later Triage Notes
 
@@ -90,19 +96,19 @@ Goal: make one locally hosted game feel understandable, responsive, and compact 
 
 ### Gameplay Latency And Synchronization
 
-- [ ] Identify where the painful local-game delay is coming from: initial table creation, autonomous turn execution, OpenAI calls, polling delay, DOM rendering, or database writes.
-- [ ] Add player-visible "working" states when an autonomous seat is acting so the table does not appear frozen.
-- [ ] Tighten polling/snapshot behavior enough that separate seats converge quickly and do not appear to drift onto different versions of the table.
-- [ ] Reduce or defer any optional NHP chatter/runtime work that makes core turn flow feel stalled.
+- [x] Identify where the painful local-game delay is coming from: initial table creation, autonomous turn execution, OpenAI calls, polling delay, DOM rendering, or database writes.
+- [x] Add player-visible "working" states when an autonomous seat is acting so the table does not appear frozen.
+- [x] Tighten polling/snapshot behavior enough that separate seats converge quickly and do not appear to drift onto different versions of the table.
+- [x] Reduce or defer any optional NHP chatter/runtime work that makes core turn flow feel stalled.
 - [ ] Treat code-caused smoothness problems as blockers for v1.9.1; only external model/API latency should remain outside our control.
 - [ ] Use the extracted local-game baseline while optimizing: 37 actions applied, 8 autonomous actions, max autonomous decision about 44.3 seconds, 24 optional chat failures, and low tool-snapshot latency.
 
 ### Beginner Mode Density And Navigation
 
-- [ ] Rework Beginner Mode as a compact play surface: the active turn controls, board, private hand/reveals, and table wire must be reachable without five page lengths of scrolling.
-- [ ] Remove or collapse redundant explanatory text, oversized padding, repeated headings, and low-value status copy.
-- [ ] Prioritize fit-to-display over decorative spacing: shrink cards, controls, logs, and diagnostics until the primary workflow is easy to scan.
-- [ ] Keep diagnostics available but secondary; they should not compete with actual play.
+- [x] Rework Beginner Mode as a compact play surface: the active turn controls, board, private hand/reveals, and table wire must be reachable without five page lengths of scrolling.
+- [x] Remove or collapse redundant explanatory text, oversized padding, repeated headings, and low-value status copy.
+- [x] Prioritize fit-to-display over decorative spacing: shrink cards, controls, logs, and diagnostics until the primary workflow is easy to scan.
+- [x] Keep diagnostics available but secondary; they should not compete with actual play.
 - [ ] Review fresh screenshots at normal desktop size and zoomed-out desktop size before calling the density pass done.
 
 ### v1.9.1 Release Gate

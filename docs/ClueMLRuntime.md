@@ -22,6 +22,8 @@ This document describes the current OpenAI seat runtime for the v1.9.x stabiliza
 - Wrapped by `clue_agents.llm.LLMSeatAgent`
 - Driven by one turn profile and one chat profile, both selected from `clue_agents/profiles/models.yaml`
 - Grounded by a shared deduction snapshot built by `clue_core.deduction.build_tool_snapshot()`
+- Turn decisions run behind a process-local autonomous worker; create-table and human-action responses queue work, return a filtered snapshot, and let polling expose public-safe progress through `analysis.autonomous_work`
+- Persona prompts prepend the shared `table_voice` block from `personas.yaml`, so all NHPs play as modern partygoers knowingly role-playing Clue suspects with concise, ironic Christie-ish banter
 
 ### Idle chat path
 - Chat is separate from gameplay decisions and is disabled by default for v1.9.1 stabilization
@@ -212,6 +214,7 @@ Failure causes include:
 - general model/runtime exceptions
 
 Turn failures raise `LLMDecisionError`. `GameService.maybe_run_agents()` catches that error, records an `llm_unavailable` public event plus a seat-private trace, and leaves the game on that NHP turn. No heuristic move is produced.
+When an NHP turn cannot finish, the autonomous worker marks `analysis.autonomous_work.status` as `blocked` or `error` with only a short public-safe reason; private runtime detail remains in seat-private traces and Administrator Mode.
 Chat runtime failures also raise `LLMDecisionError`; idle-chat orchestration records a seat-private `trace_llm_unavailable` event and posts no substitute chat. Administrator Mode counts those optional-chat traces separately from gameplay-turn `llm_unavailable_count`, with per-game breakdowns by seat, model/profile, reason, and sample error prefix. Deliberate model silence remains a valid non-error outcome.
 Durable memory model/runtime failure leaves a retryable memory job.
 

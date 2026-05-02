@@ -32,6 +32,10 @@
           <span class="card-kicker">Legal Actions</span>
           <strong id="legal-count">--</strong>
         </article>
+        <article class="turn-metric">
+          <span class="card-kicker">NHP Work</span>
+          <strong id="worker-state-label">Idle</strong>
+        </article>
       </div>
     </div>
   </header>
@@ -76,6 +80,7 @@
         </div>
         <p id="decision-context" class="decision-context">Reading current turn state...</p>
         <p id="turn-guidance" class="guidance">Reading current turn state...</p>
+        <p id="worker-progress" class="worker-progress hidden" aria-live="polite"></p>
         <ol id="turn-rail" class="turn-rail" aria-label="Turn progress"></ol>
       </section>
       <section id="action-panel" class="info-card action-panel" data-state="loading">

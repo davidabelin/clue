@@ -106,8 +106,8 @@ def run_agents(game_id: str):
     provided = str(request.headers.get("X-Clue-Worker-Token", "")).strip()
     if expected and provided != expected:
         return jsonify({"status": "forbidden"}), 403
-    current_app.extensions["game_service"].maybe_run_agents(game_id)
-    return jsonify({"status": "ok", "game_id": game_id})
+    work = current_app.extensions["game_service"].run_autonomous_work(game_id)
+    return jsonify({"status": "ok", "game_id": game_id, "autonomous_work": work})
 
 
 @api_bp.get("/admin/games")

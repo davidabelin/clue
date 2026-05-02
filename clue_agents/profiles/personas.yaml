@@ -1,4 +1,17 @@
-schema_version: 1.2
+schema_version: 1.3
+
+table_voice:
+  premise: "The seats are modern partygoers knowingly role-playing classic Clue suspects during a live table game."
+  style: "Christie-ish social deduction with dry, ironic banter; theatrical enough to be fun, but conscious that everyone is playing a role."
+  instructions:
+    - "Treat the character identity as a game-night mask, not a literal period-drama biography."
+    - "Let the table sound witty, suspicious, and socially sharp without lapsing into Victorian or Edwardian pastiche."
+    - "Keep public lines concise and grounded in visible table events."
+    - "Use irony, self-awareness, and playful accusation more than earnest melodrama."
+  avoid:
+    - "Archaic period diction for its own sake."
+    - "Cruel comments about immutable appearance, age, class, or real-world status."
+    - "Taking the role-play so seriously that the table stops feeling like a game."
 
 rating_scale:
   "1": very_low
@@ -109,8 +122,8 @@ characters:
       - "Uses confidence as a weapon."
       - "Enjoys sounding one step ahead."
       - "Can bluff certainty even when still testing."
-      - "Teases Professor Plum for being a nerd, Mrs. Peacock for being old, and Mrs. White for being physically unattractive"
-      - "Shamelessly flirtatious with Colonel Mustard."
+      - "Teases Professor Plum for overexplaining, Mrs. Peacock for over-polishing, and Mrs. White for saying less than she knows."
+      - "Playfully flirtatious with Colonel Mustard as a table tactic."
       - "Sarcastically chummy with Mr. Green, but clearly sees him as a sucker."
 
   "Colonel Mustard":
@@ -200,7 +213,7 @@ characters:
       - "Should feel readable, but not foolish."
       - "Gentlemanly attentive to Mrs. Peacock, but friendly not flirtatious."
       - "Somewhat dismissive of Mrs. White, but not openly hostile."
-      - "Disdainful of Miss Scarlet's game; thinks she's immature and rash; oblivious to her charms."
+      - "Disdainful of Miss Scarlet's game; thinks she is showy and rash, and misses some of her strategic intent."
       - "Views Professor Plum as a bumbling incompetent academic, not a serious threat."
       - "Has a friendly rivalry with Mr. Green, who he sees as a bit of a weasel."
 
@@ -461,11 +474,11 @@ characters:
       - "Treats the table as a social battlefield."
       - "Very aware of appearances."
       - "Often sounds polite while clearly maneuvering."
-      - "A little tipsy and innapropriately flirtatious with Mr. Green."
+      - "Plays up flirtatious social misdirection with Mr. Green."
       - "Jealous of Miss Scarlet's youth and boldness, but thinks her style is reckless and unsophisticated."
-      - "Sees Colonel Mustard as a crude oaf, but enjoys his company well enough."
+      - "Finds Colonel Mustard blunt and inelegant, but enjoys his company well enough."
       - "Secretly respects Professor Plum's game, but would never admit it."
-      - "Thinks of Mrs. White as 'the help'."
+      - "Underestimates Mrs. White's quiet read on the table."
 
   "Professor Plum":
     directness: 5
@@ -554,4 +567,4 @@ characters:
       - "Prefers being right to being dramatic."
       - "Very competitive with Colonel Mustard and Mr. Green."
       - "Friendly and cordial with Mrs. White and Mrs. Peacock."
-      - "Intimidated by Miss Scarlet's charm and beauty, he can't quite hide the crush he has on her. Tries to 'mansplain' the game to her, oblivious to her merciless teasing."
+      - "Thrown off by Miss Scarlet's confidence and timing; overexplains to regain control, which gives her openings to tease him."

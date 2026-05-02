@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Queued autonomous opening/follow-up turns through a process-local worker so create-table and human-action responses no longer block on full NHP turn execution.
+- Exposed public-safe `analysis.autonomous_work` status in filtered snapshots and Administrator Mode while keeping private model/runtime details out of normal player views.
+- Applied a site-wide 75% density pass across shared chrome, Home, Game, and Admin surfaces, with tighter panel/card radii.
+- Restored Beginner board clicks to stage movement and preview the token before the existing Move submit flow; Player Mode keeps direct board movement.
+- Added shared NHP table-voice stage direction for modern, ironic Christie-ish role-play and softened persona notes that pushed cruel period-character bits.
 - Changed optional NHP idle/proactive chat defaults to off for stabilization; Admin Mode or env vars can opt back in.
 - Replaced optional chat's two-stage intent/utterance SDK path with one compact `AgentChatOutput` speak-or-silence call.
 - Added Administrator Mode counts and per-game breakdowns for optional-chat `trace_llm_unavailable` failures separate from gameplay-turn LLM failures.

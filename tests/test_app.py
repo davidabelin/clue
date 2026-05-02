@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
+import time
 
 from clue_agents.base import ChatDecision, MemorySummaryDecision
 from clue_agents.heuristic import HeuristicSeatAgent
@@ -97,6 +99,19 @@ def test_create_game_uses_fresh_setup_seed(client, app, monkeypatch):
         {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
         {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
     ]
+
+
+def _wait_for_autonomous_worker(app, game_id: str, *, timeout_seconds: float = 2.0) -> dict:
+    """Wait for the process-local autonomous worker to leave queued/running."""
+
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        state = app.extensions["repository"].get_state(game_id)
+        work = dict((state.get("analysis") or {}).get("autonomous_work") or {})
+        if str(work.get("status") or "") not in {"queued", "running"}:
+            return state
+        time.sleep(0.01)
+    return app.extensions["repository"].get_state(game_id)
 
     first = client.post("/api/v1/games", json={"title": "Seed One", "seats": seats}).get_json()
     second = client.post("/api/v1/games", json={"title": "Seed Two", "seats": seats}).get_json()
@@ -255,6 +270,8 @@ def test_player_mode_board_movement_static_contract():
     css = Path("clue_web/static/css/clue.css").read_text(encoding="utf-8")
 
     assert "Move On Board" in js
+    assert "stageBoardMove" in js
+    assert 'if (!isPlayerMode()) {' in js
     assert "clickable-edge" in js
     assert "data-board-target" in js
     assert "edge-hit-area" in js
@@ -263,6 +280,144 @@ def test_player_mode_board_movement_static_contract():
     assert "width: min(100%, 52rem)" in css
     assert ".game-app--player .board-svg {\n  width: 100%;" in css
     assert '"caseboard desk"' in css
+    assert "font-size: 75%;" in css
+
+
+def test_create_game_queues_autonomous_work_without_blocking(client, app, monkeypatch):
+    """Creating a table should return before a slow opening NHP worker finishes."""
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def _slow_agents(self, game_id, max_cycles=32):
+        started.set()
+        release.wait(0.5)
+
+    monkeypatch.setattr("clue_web.runtime.GameService.maybe_run_agents", _slow_agents)
+
+    started_at = time.monotonic()
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Async Create Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "heuristic"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "human"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    elapsed = time.monotonic() - started_at
+    payload = response.get_json()
+    state = app.extensions["repository"].get_state(payload["game_id"])
+    work = state["analysis"]["autonomous_work"]
+
+    release.set()
+    _wait_for_autonomous_worker(app, payload["game_id"])
+
+    assert response.status_code == 201
+    assert elapsed < 0.25
+    assert started.wait(0.25)
+    assert work["status"] in {"queued", "running"}
+    assert work["seat_id"] == "seat_scarlet"
+    assert set(work) == {"status", "seat_id", "display_name", "queued_at", "started_at", "finished_at", "last_error"}
+
+
+def test_submit_action_queues_autonomous_work_without_blocking(client, app, monkeypatch):
+    """Human actions should return a snapshot while follow-up NHP turns run async."""
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def _slow_agents(self, game_id, max_cycles=32):
+        started.set()
+        release.wait(0.5)
+
+    monkeypatch.setattr("clue_web.runtime.GameService.maybe_run_agents", _slow_agents)
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Async Action Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "heuristic"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    token = _token_from_join_url(response.get_json()["seat_links"][0]["url"])
+
+    started_at = time.monotonic()
+    action = client.post(
+        "/api/v1/games/current/actions",
+        headers={"X-Clue-Seat-Token": token},
+        json={"action": "end_turn"},
+    )
+    elapsed = time.monotonic() - started_at
+    snapshot = action.get_json()
+    work = snapshot["analysis"]["autonomous_work"]
+
+    release.set()
+    _wait_for_autonomous_worker(app, snapshot["game_id"])
+
+    assert action.status_code == 200
+    assert elapsed < 0.25
+    assert started.wait(0.25)
+    assert work["status"] in {"queued", "running"}
+    assert work["seat_id"] == "seat_mustard"
+    assert "memory_context" not in snapshot
+
+
+def test_snapshot_resumes_stale_autonomous_work(client, app, monkeypatch):
+    """Polling should restart queued/running work left without a live thread."""
+
+    started = threading.Event()
+
+    def _noop_agents(self, game_id, max_cycles=32):
+        started.set()
+
+    monkeypatch.setattr("clue_web.runtime.GameService.maybe_run_agents", _noop_agents)
+    response = client.post(
+        "/api/v1/games",
+        json={
+            "title": "Stale Worker Table",
+            "seats": [
+                {"seat_id": "seat_scarlet", "display_name": "Miss Scarlet", "character": "Miss Scarlet", "seat_kind": "human"},
+                {"seat_id": "seat_mustard", "display_name": "Colonel Mustard", "character": "Colonel Mustard", "seat_kind": "heuristic"},
+                {"seat_id": "seat_peacock", "display_name": "Mrs. Peacock", "character": "Mrs. Peacock", "seat_kind": "human"},
+            ],
+        },
+    )
+    payload = response.get_json()
+    token = _token_from_join_url(payload["seat_links"][0]["url"])
+    repository = app.extensions["repository"]
+    state = repository.get_state(payload["game_id"])
+    state["active_seat_id"] = "seat_mustard"
+    state["analysis"]["autonomous_work"] = {
+        "status": "running",
+        "seat_id": "seat_mustard",
+        "display_name": "Colonel Mustard",
+        "queued_at": "earlier",
+        "started_at": "earlier",
+        "finished_at": "",
+        "last_error": "",
+    }
+    repository.save_state_and_events(payload["game_id"], state=state, events=[])
+
+    snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()
+    _wait_for_autonomous_worker(app, payload["game_id"])
+
+    assert started.wait(0.25)
+    assert snapshot["analysis"]["autonomous_work"]["seat_id"] == "seat_mustard"
+    assert set(snapshot["analysis"]["autonomous_work"]) == {
+        "status",
+        "seat_id",
+        "display_name",
+        "queued_at",
+        "started_at",
+        "finished_at",
+        "last_error",
+    }
 
 
 def test_snapshot_does_not_run_optional_chat_by_default(client, app, monkeypatch):
@@ -702,7 +857,7 @@ def test_create_game_can_reuse_same_seat_ids_across_multiple_games(client):
     assert first.get_json()["game_id"] != second.get_json()["game_id"]
 
 
-def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client, monkeypatch):
+def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client, app, monkeypatch):
     """Autonomous turns should persist eval metrics plus seat-private debug payloads."""
 
     heuristic = HeuristicSeatAgent()
@@ -727,6 +882,7 @@ def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client, mon
     )
     assert response.status_code == 201
     payload = response.get_json()
+    _wait_for_autonomous_worker(app, payload["game_id"])
     token = _token_from_join_url(payload["seat_links"][0]["url"])
     other_token = _token_from_join_url(payload["seat_links"][1]["url"])
 
@@ -742,7 +898,7 @@ def test_autonomous_turns_persist_analysis_metrics_and_private_debug(client, mon
     assert other_snapshot["analysis"]["seat_debug"] == {}
 
 
-def test_unavailable_llm_turn_does_not_use_heuristic_fallback(client):
+def test_unavailable_llm_turn_does_not_use_heuristic_fallback(client, app):
     """An LLM seat without credentials should stop and report the failure, not fake a turn."""
 
     response = client.post(
@@ -759,6 +915,7 @@ def test_unavailable_llm_turn_does_not_use_heuristic_fallback(client):
 
     assert response.status_code == 201
     payload = response.get_json()
+    _wait_for_autonomous_worker(app, payload["game_id"])
     llm_token = _token_from_join_url(payload["seat_links"][0]["url"])
     human_token = _token_from_join_url(payload["seat_links"][1]["url"])
     other_human_token = _token_from_join_url(payload["seat_links"][2]["url"])
@@ -789,7 +946,7 @@ def test_unavailable_llm_turn_does_not_use_heuristic_fallback(client):
     assert llm_snapshot["analysis"]["seat_debug"]["decision_debug"]["llm_runtime"]
 
 
-def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypatch):
+def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, app, monkeypatch):
     """A mixed heuristic/LLM table should finish when the LLM path is mocked deterministically."""
 
     heuristic = HeuristicSeatAgent()
@@ -839,6 +996,7 @@ def test_mixed_seat_agents_can_finish_full_game_with_mocked_llm(client, monkeypa
     )
     assert response.status_code == 201
     payload = response.get_json()
+    _wait_for_autonomous_worker(app, payload["game_id"])
     token = _token_from_join_url(payload["seat_links"][0]["url"])
 
     snapshot = client.get("/api/v1/games/current", headers={"X-Clue-Seat-Token": token}).get_json()

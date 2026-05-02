@@ -126,6 +126,25 @@ def persona_chat_examples(character: str) -> dict[str, list[str]]:
     return normalized
 
 
+def table_voice_guidance() -> str:
+    """Return global table-voice stage direction shared by all personas."""
+
+    catalog = load_persona_catalog()
+    table_voice = dict(catalog.get("table_voice") or {})
+    lines: list[str] = []
+    premise = str(table_voice.get("premise") or "").strip()
+    if premise:
+        lines.append(f"Table voice: {premise}")
+    style = str(table_voice.get("style") or "").strip()
+    if style:
+        lines.append(f"Style: {style}")
+    for instruction in _string_list(table_voice.get("instructions"))[:4]:
+        lines.append(f"Stage direction: {instruction}")
+    for avoided in _string_list(table_voice.get("avoid"))[:4]:
+        lines.append(f"Avoid table voice: {avoided}")
+    return "\n".join(lines)
+
+
 def build_persona_guidance(character: str) -> str:
     """Turn one YAML persona block into short LLM-facing guidance text.
 
@@ -140,6 +159,9 @@ def build_persona_guidance(character: str) -> str:
         return ""
 
     lines: list[str] = []
+    shared_voice = table_voice_guidance()
+    if shared_voice:
+        lines.append(shared_voice)
 
     public_tone = str(profile.get("public_chat_tone") or "").strip()
     if public_tone:
@@ -209,6 +231,10 @@ def build_social_guidance(character: str) -> str:
         return ""
 
     lines: list[str] = []
+    shared_voice = table_voice_guidance()
+    if shared_voice:
+        lines.append(shared_voice)
+
     public_tone = str(profile.get("public_chat_tone") or "").strip()
     if public_tone:
         lines.append(f"Public tone: {public_tone}")

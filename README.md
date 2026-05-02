@@ -28,7 +28,7 @@ Standalone Clue lab for AIX, currently labeled **v1.9.0**.
 ## Runtime Shape
 
 ### 1. Game creation
-- `clue_web.runtime.GameService.create_game()` validates seat payloads, normalizes legacy seat kinds, applies YAML-selected LLM profiles where needed, builds hidden setup, persists initial state, and may immediately run autonomous opening turns.
+- `clue_web.runtime.GameService.create_game()` validates seat payloads, normalizes legacy seat kinds, applies YAML-selected LLM profiles where needed, builds hidden setup, persists initial state, and queues autonomous opening turns without blocking the create-table response.
 - Seat UI mode is persisted as `beginner` or `player`; omitted mode defaults to Beginner, and `superplayer` is reserved for a later release.
 - Each new table receives a fresh setup seed so deals and case files are not repeated from one global default.
 
@@ -37,8 +37,8 @@ Standalone Clue lab for AIX, currently labeled **v1.9.0**.
 - `/join/<token>` marks a seat invite as used and redirects to `/game`.
 - `/game?token=...` renders the seat-specific shell; `clue.js` hydrates state from JSON.
 - `/game` includes a UI-only Quit Game link back to Clue Home; it does not mutate game state.
-- `/api/v1/games/current` returns the filtered snapshot, including the table UI mode, for the current signed seat token.
-- `/api/v1/games/current/actions` applies one action through the Game Master, persists state and events, and runs any follow-up autonomous turns.
+- `/api/v1/games/current` returns the filtered snapshot, including table UI mode and public-safe `analysis.autonomous_work` worker status, for the current signed seat token.
+- `/api/v1/games/current/actions` applies one action through the Game Master, persists state and events, and queues any follow-up autonomous turns for the process-local worker.
 - `/api/v1/games/current/notebook` updates one seat-private notebook.
 - `/admin` renders the protected Superplayer administration entry screen, linked from Clue Home and the shared chrome.
 - `/admin?admin_token=...` renders the Superplayer administration dashboard for saved-game review, stats, NHP memory, durable notes, relationships, and player histories.
@@ -53,6 +53,8 @@ Standalone Clue lab for AIX, currently labeled **v1.9.0**.
 - `clue_agents.runtime.AgentRuntime` instantiates heuristic or LLM-backed seats behind one shared interface.
 - `clue_core.deduction.build_tool_snapshot()` prepares the seat-local deduction summary used by both heuristic and LLM policies.
 - `clue_agents.llm.LLMSeatAgent` uses the OpenAI Agents SDK with read tools, tightly bounded durable write tools, and output guardrails. If the live LLM path is unavailable or invalid, the seat fails loudly instead of using the heuristic policy.
+- Process-local autonomous work records a public-safe `queued`, `running`, `complete`, `blocked`, or `error` status in persisted JSON state so polling tabs can show progress without leaking private state.
+- `clue_agents/profiles/personas.yaml` includes shared table-voice stage direction: modern partygoers knowingly role-playing Clue suspects with concise, ironic Christie-ish table banter.
 - Optional idle chat uses a separate chat profile path and one compact speak-or-stay-silent run. It is disabled by default for stabilization; Admin Mode or env vars can enable reactive and proactive chatter explicitly.
 - Completed games create durable LLM-authored memory jobs for each NHP. Ready memory is loaded into future NHP runtime snapshots; missing SDK/API credentials leave jobs pending for admin retry.
 

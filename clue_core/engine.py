@@ -576,9 +576,30 @@ def build_filtered_snapshot(
             "game_metrics": dict(analysis.get("game_metrics") or {}),
             "recent_turn_metrics": list(analysis.get("turn_metrics") or [])[-10:],
             "seat_debug": dict((analysis.get("latest_private_debug_by_seat") or {}).get(seat_id) or {}),
+            "autonomous_work": _public_autonomous_work(analysis.get("autonomous_work")),
         },
         "case_file_categories": deepcopy(CARD_CATEGORIES),
     }
+
+
+def _public_autonomous_work(value: Any) -> dict[str, str]:
+    """Return the public-safe autonomous worker status block for snapshots."""
+
+    raw = dict(value or {}) if isinstance(value, dict) else {}
+    clean = {
+        "status": "idle",
+        "seat_id": "",
+        "display_name": "",
+        "queued_at": "",
+        "started_at": "",
+        "finished_at": "",
+        "last_error": "",
+    }
+    for key in clean:
+        clean[key] = str(raw.get(key) or clean[key]).strip()
+    if clean["status"] not in {"idle", "queued", "running", "complete", "blocked", "error"}:
+        clean["status"] = "idle"
+    return clean
 
 
 def _ui_mode_from_state(state: dict[str, Any]) -> str:

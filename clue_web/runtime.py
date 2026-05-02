@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 import hashlib
 import os
 import secrets
+import threading
 import time
 from typing import Any
 
@@ -271,6 +272,9 @@ class GameService:
         self._write_sink = RepositoryNHPWriteSink(repository)
         self._agents = AgentRuntime(write_sink=self._write_sink)
         self._runtime_overrides = runtime_overrides if runtime_overrides is not None else {}
+        self._worker_lock = threading.RLock()
+        self._game_locks: dict[str, threading.RLock] = {}
+        self._autonomous_workers: dict[str, threading.Thread] = {}
 
     @staticmethod
     def _env_bool(name: str, default: bool) -> bool:
@@ -421,6 +425,7 @@ class GameService:
             },
             "turn_metrics": [],
             "latest_private_debug_by_seat": {},
+            "autonomous_work": self._blank_autonomous_work(),
         }
 
     def _ensure_analysis(self, state: dict[str, Any]) -> dict[str, Any]:
@@ -434,8 +439,227 @@ class GameService:
         analysis.setdefault("game_metrics", defaults["game_metrics"])
         analysis.setdefault("turn_metrics", [])
         analysis.setdefault("latest_private_debug_by_seat", {})
+        analysis["autonomous_work"] = self._public_autonomous_work(analysis.get("autonomous_work"))
         state["analysis"] = analysis
         return analysis
+
+    @staticmethod
+    def _blank_autonomous_work() -> dict[str, str]:
+        """Return the public-safe default autonomous worker status block."""
+
+        return {
+            "status": "idle",
+            "seat_id": "",
+            "display_name": "",
+            "queued_at": "",
+            "started_at": "",
+            "finished_at": "",
+            "last_error": "",
+        }
+
+    @classmethod
+    def _public_autonomous_work(cls, value: Any) -> dict[str, str]:
+        """Normalize autonomous worker status before persisting or exposing it."""
+
+        raw = dict(value or {}) if isinstance(value, dict) else {}
+        clean = cls._blank_autonomous_work()
+        for key in clean:
+            clean[key] = str(raw.get(key) or clean[key]).strip()
+        if clean["status"] not in {"idle", "queued", "running", "complete", "blocked", "error"}:
+            clean["status"] = "idle"
+        return clean
+
+    def _game_lock(self, game_id: str) -> threading.RLock:
+        """Return a process-local lock for one game's read-modify-write paths."""
+
+        key = str(game_id)
+        with self._worker_lock:
+            lock = self._game_locks.get(key)
+            if lock is None:
+                lock = threading.RLock()
+                self._game_locks[key] = lock
+            return lock
+
+    def _live_worker_for(self, game_id: str) -> threading.Thread | None:
+        """Return the live worker thread for a game, if one still exists."""
+
+        with self._worker_lock:
+            worker = self._autonomous_workers.get(str(game_id))
+            if worker is not None and worker.is_alive():
+                return worker
+            if worker is not None:
+                self._autonomous_workers.pop(str(game_id), None)
+            return None
+
+    def _set_autonomous_work(
+        self,
+        state: dict[str, Any],
+        *,
+        status: str,
+        seat_id: str = "",
+        display_name: str = "",
+        queued_at: str | None = None,
+        started_at: str | None = None,
+        finished_at: str | None = None,
+        last_error: str = "",
+    ) -> dict[str, str]:
+        """Update one state's public-safe autonomous worker status."""
+
+        analysis = self._ensure_analysis(state)
+        previous = self._public_autonomous_work(analysis.get("autonomous_work"))
+        next_work = previous | {
+            "status": status,
+            "seat_id": seat_id,
+            "display_name": display_name,
+            "last_error": last_error,
+        }
+        if queued_at is not None:
+            next_work["queued_at"] = queued_at
+        if started_at is not None:
+            next_work["started_at"] = started_at
+        if finished_at is not None:
+            next_work["finished_at"] = finished_at
+        if status == "idle":
+            next_work = self._blank_autonomous_work()
+        analysis["autonomous_work"] = self._public_autonomous_work(next_work)
+        return analysis["autonomous_work"]
+
+    def _mark_no_autonomous_work(self, game_id: str, state: dict[str, Any]) -> None:
+        """Persist an idle worker state when no NHP turn is currently queued."""
+
+        self._set_autonomous_work(state, status="idle")
+        self._repository.save_state_and_events(game_id, state=state, events=[])
+
+    def ensure_autonomous_worker(self, game_id: str) -> dict[str, str]:
+        """Queue a process-local autonomous worker when an NHP seat must act."""
+
+        game_id = str(game_id)
+        with self._game_lock(game_id):
+            state = self._repository.get_state(game_id)
+            self._ensure_analysis(state)
+            self._ensure_social(state)
+            seat_id = self._autonomous_seat_to_act(state)
+            if seat_id is None:
+                work = self._public_autonomous_work(state.get("analysis", {}).get("autonomous_work"))
+                if work["status"] not in {"idle", "complete"}:
+                    self._mark_no_autonomous_work(game_id, state)
+                    return self._blank_autonomous_work()
+                return work
+
+            seat = dict(state.get("seats", {}).get(seat_id) or {})
+            display_name = str(seat.get("display_name") or seat.get("character") or seat_id)
+            work = self._public_autonomous_work(state.get("analysis", {}).get("autonomous_work"))
+            live_worker = self._live_worker_for(game_id)
+            if live_worker and work["status"] in {"queued", "running"}:
+                return work
+            if work["status"] == "blocked" and work["seat_id"] == seat_id:
+                return work
+
+            now = datetime.now(UTC).isoformat()
+            work = self._set_autonomous_work(
+                state,
+                status="queued",
+                seat_id=seat_id,
+                display_name=display_name,
+                queued_at=now,
+                started_at="",
+                finished_at="",
+                last_error="",
+            )
+            self._repository.save_state_and_events(game_id, state=state, events=[])
+
+        worker = threading.Thread(
+            target=self._run_autonomous_worker_thread,
+            args=(game_id,),
+            name=f"clue-agent-{game_id}",
+            daemon=True,
+        )
+        with self._worker_lock:
+            existing = self._autonomous_workers.get(game_id)
+            if existing is not None and existing.is_alive():
+                return work
+            self._autonomous_workers[game_id] = worker
+        worker.start()
+        return work
+
+    def run_autonomous_work(self, game_id: str) -> dict[str, str]:
+        """Synchronously run pending autonomous turns through the shared worker path."""
+
+        game_id = str(game_id)
+        with self._game_lock(game_id):
+            state = self._repository.get_state(game_id)
+            self._ensure_analysis(state)
+            self._ensure_social(state)
+            seat_id = self._autonomous_seat_to_act(state)
+            if seat_id is None:
+                self._mark_no_autonomous_work(game_id, state)
+                return self._blank_autonomous_work()
+            seat = dict(state.get("seats", {}).get(seat_id) or {})
+            self._set_autonomous_work(
+                state,
+                status="running",
+                seat_id=seat_id,
+                display_name=str(seat.get("display_name") or seat.get("character") or seat_id),
+                started_at=datetime.now(UTC).isoformat(),
+                finished_at="",
+                last_error="",
+            )
+            self._repository.save_state_and_events(game_id, state=state, events=[])
+
+        try:
+            self.maybe_run_agents(game_id)
+        except Exception as exc:
+            with self._game_lock(game_id):
+                state = self._repository.get_state(game_id)
+                self._ensure_analysis(state)
+                self._ensure_social(state)
+                work = self._set_autonomous_work(
+                    state,
+                    status="error",
+                    seat_id=seat_id,
+                    display_name=str(seat.get("display_name") or seat.get("character") or seat_id),
+                    finished_at=datetime.now(UTC).isoformat(),
+                    last_error=str(exc)[:180],
+                )
+                self._repository.save_state_and_events(game_id, state=state, events=[])
+                return work
+
+        with self._game_lock(game_id):
+            state = self._repository.get_state(game_id)
+            self._ensure_analysis(state)
+            self._ensure_social(state)
+            next_seat_id = self._autonomous_seat_to_act(state)
+            finished_at = datetime.now(UTC).isoformat()
+            if next_seat_id is not None:
+                next_seat = dict(state.get("seats", {}).get(next_seat_id) or {})
+                work = self._set_autonomous_work(
+                    state,
+                    status="blocked",
+                    seat_id=next_seat_id,
+                    display_name=str(next_seat.get("display_name") or next_seat.get("character") or next_seat_id),
+                    finished_at=finished_at,
+                    last_error="Autonomous seat still needs attention after the worker pass.",
+                )
+            else:
+                work = self._set_autonomous_work(
+                    state,
+                    status="complete",
+                    seat_id="",
+                    display_name="",
+                    finished_at=finished_at,
+                    last_error="",
+                )
+            self._repository.save_state_and_events(game_id, state=state, events=[])
+            return work
+
+    def _run_autonomous_worker_thread(self, game_id: str) -> None:
+        """Background thread target for queued autonomous work."""
+
+        try:
+            self.run_autonomous_work(game_id)
+        finally:
+            with self._worker_lock:
+                self._autonomous_workers.pop(str(game_id), None)
 
     @staticmethod
     def _build_social_defaults(state: dict[str, Any]) -> dict[str, Any]:
@@ -1016,7 +1240,7 @@ class GameService:
             seat_tokens=tokens,
             events=initial_events,
         )
-        self.maybe_run_agents(game_id)
+        self.ensure_autonomous_worker(game_id)
         return {"game_id": game_id, "title": title, "seat_links": seat_links}
 
     def join_by_token(self, token: str) -> dict[str, Any]:
@@ -1049,7 +1273,13 @@ class GameService:
         """
 
         seat = self.resolve_token(token)
-        self.maybe_run_idle_chat(seat["game_id"])
+        state = self._repository.get_state(seat["game_id"])
+        self._ensure_analysis(state)
+        self._ensure_social(state)
+        if self._autonomous_seat_to_act(state) is not None:
+            self.ensure_autonomous_worker(seat["game_id"])
+        else:
+            self.maybe_run_idle_chat(seat["game_id"])
         state = self._repository.get_state(seat["game_id"])
         self._ensure_analysis(state)
         self._ensure_social(state)
@@ -1156,7 +1386,7 @@ class GameService:
         )
         self._repository.save_state_and_events(seat["game_id"], state=new_state, events=events)
         self._finalize_game_if_complete(seat["game_id"], new_state)
-        self.maybe_run_agents(seat["game_id"])
+        self.ensure_autonomous_worker(seat["game_id"])
         return self.snapshot_for_token(token)
 
     def update_notebook(self, token: str, notebook: dict[str, Any]) -> dict[str, Any]:
@@ -1235,6 +1465,7 @@ class GameService:
 
         state = dict(record.get("state") or {})
         analysis = dict(state.get("analysis") or {})
+        autonomous_work = self._public_autonomous_work(analysis.get("autonomous_work"))
         metrics = dict(analysis.get("game_metrics") or {})
         chat_failures = self._chat_failure_summary(
             self._repository.events_for_game(str(record.get("id") or "")),
@@ -1277,6 +1508,9 @@ class GameService:
             "turn_latency_ms_max": float(metrics.get("turn_latency_ms_max", 0.0) or 0.0),
             "agent_decision_latency_ms_max": float(metrics.get("agent_decision_latency_ms_max", 0.0) or 0.0),
             "tool_snapshot_latency_ms_max": float(metrics.get("tool_snapshot_latency_ms_max", 0.0) or 0.0),
+            "autonomous_work": autonomous_work,
+            "autonomous_work_status": autonomous_work["status"],
+            "autonomous_work_display_name": autonomous_work["display_name"],
             "completion_rate": float(metrics.get("completion_rate", 0.0) or 0.0),
             "accusation_precision": float(metrics.get("accusation_precision", 0.0) or 0.0),
             "run_context": dict(analysis.get("run_context") or {}),
@@ -1300,6 +1534,9 @@ class GameService:
                 "latency_budget_breaches": 0,
                 "turn_latency_ms_max": 0.0,
                 "autonomous_actions": 0,
+                "autonomous_work": self._blank_autonomous_work(),
+                "autonomous_work_status": "idle",
+                "autonomous_work_display_name": "",
             }
         return self._admin_game_summary_from_record(record)
 
@@ -1429,6 +1666,7 @@ class GameService:
             "game_metrics": dict(analysis.get("game_metrics") or {}),
             "latency_targets_ms": dict(analysis.get("latency_targets_ms") or {}),
             "agent_runtime": dict(analysis.get("agent_runtime") or {}),
+            "autonomous_work": self._public_autonomous_work(analysis.get("autonomous_work")),
             "turn_metrics": list(analysis.get("turn_metrics") or []),
             "social": dict(state.get("social") or {}),
             "chat_failures": chat_failures,

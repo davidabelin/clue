@@ -502,7 +502,7 @@ button:disabled {
 
 .turn-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.5rem;
   width: min(100%, 24rem);
 }
@@ -2723,4 +2723,82 @@ button:disabled {
   .game-app--player .wire-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/*
+  Global 75% density pass.
+
+  Most spacing and type in the app is rem-based, so setting the root size here
+  scales Home, Game, Admin, shared chrome, controls, cards, and logs together.
+*/
+html {
+  font-size: 75%;
+}
+
+.panel,
+.admin-shell .panel,
+.game-app--briefing .panel,
+.game-app--player .panel,
+.mode-picker,
+.create-summary,
+.create-progress,
+.result-panel,
+.admin-table-wrap,
+.admin-truth-card,
+.admin-token-help,
+.info-card,
+.action-card,
+.action-drawer,
+.board-svg,
+.log-item,
+.rail-step,
+input,
+select,
+textarea {
+  border-radius: 8px;
+}
+
+button,
+.button-link,
+.quit-game-link,
+.status-chip,
+.phase-pill,
+.turn-banner,
+.admin-runtime-pill,
+.admin-back-link,
+.log-type,
+.log-stamp,
+.log-time,
+.micro-status {
+  min-height: 1.75rem;
+}
+
+.worker-progress {
+  margin: 0;
+  padding: 0.48rem 0.58rem;
+  border: 1px solid rgba(46, 86, 111, 0.24);
+  border-radius: 8px;
+  background: rgba(219, 236, 245, 0.72);
+  color: #1b465d;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.worker-progress[data-state="blocked"],
+.worker-progress[data-state="error"] {
+  border-color: rgba(122, 19, 31, 0.25);
+  background: rgba(255, 239, 235, 0.82);
+  color: #6b1420;
+}
+
+.turn-metric[data-state="queued"],
+.turn-metric[data-state="running"] {
+  border-color: rgba(131, 186, 203, 0.46);
+  background: rgba(131, 186, 203, 0.18);
+}
+
+.turn-metric[data-state="blocked"],
+.turn-metric[data-state="error"] {
+  border-color: rgba(198, 81, 96, 0.38);
+  background: rgba(198, 81, 96, 0.18);
 }

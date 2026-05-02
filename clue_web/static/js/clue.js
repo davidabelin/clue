@@ -28,6 +28,7 @@ if (app) {
   const activeSeatLabel = document.getElementById("active-seat-label");
   const turnIndexLabel = document.getElementById("turn-index-label");
   const legalCount = document.getElementById("legal-count");
+  const workerStateLabel = document.getElementById("worker-state-label");
   const notebookText = document.getElementById("notebook-text");
   const chatInput = document.getElementById("chat-input");
   const saveNotebook = document.getElementById("save-notebook");
@@ -40,6 +41,7 @@ if (app) {
   const turnRail = document.getElementById("turn-rail");
   const actionPriorityNote = document.getElementById("action-priority-note");
   const paceNote = document.getElementById("pace-note");
+  const workerProgress = document.getElementById("worker-progress");
   const requestError = document.getElementById("request-error");
   const notebookStatus = document.getElementById("notebook-status");
   const notebookDraftState = document.getElementById("notebook-draft-state");
@@ -365,6 +367,14 @@ if (app) {
     return Boolean(activeSeat && activeSeat.seat_kind !== "human");
   }
 
+  function autonomousWork(snapshot) {
+    return snapshot?.analysis?.autonomous_work || {};
+  }
+
+  function autonomousWorkIsBusy(snapshot) {
+    return ["queued", "running"].includes(String(autonomousWork(snapshot).status || ""));
+  }
+
   function nextRefreshDelay(snapshot) {
     if (!snapshot) {
       return POLL_NORMAL_MS;
@@ -372,7 +382,7 @@ if (app) {
     if (snapshot.status !== "active") {
       return POLL_IDLE_MS;
     }
-    return waitingOnAutonomousSeat(snapshot) ? POLL_FAST_MS : POLL_NORMAL_MS;
+    return waitingOnAutonomousSeat(snapshot) || autonomousWorkIsBusy(snapshot) ? POLL_FAST_MS : POLL_NORMAL_MS;
   }
 
   function scheduleRefresh(next = currentSnapshot) {
@@ -473,13 +483,28 @@ if (app) {
     };
   }
 
+  function stageBoardMove(nodeId) {
+    if (!nodeId) {
+      return;
+    }
+    actionDrafts.set("move-target", nodeId);
+    const select = document.getElementById("move-target");
+    if (select && [...select.options].some((option) => option.value === nodeId)) {
+      select.value = nodeId;
+    }
+    if (currentSnapshot) {
+      renderBoard(currentSnapshot);
+    }
+    updateDraftControls();
+  }
+
   async function submitBoardMove(nodeId) {
     if (pendingMutation || !nodeId) {
       return;
     }
-    actionDrafts.set("move-target", nodeId);
-    if (currentSnapshot) {
-      renderBoard(currentSnapshot);
+    stageBoardMove(nodeId);
+    if (!isPlayerMode()) {
+      return;
     }
     await submitMutation("action", "api/v1/games/current/actions", {
       action: "move",
@@ -1053,6 +1078,9 @@ if (app) {
     const state = currentViewState(snapshot);
     const winnerName = snapshot.winner_seat_id ? seatName(snapshot, snapshot.winner_seat_id) : "Unknown";
     const playerMode = isPlayerMode();
+    const work = autonomousWork(snapshot);
+    const workStatus = String(work.status || "idle");
+    const workDisplayName = String(work.display_name || activeName || "");
 
     setState(turnBanner, state);
     setState(phasePill, state);
@@ -1062,6 +1090,26 @@ if (app) {
     activeSeatLabel.textContent = snapshot.status === "complete" ? winnerName : activeName;
     turnIndexLabel.textContent = `Turn ${Number(snapshot.turn_index || 0) + 1}`;
     legalCount.textContent = snapshot.status === "complete" ? "Closed" : String(deskActions(snapshot).length);
+    workerStateLabel.textContent = titleize(workStatus || "idle");
+    const workerMetric = workerStateLabel.closest(".turn-metric");
+    if (workerMetric) {
+      workerMetric.dataset.state = workStatus;
+    }
+    if (["queued", "running"].includes(workStatus)) {
+      workerProgress.classList.remove("hidden");
+      workerProgress.dataset.state = workStatus;
+      workerProgress.textContent = workStatus === "queued"
+        ? `${workDisplayName || "An autonomous seat"} is queued to act.`
+        : `${workDisplayName || "An autonomous seat"} is working through the turn.`;
+    } else if (["blocked", "error"].includes(workStatus)) {
+      workerProgress.classList.remove("hidden");
+      workerProgress.dataset.state = workStatus;
+      workerProgress.textContent = work.last_error || `${workDisplayName || "An autonomous seat"} needs attention.`;
+    } else {
+      workerProgress.classList.add("hidden");
+      workerProgress.textContent = "";
+      workerProgress.dataset.state = "idle";
+    }
     actionPriorityNote.textContent = actionPriorityText(snapshot);
     renderTurnRail(snapshot);
 
@@ -1106,7 +1154,11 @@ if (app) {
       actionStatus.textContent = "AI Seat Acting";
       decisionContext.textContent = playerMode ? `Waiting on ${activeName}.` : `${activeName} is acting.`;
       turnBanner.textContent = playerMode ? `Waiting on ${activeName}` : `${activeName} is resolving an autonomous turn.`;
-      turnGuidance.textContent = playerMode ? "Waiting." : "Live updates will catch up automatically.";
+      turnGuidance.textContent = playerMode
+        ? "Waiting."
+        : autonomousWorkIsBusy(snapshot)
+          ? "You can keep reading the table while the worker runs."
+          : "Live updates will catch up automatically.";
       return;
     }
     actionStatus.textContent = "Waiting";
@@ -1394,6 +1446,7 @@ if (app) {
       active_seat_id: snapshot.active_seat_id,
       winner_seat_id: snapshot.winner_seat_id,
       current_roll: snapshot.current_roll,
+      autonomous_work: snapshot.analysis?.autonomous_work || {},
       legal_actions: snapshot.legal_actions || {},
       seat_id: snapshot.seat.seat_id,
       seat_name: snapshot.seat.display_name,

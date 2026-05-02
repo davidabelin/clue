@@ -43,6 +43,40 @@ characters:
     assert "freeform note" not in guidance
 
 
+def test_global_table_voice_guidance_is_prepended(monkeypatch, tmp_path: Path):
+    """A shared table-stage direction should reach turn and chat prompts."""
+
+    personas_path = tmp_path / "personas.yaml"
+    personas_path.write_text(
+        """
+schema_version: 1.3
+table_voice:
+  premise: "Modern partygoers knowingly role-playing Clue suspects."
+  style: "Dry Christie-ish irony."
+  instructions:
+    - "Stay aware this is a table game."
+  avoid:
+    - "Victorian pastiche."
+characters:
+  "Miss Scarlet":
+    public_chat_tone: "Sharp and amused."
+    social_style: "Treats the table like a game-night stage."
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(profile_loader, "PERSONAS_PATH", personas_path)
+    profile_loader.clear_profile_caches()
+
+    persona_guidance = profile_loader.build_persona_guidance("Miss Scarlet")
+    social_guidance = profile_loader.build_social_guidance("Miss Scarlet")
+
+    assert "Modern partygoers knowingly role-playing" in persona_guidance
+    assert "Dry Christie-ish irony" in persona_guidance
+    assert "Victorian pastiche" in persona_guidance
+    assert persona_guidance.index("Table voice") < persona_guidance.index("Public tone")
+    assert "Modern partygoers knowingly role-playing" in social_guidance
+
+
 def test_build_social_guidance_includes_chattiness_and_top_notes(monkeypatch, tmp_path: Path):
     """Chat-only persona guidance should include chattiness and a short note slice."""
 

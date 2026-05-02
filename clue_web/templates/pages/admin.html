@@ -96,6 +96,7 @@
             <th>Winner</th>
             <th>LLM</th>
             <th>Latency</th>
+            <th>Worker</th>
             <th>Updated</th>
             <th>Admin</th>
           </tr>
@@ -113,6 +114,7 @@
             <td>{{ game.winner_display_name or "-" }}</td>
             <td>{{ game.llm_unavailable_count }} turn failures<br>{{ game.chat_failure_count }} chat failures<br>{{ game.sampling_timeouts }} timeouts</td>
             <td>{{ "%.0f"|format(game.turn_latency_ms_max) }} ms<br>{{ game.latency_budget_breaches }} breaches</td>
+            <td>{{ game.autonomous_work_status }}{% if game.autonomous_work_display_name %}<br><small>{{ game.autonomous_work_display_name }}</small>{% endif %}</td>
             <td>{{ game.updated_at }}</td>
             <td>
               <div class="admin-row-actions">
@@ -130,7 +132,7 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="9">No saved games yet.</td></tr>
+          <tr><td colspan="10">No saved games yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>

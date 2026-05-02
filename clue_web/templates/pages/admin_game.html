@@ -32,6 +32,11 @@
       <strong>{{ "%.0f"|format(game.summary.turn_latency_ms_max) }} ms</strong>
       <small>{{ game.summary.latency_budget_breaches }} breaches</small>
     </article>
+    <article class="panel admin-stat">
+      <span class="card-kicker">Worker</span>
+      <strong>{{ game.autonomous_work.status }}</strong>
+      <small>{{ game.autonomous_work.display_name or game.autonomous_work.last_error or "No autonomous work queued" }}</small>
+    </article>
   </section>
 
   <section class="panel admin-section">
@@ -106,7 +111,7 @@
       <div class="panel-head compact">
         <h2>Runtime Snapshot</h2>
       </div>
-      <pre class="admin-json">{{ {"latency_targets_ms": game.latency_targets_ms, "agent_runtime": game.agent_runtime} | tojson(indent=2) }}</pre>
+      <pre class="admin-json">{{ {"latency_targets_ms": game.latency_targets_ms, "agent_runtime": game.agent_runtime, "autonomous_work": game.autonomous_work} | tojson(indent=2) }}</pre>
     </section>
   </section>
 

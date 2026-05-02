@@ -80,7 +80,7 @@ Humans do not log in with full accounts in v1. A signed seat token maps to one p
 - selects deterministic YAML turn/chat profiles for LLM seats when not explicitly set
 - builds hidden setup and initial state
 - persists game, seats, tokens, and opening events
-- may immediately run autonomous opening turns until a human response is needed
+- queues autonomous opening turns through the process-local worker so table creation can return immediately
 
 ### Join flow
 `/join/<token>`
@@ -99,7 +99,7 @@ Humans do not log in with full accounts in v1. A signed seat token maps to one p
 - loads the current state
 - applies the action through `GameMaster.apply_action()`
 - persists new state and emitted events
-- runs any queued autonomous follow-up turns
+- queues any autonomous follow-up turns through the process-local worker
 - returns a newly filtered snapshot for the acting seat
 
 ### Notebook flow
@@ -136,6 +136,7 @@ The filtered snapshot includes:
 - the seat-visible event stream
 - legal actions for that seat
 - analysis data with seat-private debug filtered per seat
+- public-safe `analysis.autonomous_work` with only worker status, seat id/name, timestamps, and a short error string
 - social-memory slices that are safe for the current seat to see
 
 This function is where public/private routing must remain explicit and easy to audit.
