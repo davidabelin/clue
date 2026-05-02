@@ -6,11 +6,11 @@ Standalone Clue lab for AIX, currently labeled **v1.9.0**.
 - Classic Clue rules implemented as a deterministic, event-sourced Python engine.
 - A standalone Flask web app that also mounts cleanly under AIX at `/clue`.
 - Mixed human and autonomous seats under one code-owned Game Master.
-- Local-first OpenAI integration: the model can inspect filtered seat context and write durable NHP memory/social notes, but it never mutates rules state directly.
+- Local-first OpenAI integration: the model can inspect filtered seat context and, in chat/memory paths, write durable NHP memory/social notes, but it never mutates rules state directly.
 
 ## Core Invariants
 - `clue_core` remains authoritative for legality, turn order, refutation flow, accusations, and win/loss state.
-- Autonomous seats may only return a normalized `TurnDecision` or `ChatDecision`; model-facing write tools are limited to durable NHP memory/social state.
+- Autonomous seats may only return a normalized `TurnDecision` or `ChatDecision`; model-facing write tools are limited to durable NHP memory/social state and kept out of the core turn-action path.
 - Seat-private information is filtered server-side before it reaches the browser.
 - Public chat is sanitized and guardrailed before LLM-authored text is accepted.
 - Local encrypted session memory is seat-scoped and separate from the persisted game-state database.
@@ -52,7 +52,7 @@ Standalone Clue lab for AIX, currently labeled **v1.9.0**.
 ### 4. Autonomous seats
 - `clue_agents.runtime.AgentRuntime` instantiates heuristic or LLM-backed seats behind one shared interface.
 - `clue_core.deduction.build_tool_snapshot()` prepares the seat-local deduction summary used by both heuristic and LLM policies.
-- `clue_agents.llm.LLMSeatAgent` uses the OpenAI Agents SDK with read tools, tightly bounded durable write tools, and output guardrails. If the live LLM path is unavailable or invalid, the seat fails loudly instead of using the heuristic policy.
+- `clue_agents.llm.LLMSeatAgent` uses the OpenAI Agents SDK with read tools, compact turn prompts, tightly bounded chat/memory write tools, and output guardrails. If the live LLM path is unavailable or invalid, the seat fails loudly instead of using the heuristic policy.
 - Process-local autonomous work records a public-safe `queued`, `running`, `complete`, `blocked`, or `error` status in persisted JSON state so polling tabs can show progress without leaking private state.
 - `clue_agents/profiles/personas.yaml` includes shared table-voice stage direction: modern partygoers knowingly role-playing Clue suspects with concise, ironic Christie-ish table banter.
 - Optional idle chat uses a separate chat profile path and one compact speak-or-stay-silent run. It is disabled by default for stabilization; Admin Mode or env vars can enable reactive and proactive chatter explicitly.
@@ -80,7 +80,7 @@ Clue does not currently load a repo `.env` file, and this repo does not contain 
 - `CLUE_INTERNAL_WORKER_TOKEN`
   Optional shared token for the internal run-agents endpoint.
 - `CLUE_ADMIN_TOKEN`
-  Required token for `/admin` and `/api/v1/admin/...` saved-game and NHP-memory surfaces.
+  Required token for `/admin` and `/api/v1/admin/...` saved-game and NHP-memory surfaces. Direct local runs default to `local-admin` when unset; App Engine deployments must configure a real token or secret.
 - `CLUE_ADMIN_TOKEN_SECRET`
   Secret Manager indirection for `CLUE_ADMIN_TOKEN`.
 
@@ -171,7 +171,7 @@ python run.py
 ### Admin tokens
 
 Local admin token:
-- `local-admin`, when Clue is started by `run-local.bat` or by a terminal where `CLUE_ADMIN_TOKEN=local-admin` has been set.
+- `local-admin`, when Clue is started by `run-local.bat`, by direct `python run.py` / `py -3.14 run.py`, or by a terminal where `CLUE_ADMIN_TOKEN=local-admin` has been set.
 - This is not stored in a `.env` file. It is an environment variable on the process that starts the app.
 
 Production admin token:

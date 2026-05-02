@@ -58,6 +58,40 @@ def test_home_page_renders(client):
     assert 'fetch("/api/v1/games"' not in html
 
 
+def test_direct_local_app_defaults_admin_token(monkeypatch, tmp_path: Path):
+    """Direct local run.py starts should expose the documented local admin token."""
+
+    monkeypatch.delenv("GAE_ENV", raising=False)
+    monkeypatch.delenv("CLUE_ADMIN_TOKEN", raising=False)
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret-key",
+            "CLUE_SECRET_KEY": "test-secret-key",
+            "DB_PATH": str(tmp_path / "local-admin-default.db"),
+        }
+    )
+
+    assert app.config["CLUE_ADMIN_TOKEN"] == "local-admin"
+
+
+def test_deployed_app_does_not_default_admin_token(monkeypatch, tmp_path: Path):
+    """App Engine must still get Administrator access from explicit config/secrets."""
+
+    monkeypatch.setenv("GAE_ENV", "standard")
+    monkeypatch.delenv("CLUE_ADMIN_TOKEN", raising=False)
+    app = create_app(
+        {
+            "TESTING": True,
+            "SECRET_KEY": "test-secret-key",
+            "CLUE_SECRET_KEY": "test-secret-key",
+            "DB_PATH": str(tmp_path / "gae-admin-default.db"),
+        }
+    )
+
+    assert app.config["CLUE_ADMIN_TOKEN"] == ""
+
+
 def test_create_game_and_snapshot_flow(client):
     """Creating a game should return invite links and a valid seat snapshot flow."""
 

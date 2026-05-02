@@ -57,9 +57,9 @@ profiles:
     public_label: "GPT-5.4 Mini / Deliberate"
     model: "gpt-5.4-mini-2026-03-17"
     reasoning_effort: "high"
-    timeout_seconds: 14
-    max_tool_calls: 6
-    max_turns: 8
+    timeout_seconds: 28
+    max_tool_calls: 10
+    max_turns: 14
     context_grasp_score: 3
     latency_class: "medium"
     cost_class: "low"
@@ -73,9 +73,9 @@ profiles:
     public_label: "GPT-5.4 / Balanced"
     model: "gpt-5.4"
     reasoning_effort: "medium"
-    timeout_seconds: 12
-    max_tool_calls: 6
-    max_turns: 8
+    timeout_seconds: 24
+    max_tool_calls: 10
+    max_turns: 14
     context_grasp_score: 4
     latency_class: "medium"
     cost_class: "medium"

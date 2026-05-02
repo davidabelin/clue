@@ -13,6 +13,7 @@ from clue_agents.sdk_runtime import (
     AgentTurnOutput,
     MemorySummaryOutput,
     SeatAgentContext,
+    _agent_instructions,
     build_run_config,
 )
 from clue_agents.secrets import _access_secret_version, resolve_openai_api_key, resolve_openai_project_id
@@ -162,6 +163,25 @@ def test_build_run_config_passes_clue_project_to_openai_provider(monkeypatch, tm
     assert run_config.model_provider.kwargs["api_key"] == "clue-service-account-key"
     assert run_config.model_provider.kwargs["project"] == "proj_Lw53USO5NinnThSmUspUs1Kt"
     assert run_config.model_provider.kwargs["use_responses"] is True
+
+
+def test_turn_prompt_prioritizes_prompt_action_over_social_writes():
+    """Turn decisions should not pressure verbose personas into durable social writes."""
+
+    class FakeContext:
+        snapshot = _snapshot()
+        legal_actions = {"available": ["move"], "current_room": "", "move_targets": [{"node_id": "hall"}]}
+        notebook_text = "Watch refutations carefully."
+        accusation_gate = {"ready": False}
+
+    class FakeWrapper:
+        context = FakeContext()
+
+    instructions = _agent_instructions(FakeWrapper(), None)
+
+    assert "Use write tools" not in instructions
+    assert "Return promptly" in instructions
+    assert "rationale_private under 160 characters" in instructions
 
 
 def test_llm_agent_raises_on_model_error(monkeypatch):

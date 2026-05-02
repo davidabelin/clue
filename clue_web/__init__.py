@@ -55,6 +55,14 @@ def _aix_page_url(base_url: str, path: str) -> str:
     return urljoin(base.rstrip("/") + "/", path.lstrip("/"))
 
 
+def _default_admin_token() -> str:
+    """Return the local-only Administrator token default for direct dev runs."""
+
+    if os.getenv("GAE_ENV"):
+        return ""
+    return "local-admin"
+
+
 def _static_asset_token(static_root: Path, *, version: str) -> str:
     """Build a lightweight cache-busting token for bundled static assets."""
 
@@ -89,7 +97,7 @@ def create_app(config: dict | None = None) -> Flask:
         DB_PATH=os.getenv("CLUE_DB_PATH", str(data_dir / "clue.db")),
         AIX_HUB_URL=os.getenv("AIX_HUB_URL", "/"),
         INTERNAL_WORKER_TOKEN=os.getenv("CLUE_INTERNAL_WORKER_TOKEN", ""),
-        CLUE_ADMIN_TOKEN=os.getenv("CLUE_ADMIN_TOKEN", ""),
+        CLUE_ADMIN_TOKEN=os.getenv("CLUE_ADMIN_TOKEN", _default_admin_token()),
         CLUE_ADMIN_TOKEN_SECRET=os.getenv("CLUE_ADMIN_TOKEN_SECRET", ""),
         APP_BASE_PATH=os.getenv("APP_BASE_PATH", ""),
         CLUE_LLM_MODEL=os.getenv("CLUE_LLM_MODEL", "gpt-5.4-mini-2026-03-17"),

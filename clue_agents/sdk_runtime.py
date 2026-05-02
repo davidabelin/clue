@@ -889,7 +889,7 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
     """Construct the Clue seat agent definition for one turn or chat run.
 
     The returned agent surface stays deliberately narrow: typed output,
-    read tools, narrow durable write tools, and output guardrails. Any new tool or prompt path
+    read tools, optional chat/memory write tools, and output guardrails. Any new tool or prompt path
     added here should be evaluated against the privacy and legality boundaries
     described in the maintainer docs.
     """
@@ -1025,13 +1025,12 @@ def build_agent(runtime_config: LLMRuntimeConfig, *, mode: str = "turn") -> Agen
             inspect_move_target,
             inspect_refute_card,
             *social_read_tools,
-            *write_tools,
         ],
         model=runtime_config.model,
         model_settings=ModelSettings(
-            tool_choice="required",
+            tool_choice="auto",
             parallel_tool_calls=False,
-            max_tokens=420,
+            max_tokens=560,
             reasoning={"effort": runtime_config.reasoning_effort},
             verbosity="low",
             store=True,
@@ -1056,7 +1055,7 @@ def _agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Ag
     return (
         "You are the autonomous seat agent for one player in the board game Clue.\n"
         "The deterministic rules engine is authoritative. You must choose exactly one legal action.\n"
-        "Rules facts come from read-only tools only; write tools are only for durable NHP memory/social notes.\n"
+        "Rules facts come from read-only tools only; gameplay state is changed only by the deterministic rules engine.\n"
         "Never invent new facts, never mention another seat's hidden card ownership, and never expose private information in public text.\n"
         f"Seat: {seat.get('display_name', 'Unknown')} ({seat.get('character', 'Unknown')}).\n"
         f"In-character public voice: {persona_prompt(str(seat.get('character') or ''))}\n"
@@ -1064,10 +1063,9 @@ def _agent_instructions(context: RunContextWrapper[SeatAgentContext], _agent: Ag
         f"Available actions: {available}.\n"
         f"Notebook has content: {bool(context.context.notebook_text.strip())}.\n"
         f"Accusation gate ready: {bool(context.context.accusation_gate.get('ready'))}.\n"
-        "Use the social-state tools when they help break ties, pressure a specific opponent, or shape safe public text.\n"
-        "Use durable memory when it is available, especially to honor grudges, favors, alliances, and prior strategic lessons.\n"
-        "Use write tools to record meaningful memory notes or relationship posture changes when they will help future games.\n"
-        "Call at least one relevant tool before returning. Keep rationale_private short and useful for maintainers."
+        "Use the social-state tools only when they help break a close gameplay tie or shape one safe optional public line.\n"
+        "Prefer rules and deduction tools over social tools when the legal action is straightforward.\n"
+        "Return promptly once you can choose a legal action. Keep rationale_private under 160 characters."
     )
 
 

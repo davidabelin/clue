@@ -242,3 +242,17 @@ def test_llm_agent_profile_overrides_runtime_settings():
     assert agent._runtime_config.reasoning_effort == "high"
     assert agent._runtime_config.max_tool_calls == 14
     assert agent._profile_id == "gpt54_deep"
+
+
+def test_turn_profiles_allow_structured_output_recovery_budget():
+    """High-reasoning turn profiles should not use the old cramped eight-turn budget."""
+
+    mini_deliberate = profile_loader.model_profile("gpt54_mini_deliberate")
+    balanced = profile_loader.model_profile("gpt54_balanced")
+
+    assert mini_deliberate["max_turns"] >= 14
+    assert mini_deliberate["max_tool_calls"] >= 10
+    assert mini_deliberate["timeout_seconds"] >= 24
+    assert balanced["max_turns"] >= 14
+    assert balanced["max_tool_calls"] >= 10
+    assert balanced["timeout_seconds"] >= 24

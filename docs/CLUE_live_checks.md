@@ -10,7 +10,7 @@ From Command Prompt or by double-clicking in Explorer:
 run-local.bat
 ```
 
-This starts local Clue with `CLUE_ADMIN_TOKEN=local-admin` and `CLUE_DB_PATH=data\clue-dev.db`. Open `http://127.0.0.1:5002/admin` and paste `local-admin`.
+This starts local Clue with `CLUE_ADMIN_TOKEN=local-admin` and `CLUE_DB_PATH=data\clue-dev.db`. Direct `python run.py` / `py -3.14 run.py` local starts also default to `local-admin` when no token is set. Open `http://127.0.0.1:5002/admin` and paste `local-admin`.
 
 For local LLM runs, keep the Clue OpenAI service-account key in untracked `set_clue_env.bat` as `OPENAI_CLUE_SA_KEY`. Clue ignores generic `OPENAI_API_KEY` so it does not accidentally use a shared Zenbot key.
 

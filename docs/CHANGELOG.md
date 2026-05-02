@@ -6,6 +6,7 @@
 - Applied a site-wide 75% density pass across shared chrome, Home, Game, and Admin surfaces, with tighter panel/card radii.
 - Restored Beginner board clicks to stage movement and preview the token before the existing Move submit flow; Player Mode keeps direct board movement.
 - Added shared NHP table-voice stage direction for modern, ironic Christie-ish role-play and softened persona notes that pushed cruel period-character bits.
+- Defaulted direct local server starts to the `local-admin` Administrator token while keeping App Engine deployments dependent on configured token/secret values.
 - Changed optional NHP idle/proactive chat defaults to off for stabilization; Admin Mode or env vars can opt back in.
 - Replaced optional chat's two-stage intent/utterance SDK path with one compact `AgentChatOutput` speak-or-silence call.
 - Added Administrator Mode counts and per-game breakdowns for optional-chat `trace_llm_unavailable` failures separate from gameplay-turn LLM failures.
@@ -13,6 +14,7 @@
 - Added Admin Mode controls to terminate stale active games and permanently delete saved games that should no longer clutter review lists.
 - Changed the player-facing winner-eligibility copy from "Still in the case." to "On the case."
 - Added polished create-table progress feedback with duplicate-submit protection, preserved form state, and clearer error recovery.
+- Slimmed the live LLM turn-action surface to read-only gameplay/social context, automatic tool use, larger structured-output budget, and less cramped high-reasoning model-profile budgets to reduce `max_turns_exceeded` and truncated JSON failures.
 
 ## v1.9.0 - 2026-04-29
 - Added visible Superplayer Admin links and a token-entry screen at `/admin` so deployed maintainers can reach the protected dashboard without manually constructing a query URL.

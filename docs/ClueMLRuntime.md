@@ -102,7 +102,7 @@ Most tools are read-only. Examples include:
 - durable cross-game memory and relationship context
 - final-game context for memory-summary runs
 
-The v1.9.0 write tools are deliberately narrow:
+The v1.9.0 write tools are deliberately narrow and are exposed to chat and durable-memory paths, not to the compact core turn-action agent:
 - `record_memory_note`
   appends a durable first-person NHP note.
 - `update_relationship_posture`
@@ -132,6 +132,8 @@ The output guardrails reject or trip on:
 
 When output validation fails for a turn, the LLM decision is discarded and the runtime records an explicit LLM failure instead of generating a heuristic move. The compact chat path may still choose deliberate silence for model-authored no-speak or unsafe-public-chat outcomes; it does not use heuristic chat text as a substitute.
 Memory-summary validation failures mark the durable memory job failed or pending; they do not synthesize replacement memory.
+
+The turn-action agent keeps a smaller surface than the social/memory agents: read-only rules, deduction, notebook, movement/refute inspection, and social context tools. Tool choice is automatic rather than forced, and the prompt asks the model to return promptly with a short private rationale once it has a legal action. This reduces loops and truncated structured output for verbose/high-reasoning personas while preserving the fail-loud policy.
 
 ### Tool guardrails
 Parameterized tools are constrained before they execute:
